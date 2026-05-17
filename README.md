@@ -29,9 +29,12 @@ For developers:
 
 1. Download `PhotoSelector-1.0.0.dmg` from the [Releases](https://github.com/vgupta98/photo-selector/releases) page (or build it yourself — see below).
 2. Open the DMG and drag **Photo Selector.app** to `/Applications`.
-3. First launch on macOS:
-   - Right-click **Photo Selector.app** → **Open** → confirm in the Gatekeeper dialog.
-   - This is needed once because the app is not notarised; subsequent launches work normally.
+3. **First launch — get past the Gatekeeper warning.** The app is not notarised by Apple, so on the very first launch macOS will show a dialog like *"Apple could not verify 'PhotoSelector' is free of malware…"*. To allow it:
+   1. Click **Done** to dismiss the dialog.
+   2. Open **System Settings → Privacy & Security**.
+   3. Scroll down to the **Security** section — you'll see a message like *"PhotoSelector was blocked to protect your Mac."*
+   4. Click **Open Anyway**, then confirm with Touch ID / password.
+   5. Double-click the app again — this time it launches normally. You only need to do this once.
 4. Click **"Choose folder…"**, point it at your photo root, wait for the scan, then start browsing.
 
 ### Keyboard shortcuts
