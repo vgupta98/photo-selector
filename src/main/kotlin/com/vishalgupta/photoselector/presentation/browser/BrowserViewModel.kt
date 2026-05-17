@@ -51,11 +51,19 @@ class BrowserViewModel(
     private val isReadOnly: StateFlow<Boolean>,
 ) : StateHolder() {
 
+    private val favouritesFlow: StateFlow<Set<PhotoId>> = observeFavourites(root)
+
     private val _state = MutableStateFlow(
-        BrowserUiState.initial(photos).copy(
-            currentIndex = initialIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0)),
-            currentPhoto = photos.getOrNull(initialIndex.coerceAtLeast(0)),
-        ),
+        run {
+            val safeIndex = initialIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0))
+            val firstPhoto = photos.getOrNull(safeIndex)
+            BrowserUiState.initial(photos).copy(
+                currentIndex = safeIndex,
+                currentPhoto = firstPhoto,
+                isCurrentFavourite = firstPhoto != null && firstPhoto.id in favouritesFlow.value,
+                favouriteCount = favouritesFlow.value.size,
+            )
+        },
     )
     val state: StateFlow<BrowserUiState> = _state.asStateFlow()
 
@@ -63,7 +71,7 @@ class BrowserViewModel(
     private var viewportLongEdgePx: Int = 1600
 
     init {
-        combine(observeFavourites(root), isReadOnly) { favs, readOnly -> favs to readOnly }
+        combine(favouritesFlow, isReadOnly) { favs, readOnly -> favs to readOnly }
             .onEach { (favs, readOnly) ->
                 val current = _state.value.currentPhoto
                 _state.value = _state.value.copy(
@@ -95,6 +103,7 @@ class BrowserViewModel(
             currentPhoto = photo,
             currentBitmap = null,
             isLoadingBitmap = true,
+            isCurrentFavourite = photo.id in favouritesFlow.value,
         )
         imageLoader.unpinAllExcept(photo.id)
         imageLoader.pin(photo.id)
