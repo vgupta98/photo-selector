@@ -34,7 +34,9 @@ fun App(container: AppContainer) {
                     }
                     BrowserScreen(
                         viewModel = vm,
-                        onOpenFavourites = { container.goTo(Screen.Favourites(s.root)) },
+                        onOpenFavourites = { currentIndex ->
+                            container.goTo(Screen.Favourites(s.root, returnIndex = currentIndex))
+                        },
                         onChangeFolder = {
                             coroutineScope.launch {
                                 container.resetForNewRoot()
@@ -47,7 +49,9 @@ fun App(container: AppContainer) {
                     val vm = remember(s.root.path) { container.favouritesViewModel(s.root) }
                     FavouritesScreen(
                         viewModel = vm,
-                        onBack = { container.goTo(Screen.Browser(s.root)) },
+                        onBack = {
+                            container.goTo(Screen.Browser(s.root, initialIndex = s.returnIndex))
+                        },
                         onOpenPhoto = { photo ->
                             val index = container.photosFor(s.root).indexOfFirst { it.id == photo.id }
                                 .coerceAtLeast(0)

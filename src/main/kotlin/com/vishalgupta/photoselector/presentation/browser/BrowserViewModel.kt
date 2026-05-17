@@ -9,12 +9,15 @@ import com.vishalgupta.photoselector.domain.usecase.ObserveFavouritesUseCase
 import com.vishalgupta.photoselector.domain.usecase.ToggleFavouriteUseCase
 import com.vishalgupta.photoselector.presentation.StateHolder
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
 data class BrowserUiState(
@@ -67,6 +70,9 @@ class BrowserViewModel(
     )
     val state: StateFlow<BrowserUiState> = _state.asStateFlow()
 
+    private val _toggleEvents = Channel<Boolean>(Channel.BUFFERED)
+    val toggleEvents: Flow<Boolean> = _toggleEvents.receiveAsFlow()
+
     private var loadJob: Job? = null
     private var viewportLongEdgePx: Int = 1600
 
@@ -113,7 +119,10 @@ class BrowserViewModel(
 
     fun toggleFavourite() {
         val photo = _state.value.currentPhoto ?: return
-        scope.launch { toggleFavourite(root, photo.id) }
+        scope.launch {
+            val nowFavourite = toggleFavourite(root, photo.id)
+            _toggleEvents.trySend(nowFavourite)
+        }
     }
 
     private fun loadCurrent() {
