@@ -12,6 +12,7 @@ import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.data.image.SkikoImageLoader
 import com.vishalgupta.photoselector.domain.format.PhotoFormatRegistry
 import com.vishalgupta.photoselector.domain.model.Photo
+import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.FavouritesRepository
 import com.vishalgupta.photoselector.domain.repository.PhotoExporter
@@ -23,6 +24,7 @@ import com.vishalgupta.photoselector.domain.usecase.ScanRootFolderUseCase
 import com.vishalgupta.photoselector.domain.usecase.ToggleFavouriteUseCase
 import com.vishalgupta.photoselector.presentation.browser.BrowserViewModel
 import com.vishalgupta.photoselector.presentation.favourites.FavouritesViewModel
+import com.vishalgupta.photoselector.presentation.navigation.BrowseScope
 import com.vishalgupta.photoselector.presentation.navigation.Screen
 import com.vishalgupta.photoselector.presentation.rootpicker.RootFolderPickerViewModel
 import kotlinx.coroutines.Dispatchers
@@ -69,6 +71,12 @@ class AppContainer {
     fun photosFor(root: RootFolder): List<Photo> =
         if (scannedRoot?.path == root.path) scannedPhotos else emptyList()
 
+    /** Returns the position of [id] within the current favourites slice (sorted by relativePath). */
+    fun favouritesIndexOf(root: RootFolder, id: PhotoId): Int =
+        photosForScope(root, BrowseScope.FavouritesOnly)
+            .indexOfFirst { it.id == id }
+            .coerceAtLeast(0)
+
     fun setScanResult(root: RootFolder, photos: List<Photo>) {
         scannedRoot = root
         scannedPhotos = photos
@@ -87,15 +95,30 @@ class AppContainer {
         },
     )
 
-    fun browserViewModel(root: RootFolder, initialIndex: Int): BrowserViewModel = BrowserViewModel(
+    fun browserViewModel(
+        root: RootFolder,
+        initialIndex: Int,
+        scope: BrowseScope,
+    ): BrowserViewModel = BrowserViewModel(
         root = root,
-        photos = photosFor(root),
+        photos = photosForScope(root, scope),
         initialIndex = initialIndex,
         observeFavourites = observeFavouritesUseCase,
         toggleFavourite = toggleFavouriteUseCase,
         imageLoader = imageLoader,
         isReadOnly = favouritesRepository.isReadOnly(root),
     )
+
+    private fun photosForScope(root: RootFolder, scope: BrowseScope): List<Photo> {
+        val all = photosFor(root)
+        return when (scope) {
+            BrowseScope.AllPhotos -> all
+            BrowseScope.FavouritesOnly -> {
+                val favIds = favouritesRepository.observe(root).value
+                all.filter { it.id in favIds }
+            }
+        }
+    }
 
     fun favouritesViewModel(root: RootFolder): FavouritesViewModel = FavouritesViewModel(
         root = root,

@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import com.vishalgupta.photoselector.di.AppContainer
 import com.vishalgupta.photoselector.presentation.browser.BrowserScreen
 import com.vishalgupta.photoselector.presentation.favourites.FavouritesScreen
+import com.vishalgupta.photoselector.presentation.navigation.BrowseScope
 import com.vishalgupta.photoselector.presentation.navigation.Screen
 import com.vishalgupta.photoselector.presentation.rootpicker.RootFolderPickerScreen
 import com.vishalgupta.photoselector.presentation.theme.AppTheme
@@ -29,18 +30,34 @@ fun App(container: AppContainer) {
                     RootFolderPickerScreen(vm)
                 }
                 is Screen.Browser -> {
-                    val vm = remember(s.root.path, s.initialIndex) {
-                        container.browserViewModel(s.root, s.initialIndex)
+                    val vm = remember(s.root.path, s.initialIndex, s.scope) {
+                        container.browserViewModel(s.root, s.initialIndex, s.scope)
+                    }
+                    val openFavourites: (Int) -> Unit = { currentIndex ->
+                        val returnIndex = when (s.scope) {
+                            BrowseScope.AllPhotos -> currentIndex
+                            BrowseScope.FavouritesOnly -> {
+                                val id = vm.photoIdAtCurrent()
+                                container.photosFor(s.root)
+                                    .indexOfFirst { it.id == id }
+                                    .coerceAtLeast(0)
+                            }
+                        }
+                        container.goTo(Screen.Favourites(s.root, returnIndex = returnIndex))
                     }
                     BrowserScreen(
                         viewModel = vm,
-                        onOpenFavourites = { currentIndex ->
-                            container.goTo(Screen.Favourites(s.root, returnIndex = currentIndex))
-                        },
+                        onOpenFavourites = openFavourites,
                         onChangeFolder = {
                             coroutineScope.launch {
                                 container.resetForNewRoot()
                                 container.goTo(Screen.RootPicker)
+                            }
+                        },
+                        onBack = when (s.scope) {
+                            BrowseScope.AllPhotos -> null
+                            BrowseScope.FavouritesOnly -> {
+                                { openFavourites(vm.state.value.currentIndex) }
                             }
                         },
                     )
@@ -53,9 +70,14 @@ fun App(container: AppContainer) {
                             container.goTo(Screen.Browser(s.root, initialIndex = s.returnIndex))
                         },
                         onOpenPhoto = { photo ->
-                            val index = container.photosFor(s.root).indexOfFirst { it.id == photo.id }
-                                .coerceAtLeast(0)
-                            container.goTo(Screen.Browser(s.root, initialIndex = index))
+                            val index = container.favouritesIndexOf(s.root, photo.id)
+                            container.goTo(
+                                Screen.Browser(
+                                    root = s.root,
+                                    initialIndex = index,
+                                    scope = BrowseScope.FavouritesOnly,
+                                ),
+                            )
                         },
                     )
                 }
