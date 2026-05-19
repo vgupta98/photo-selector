@@ -1,7 +1,6 @@
 package com.vishalgupta.photoselector.presentation.browser
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -45,13 +44,11 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.presentation.common.ErrorPlaceholder
@@ -136,12 +133,9 @@ fun BrowserScreen(
                 when {
                     state.isLoadingBitmap && bmp == null -> CircularProgressIndicator()
                     bmp == null -> ErrorPlaceholder("Cannot decode this photo. Press → to continue.")
-                    else -> Image(
+                    else -> ZoomableImage(
                         bitmap = bmp,
                         contentDescription = state.currentPhoto?.fileName,
-                        contentScale = ContentScale.Fit,
-                        filterQuality = FilterQuality.High,
-                        modifier = Modifier.fillMaxSize(),
                     )
                 }
 
