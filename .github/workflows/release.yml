@@ -167,3 +167,16 @@ jobs:
             --title "$TAG" \
             --notes-file /tmp/notes.md \
             "$DMG"
+
+      - name: Delete release branch
+        if: success()
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          # The PR merge may already have deleted the branch if the repo has
+          # "Automatically delete head branches" enabled; treat that as success.
+          if git ls-remote --exit-code --heads origin "$HEAD_REF" >/dev/null; then
+            git push origin --delete "$HEAD_REF"
+          else
+            echo "Branch $HEAD_REF already gone — nothing to delete."
+          fi
