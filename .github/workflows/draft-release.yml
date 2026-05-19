@@ -1,0 +1,190 @@
+name: Draft Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump_override:
+        description: "Force a version bump (auto = derive from commits)"
+        required: true
+        default: "auto"
+        type: choice
+        options: [auto, patch, minor, major]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  draft:
+    name: Open release PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out develop
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Verify there are changes to release
+        id: diff
+        run: |
+          git fetch origin main:main
+          if git diff --quiet main..develop -- .; then
+            echo "develop is identical to main — nothing to release." >&2
+            exit 1
+          fi
+          COMMITS=$(git log --pretty=format:'%H' main..develop)
+          if [ -z "$COMMITS" ]; then
+            echo "No new commits on develop vs main." >&2
+            exit 1
+          fi
+          echo "count=$(echo "$COMMITS" | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
+
+      - name: Read current version
+        id: current
+        run: |
+          CURRENT=$(grep -E '^version = "' build.gradle.kts | head -1 | sed -E 's/^version = "([^"]+)".*/\1/')
+          if [ -z "$CURRENT" ]; then
+            echo "Could not parse version from build.gradle.kts" >&2
+            exit 1
+          fi
+          echo "version=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "Current version: $CURRENT"
+
+      - name: Determine bump
+        id: bump
+        run: |
+          OVERRIDE="${{ inputs.bump_override }}"
+          if [ "$OVERRIDE" != "auto" ]; then
+            echo "bump=$OVERRIDE" >> "$GITHUB_OUTPUT"
+            echo "Bump overridden to: $OVERRIDE"
+            exit 0
+          fi
+
+          BUMP="patch"
+          while read -r sha; do
+            [ -z "$sha" ] && continue
+            SUBJECT=$(git log -1 --pretty=format:'%s' "$sha")
+            BODY=$(git log -1 --pretty=format:'%b' "$sha")
+
+            # Major: <type>(scope)?!: ...   OR   "BREAKING CHANGE:" in body
+            if echo "$SUBJECT" | grep -qE '^[a-zA-Z]+(\([^)]+\))?!:'; then
+              BUMP="major"; break
+            fi
+            if echo "$BODY" | grep -qE '^BREAKING[ -]CHANGE:'; then
+              BUMP="major"; break
+            fi
+
+            # Minor: feat(scope)?: ...
+            if echo "$SUBJECT" | grep -qE '^feat(\([^)]+\))?:' && [ "$BUMP" != "major" ]; then
+              BUMP="minor"
+            fi
+          done < <(git log --pretty=format:'%H' main..develop)
+
+          echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
+          echo "Derived bump: $BUMP"
+
+      - name: Compute next version
+        id: next
+        run: |
+          CURRENT="${{ steps.current.outputs.version }}"
+          BUMP="${{ steps.bump.outputs.bump }}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          case "$BUMP" in
+            major) MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR+1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH+1)) ;;
+            *) echo "Unknown bump: $BUMP"; exit 1 ;;
+          esac
+          NEXT="$MAJOR.$MINOR.$PATCH"
+          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "Next version: $NEXT"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          NEXT="${{ steps.next.outputs.version }}"
+          {
+            echo "## Summary"
+            echo
+            echo "Release v${NEXT}. Merging this PR will tag the commit on main and publish a GitHub Release with the macOS DMG attached."
+            echo
+            echo "## Changelog"
+            echo
+          } > /tmp/notes.md
+
+          render_section() {
+            local heading="$1"; shift
+            local pattern="$1"; shift
+            local matches
+            matches=$(git log --pretty=format:'- %s (%h)' main..develop --grep="$pattern" --extended-regexp || true)
+            if [ -n "$matches" ]; then
+              echo "### $heading" >> /tmp/notes.md
+              echo "$matches" >> /tmp/notes.md
+              echo >> /tmp/notes.md
+            fi
+          }
+
+          render_section "Breaking Changes" '^[a-zA-Z]+(\([^)]+\))?!:'
+          render_section "Features"         '^feat(\([^)]+\))?:'
+          render_section "Bug Fixes"        '^fix(\([^)]+\))?:'
+          render_section "Documentation"    '^docs(\([^)]+\))?:'
+
+          # "Other": everything not matched above.
+          OTHER=$(git log --pretty=format:'- %s (%h)' main..develop --extended-regexp \
+            --invert-grep \
+            --grep='^[a-zA-Z]+(\([^)]+\))?!:' \
+            --grep='^feat(\([^)]+\))?:' \
+            --grep='^fix(\([^)]+\))?:' \
+            --grep='^docs(\([^)]+\))?:' || true)
+          if [ -n "$OTHER" ]; then
+            echo "### Other Changes" >> /tmp/notes.md
+            echo "$OTHER" >> /tmp/notes.md
+            echo >> /tmp/notes.md
+          fi
+
+          {
+            echo "## Full Diff"
+            echo
+            echo "https://github.com/${{ github.repository }}/compare/main...release/v${NEXT}"
+          } >> /tmp/notes.md
+
+          cat /tmp/notes.md
+
+      - name: Create release branch and bump version
+        env:
+          NEXT: ${{ steps.next.outputs.version }}
+        run: |
+          BRANCH="release/v${NEXT}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # If branch already exists upstream, fail fast — don't clobber.
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+            echo "Release branch $BRANCH already exists on origin. Delete it first or pick a different version." >&2
+            exit 1
+          fi
+
+          git checkout -b "$BRANCH"
+          sed -i -E "s/^version = \"[^\"]+\"/version = \"${NEXT}\"/" build.gradle.kts
+
+          # Sanity check the edit landed.
+          grep -qE "^version = \"${NEXT}\"" build.gradle.kts || {
+            echo "Version bump did not land in build.gradle.kts" >&2
+            exit 1
+          }
+
+          git add build.gradle.kts
+          git commit -m "chore(release): bump version to ${NEXT}"
+          git push -u origin "$BRANCH"
+
+      - name: Open release PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT: ${{ steps.next.outputs.version }}
+        run: |
+          gh pr create \
+            --base main \
+            --head "release/v${NEXT}" \
+            --title "release: v${NEXT}" \
+            --body-file /tmp/notes.md

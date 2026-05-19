@@ -1,0 +1,169 @@
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Tag, build DMG, publish GitHub Release
+    if: >-
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/')
+    runs-on: macos-latest
+    steps:
+      - name: Check out main at merge commit
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Read released version
+        id: version
+        run: |
+          VERSION=$(grep -E '^version = "' build.gradle.kts | head -1 | sed -E 's/^version = "([^"]+)".*/\1/')
+          if [ -z "$VERSION" ]; then
+            echo "Could not parse version from build.gradle.kts" >&2
+            exit 1
+          fi
+          TAG="v${VERSION}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists — aborting to avoid republishing." >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Releasing $TAG"
+
+      - name: Find previous release tag
+        id: prev
+        run: |
+          PREV=$(git tag --list 'v*' --sort=-v:refname | head -1 || true)
+          echo "tag=$PREV" >> "$GITHUB_OUTPUT"
+          if [ -n "$PREV" ]; then
+            echo "Previous tag: $PREV"
+          else
+            echo "No previous tag — this will be the first release."
+          fi
+
+      - name: Build release notes
+        id: notes
+        env:
+          PREV_TAG: ${{ steps.prev.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ -n "$PREV_TAG" ]; then
+            RANGE="${PREV_TAG}..HEAD"
+            COMPARE_URL="https://github.com/${{ github.repository }}/compare/${PREV_TAG}...v${VERSION}"
+          else
+            RANGE=""
+            COMPARE_URL="https://github.com/${{ github.repository }}/commits/v${VERSION}"
+          fi
+
+          render_section() {
+            local heading="$1"; shift
+            local pattern="$1"; shift
+            local matches
+            if [ -n "$RANGE" ]; then
+              matches=$(git log --pretty=format:'- %s (%h)' "$RANGE" --grep="$pattern" --extended-regexp -- . ':(exclude).github/' || true)
+            else
+              matches=$(git log --pretty=format:'- %s (%h)' --grep="$pattern" --extended-regexp -- . ':(exclude).github/' || true)
+            fi
+            # Filter out the release bump commit from every section.
+            matches=$(echo "$matches" | grep -v '^- chore(release): bump version to' || true)
+            if [ -n "$matches" ]; then
+              echo "### $heading" >> /tmp/notes.md
+              echo "$matches" >> /tmp/notes.md
+              echo >> /tmp/notes.md
+            fi
+          }
+
+          echo "## What's Changed" > /tmp/notes.md
+          echo >> /tmp/notes.md
+
+          render_section "Breaking Changes" '^[a-zA-Z]+(\([^)]+\))?!:'
+          render_section "Features"         '^feat(\([^)]+\))?:'
+          render_section "Bug Fixes"        '^fix(\([^)]+\))?:'
+          render_section "Documentation"    '^docs(\([^)]+\))?:'
+
+          if [ -n "$RANGE" ]; then
+            OTHER=$(git log --pretty=format:'- %s (%h)' "$RANGE" --extended-regexp \
+              --invert-grep \
+              --grep='^[a-zA-Z]+(\([^)]+\))?!:' \
+              --grep='^feat(\([^)]+\))?:' \
+              --grep='^fix(\([^)]+\))?:' \
+              --grep='^docs(\([^)]+\))?:' \
+              --grep='^chore\(release\):' -- . ':(exclude).github/' || true)
+          else
+            OTHER=$(git log --pretty=format:'- %s (%h)' --extended-regexp \
+              --invert-grep \
+              --grep='^[a-zA-Z]+(\([^)]+\))?!:' \
+              --grep='^feat(\([^)]+\))?:' \
+              --grep='^fix(\([^)]+\))?:' \
+              --grep='^docs(\([^)]+\))?:' \
+              --grep='^chore\(release\):' -- . ':(exclude).github/' || true)
+          fi
+          if [ -n "$OTHER" ]; then
+            echo "### Other Changes" >> /tmp/notes.md
+            echo "$OTHER" >> /tmp/notes.md
+            echo >> /tmp/notes.md
+          fi
+
+          {
+            echo "## Install"
+            echo
+            echo "Download \`PhotoSelector-${VERSION}.dmg\` from the assets below. First launch requires the macOS Gatekeeper override documented in the README."
+            echo
+            echo "## Full Changelog"
+            echo
+            echo "$COMPARE_URL"
+          } >> /tmp/notes.md
+
+          cat /tmp/notes.md
+
+      - name: Build DMG
+        run: ./gradlew --no-daemon packageDmg
+
+      - name: Locate DMG artifact
+        id: artifact
+        run: |
+          DMG=$(find build/compose/binaries -name '*.dmg' | head -1)
+          if [ -z "$DMG" ] || [ ! -f "$DMG" ]; then
+            echo "No DMG produced by packageDmg" >&2
+            exit 1
+          fi
+          echo "path=$DMG" >> "$GITHUB_OUTPUT"
+          echo "Built: $DMG"
+
+      - name: Create tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          DMG: ${{ steps.artifact.outputs.path }}
+        run: |
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file /tmp/notes.md \
+            "$DMG"
