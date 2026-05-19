@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -62,11 +63,13 @@ fun BrowserScreen(
     viewModel: BrowserViewModel,
     onOpenFavourites: (currentIndex: Int) -> Unit,
     onChangeFolder: () -> Unit,
+    onBack: (() -> Unit)? = null,
 ) {
     DisposableEffect(viewModel) { onDispose { viewModel.onClear() } }
 
     val state by viewModel.state.collectAsState()
     val focusRequester = remember { FocusRequester() }
+    val zoom = rememberZoomState()
     var toastFavourite by remember { mutableStateOf<Boolean?>(null) }
     var toastVisible by remember { mutableStateOf(false) }
 
@@ -86,6 +89,7 @@ fun BrowserScreen(
 
     LaunchedEffect(state.currentPhoto?.id) {
         toastVisible = false
+        zoom.reset()
     }
 
     Box(
@@ -100,6 +104,9 @@ fun BrowserScreen(
                     Key.DirectionLeft -> { viewModel.previous(); true }
                     Key.DirectionRight -> { viewModel.next(); true }
                     Key.F, Key.Spacebar -> { viewModel.toggleFavourite(); true }
+                    Key.Equals, Key.Plus -> { zoom.zoomIn(); true }
+                    Key.Minus -> { zoom.zoomOut(); true }
+                    Key.Zero -> { zoom.reset(); true }
                     else -> false
                 }
             },
@@ -110,6 +117,7 @@ fun BrowserScreen(
             relativePath = state.currentPhoto?.relativePath.orEmpty(),
             favCount = state.favouriteCount,
             readOnly = state.readOnly,
+            onBack = onBack,
             onOpenFavourites = { onOpenFavourites(state.currentIndex) },
             onChangeFolder = onChangeFolder,
         )
@@ -136,6 +144,7 @@ fun BrowserScreen(
                     else -> ZoomableImage(
                         bitmap = bmp,
                         contentDescription = state.currentPhoto?.fileName,
+                        zoom = zoom,
                     )
                 }
 
@@ -234,6 +243,7 @@ private fun TopBar(
     relativePath: String,
     favCount: Int,
     readOnly: Boolean,
+    onBack: (() -> Unit)?,
     onOpenFavourites: () -> Unit,
     onChangeFolder: () -> Unit,
 ) {
@@ -246,6 +256,11 @@ private fun TopBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        if (onBack != null) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+            }
+        }
         Text(countLabel, color = Color.White, style = MaterialTheme.typography.titleMedium)
         Text(
             text = "—  $relativePath",

@@ -33,24 +33,31 @@ fun App(container: AppContainer) {
                     val vm = remember(s.root.path, s.initialIndex, s.scope) {
                         container.browserViewModel(s.root, s.initialIndex, s.scope)
                     }
+                    val openFavourites: (Int) -> Unit = { currentIndex ->
+                        val returnIndex = when (s.scope) {
+                            BrowseScope.AllPhotos -> currentIndex
+                            BrowseScope.FavouritesOnly -> {
+                                val id = vm.photoIdAtCurrent()
+                                container.photosFor(s.root)
+                                    .indexOfFirst { it.id == id }
+                                    .coerceAtLeast(0)
+                            }
+                        }
+                        container.goTo(Screen.Favourites(s.root, returnIndex = returnIndex))
+                    }
                     BrowserScreen(
                         viewModel = vm,
-                        onOpenFavourites = { currentIndex ->
-                            val returnIndex = when (s.scope) {
-                                BrowseScope.AllPhotos -> currentIndex
-                                BrowseScope.FavouritesOnly -> {
-                                    val id = vm.photoIdAtCurrent()
-                                    container.photosFor(s.root)
-                                        .indexOfFirst { it.id == id }
-                                        .coerceAtLeast(0)
-                                }
-                            }
-                            container.goTo(Screen.Favourites(s.root, returnIndex = returnIndex))
-                        },
+                        onOpenFavourites = openFavourites,
                         onChangeFolder = {
                             coroutineScope.launch {
                                 container.resetForNewRoot()
                                 container.goTo(Screen.RootPicker)
+                            }
+                        },
+                        onBack = when (s.scope) {
+                            BrowseScope.AllPhotos -> null
+                            BrowseScope.FavouritesOnly -> {
+                                { openFavourites(vm.state.value.currentIndex) }
                             }
                         },
                     )

@@ -36,6 +36,9 @@ class ZoomState {
         applyScale(scale * exp(-scrollDeltaY * ZOOM_SENSITIVITY))
     }
 
+    fun zoomIn() = applyScale(scale * KEY_STEP)
+    fun zoomOut() = applyScale(scale / KEY_STEP)
+
     fun panBy(drag: Offset) {
         if (scale <= 1f) return
         offset = clamp(offset + drag, scale)
@@ -65,7 +68,8 @@ class ZoomState {
     companion object {
         const val MIN_SCALE: Float = 1f
         const val MAX_SCALE: Float = 8f
-        private const val ZOOM_SENSITIVITY: Float = 0.12f
+        private const val ZOOM_SENSITIVITY: Float = 0.18f
+        private const val KEY_STEP: Float = 1.25f
     }
 }
 
