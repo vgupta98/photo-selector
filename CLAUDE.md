@@ -118,6 +118,17 @@ workflow's fail-fast "branch already exists" check is intentional.
 - **Commit flow.** When asked to commit: stage the relevant files by name
   (never `git add -A`), then invoke the `/commit staged` skill — do not
   run `git diff`/`status`/`log` first; the skill handles that.
+- **UI-touching changes must include or update a screenshot test.** Any
+  change that affects what the user sees on screen — new composables,
+  layout tweaks, theming, a decode/render path feeding an existing
+  composable — is not done until a `dumpScreenshot()`-backed test
+  exercises it and the resulting PNG has been eyeballed. Unit pixel
+  assertions on intermediate buffers don't count: they don't catch
+  `ContentScale`/`Modifier` interactions or bitmap-conversion bugs in
+  the Compose pipeline. The only carve-out is features that genuinely
+  need a live window (native file dialogs, DMG packaging) — say so
+  explicitly and fall back to `./gradlew run`. See
+  **Build & Run → Headless screenshot tests** for the mechanics.
 - **No `Co-Authored-By: Claude`** lines in commit messages.
 - **No emojis** in code, commits, or documentation unless explicitly
   requested.
