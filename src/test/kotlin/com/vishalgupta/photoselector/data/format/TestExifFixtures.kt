@@ -1,5 +1,14 @@
 package com.vishalgupta.photoselector.data.format
 
+import org.jetbrains.skia.ColorAlphaType
+import org.jetbrains.skia.ColorInfo
+import org.jetbrains.skia.ColorSpace
+import org.jetbrains.skia.ColorType
+import org.jetbrains.skia.EncodedImageFormat
+import org.jetbrains.skia.ImageInfo
+import org.jetbrains.skia.Paint
+import org.jetbrains.skia.Rect
+import org.jetbrains.skia.Surface
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -76,6 +85,56 @@ internal class ExifFixtureBuilder(private val littleEndian: Boolean = true) {
             buf.put(thumb)
         }
         return buf.array()
+    }
+}
+
+/** Encodes a solid-color JPEG with the given ARGB color. */
+internal fun encodeSolidJpeg(width: Int, height: Int, argb: Int, quality: Int = 90): ByteArray =
+    encodeJpeg(width, height, quality) { canvas, paint ->
+        paint.color = argb
+        canvas.drawRect(Rect.makeXYWH(0f, 0f, width.toFloat(), height.toFloat()), paint)
+    }
+
+/**
+ * Encodes a JPEG split into two horizontal bands: the top half is [topArgb],
+ * the bottom half is [bottomArgb]. Useful for verifying orientation visually.
+ */
+internal fun encodeHorizontalBandJpeg(
+    width: Int,
+    height: Int,
+    topArgb: Int,
+    bottomArgb: Int,
+    quality: Int = 90,
+): ByteArray = encodeJpeg(width, height, quality) { canvas, paint ->
+    paint.color = topArgb
+    canvas.drawRect(Rect.makeXYWH(0f, 0f, width.toFloat(), height / 2f), paint)
+    paint.color = bottomArgb
+    canvas.drawRect(Rect.makeXYWH(0f, height / 2f, width.toFloat(), height / 2f), paint)
+}
+
+private inline fun encodeJpeg(
+    width: Int,
+    height: Int,
+    quality: Int,
+    drawWith: (org.jetbrains.skia.Canvas, Paint) -> Unit,
+): ByteArray {
+    val info = ImageInfo(
+        colorInfo = ColorInfo(ColorType.BGRA_8888, ColorAlphaType.OPAQUE, ColorSpace.sRGB),
+        width = width,
+        height = height,
+    )
+    val surface = Surface.makeRaster(info)
+    try {
+        val paint = Paint()
+        drawWith(surface.canvas, paint)
+        val image = surface.makeImageSnapshot()
+        try {
+            return image.encodeToData(EncodedImageFormat.JPEG, quality)!!.bytes
+        } finally {
+            image.close()
+        }
+    } finally {
+        surface.close()
     }
 }
 

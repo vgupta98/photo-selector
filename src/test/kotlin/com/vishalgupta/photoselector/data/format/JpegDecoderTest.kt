@@ -2,16 +2,7 @@ package com.vishalgupta.photoselector.data.format
 
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.skia.Color
-import org.jetbrains.skia.ColorAlphaType
-import org.jetbrains.skia.ColorInfo
-import org.jetbrains.skia.ColorSpace
-import org.jetbrains.skia.ColorType
-import org.jetbrains.skia.EncodedImageFormat
-import org.jetbrains.skia.ImageInfo
 import org.jetbrains.skia.Matrix33
-import org.jetbrains.skia.Paint
-import org.jetbrains.skia.Rect
-import org.jetbrains.skia.Surface
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.deleteExisting
@@ -146,27 +137,6 @@ class JpegDecoderTest {
         p.writeBytes(bytes)
         tempFiles.add(p)
         return p
-    }
-
-    private fun encodeSolidJpeg(width: Int, height: Int, argb: Int): ByteArray {
-        val info = ImageInfo(
-            colorInfo = ColorInfo(ColorType.BGRA_8888, ColorAlphaType.OPAQUE, ColorSpace.sRGB),
-            width = width,
-            height = height,
-        )
-        val surface = Surface.makeRaster(info)
-        try {
-            val paint = Paint().also { it.color = argb }
-            surface.canvas.drawRect(Rect.makeXYWH(0f, 0f, width.toFloat(), height.toFloat()), paint)
-            val image = surface.makeImageSnapshot()
-            try {
-                return image.encodeToData(EncodedImageFormat.JPEG, 90)!!.bytes
-            } finally {
-                image.close()
-            }
-        } finally {
-            surface.close()
-        }
     }
 
     /** Tolerant per-channel comparison: JPEG quantization shifts solid colors by a few values. */
