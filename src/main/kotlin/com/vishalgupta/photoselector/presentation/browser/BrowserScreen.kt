@@ -47,6 +47,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -72,6 +73,7 @@ fun BrowserScreen(
     val zoom = rememberZoomState()
     var toastFavourite by remember { mutableStateOf<Boolean?>(null) }
     var toastVisible by remember { mutableStateOf(false) }
+    var allDecidedVisible by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -84,6 +86,18 @@ fun BrowserScreen(
             toastVisible = true
             delay(1200)
             toastVisible = false
+        }
+    }
+
+    LaunchedEffect(viewModel) {
+        viewModel.navigationEvents.collectLatest { event ->
+            when (event) {
+                NavigationEvent.AllDecided -> {
+                    allDecidedVisible = true
+                    delay(1500)
+                    allDecidedVisible = false
+                }
+            }
         }
     }
 
@@ -101,8 +115,11 @@ fun BrowserScreen(
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.key) {
-                    Key.DirectionLeft -> { viewModel.previous(); true }
-                    Key.DirectionRight -> { viewModel.next(); true }
+                    Key.DirectionLeft ->
+                        { if (event.isShiftPressed) viewModel.previousStep() else viewModel.previous(); true }
+                    Key.DirectionRight ->
+                        { if (event.isShiftPressed) viewModel.nextStep() else viewModel.next(); true }
+                    Key.U -> { viewModel.toggleNavigationMode(); true }
                     Key.F, Key.Spacebar -> { viewModel.toggleFavourite(); true }
                     Key.Equals, Key.Plus -> { zoom.zoomIn(); true }
                     Key.Minus -> { zoom.zoomOut(); true }
@@ -117,6 +134,8 @@ fun BrowserScreen(
             relativePath = state.currentPhoto?.relativePath.orEmpty(),
             favCount = state.favouriteCount,
             readOnly = state.readOnly,
+            navigationMode = state.navigationMode,
+            onToggleNavigationMode = viewModel::toggleNavigationMode,
             onBack = onBack,
             onOpenFavourites = { onOpenFavourites(state.currentIndex) },
             onChangeFolder = onChangeFolder,
@@ -208,6 +227,34 @@ fun BrowserScreen(
                 label = if (isFav) "Favourited" else "Unfavourited",
             )
         }
+
+        AnimatedVisibility(
+            visible = allDecidedVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 144.dp),
+        ) {
+            AllDecidedToast()
+        }
+    }
+}
+
+@Composable
+private fun AllDecidedToast() {
+    Surface(
+        color = Color(0xFF2A2A2A),
+        contentColor = Color(0xFFE6E6E6),
+        shape = RoundedCornerShape(percent = 50),
+        tonalElevation = 6.dp,
+        shadowElevation = 6.dp,
+    ) {
+        Text(
+            text = "All photos decided",
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+        )
     }
 }
 
@@ -243,6 +290,8 @@ private fun TopBar(
     relativePath: String,
     favCount: Int,
     readOnly: Boolean,
+    navigationMode: NavigationMode,
+    onToggleNavigationMode: () -> Unit,
     onBack: (() -> Unit)?,
     onOpenFavourites: () -> Unit,
     onChangeFolder: () -> Unit,
@@ -276,6 +325,10 @@ private fun TopBar(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
+        NavigationModeChip(
+            mode = navigationMode,
+            onClick = onToggleNavigationMode,
+        )
         TextButton(onClick = onOpenFavourites) {
             Icon(Icons.Outlined.Star, contentDescription = null)
             Text("  Favourites ($favCount)")
@@ -284,5 +337,25 @@ private fun TopBar(
             Icon(Icons.Default.Folder, contentDescription = null)
             Text("  Change folder")
         }
+    }
+}
+
+@Composable
+private fun NavigationModeChip(mode: NavigationMode, onClick: () -> Unit) {
+    val isSkip = mode == NavigationMode.SKIP_DECIDED
+    val label = if (isSkip) "Next undecided" else "Step"
+    val bg = if (isSkip) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.12f)
+    val fg = if (isSkip) MaterialTheme.colorScheme.onPrimary else Color.White
+    Surface(
+        color = bg,
+        contentColor = fg,
+        shape = RoundedCornerShape(percent = 50),
+        onClick = onClick,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+        )
     }
 }
