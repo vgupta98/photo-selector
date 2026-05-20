@@ -14,3 +14,6 @@ out/
 
 # Local env
 local.properties
+
+# Personal feature briefs / proposals (not for the repo)
+proposals/
