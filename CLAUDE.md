@@ -46,6 +46,17 @@ JDK 17 (Zulu or JBR — either works). Gradle wrapper checked in.
 `run` is the fastest signal for UI work. `compileKotlin` is enough when you
 just want to verify a refactor builds.
 
+### Headless screenshot tests
+
+`src/test/kotlin/.../screenshot/` runs Compose Desktop UIs headlessly via
+`createComposeRule()` and dumps PNGs under `build/screenshots/<name>.png`
+(gitignored). Use `ComposeContentTestRule.dumpScreenshot("foo")` from
+`ScreenshotSupport.kt`. The PNGs are inspectable — open them, diff them
+against a golden, or have an LLM session read them back. This is the
+preferred way to verify UI changes that don't require the real app window
+(theming, layout, simple interactions). For things that need a live window
+(native file picker, DMG packaging), fall back to `./gradlew run`.
+
 ## Release process
 
 Two workflows in `.github/workflows/`:
