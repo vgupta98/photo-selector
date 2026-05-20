@@ -1,0 +1,133 @@
+# Photo Selector — Project Guide for Claude
+
+A Kotlin Compose Desktop app (macOS-targeted) for browsing, favouriting and
+exporting photos from a local folder. This file captures the non-obvious
+context. Read the source for everything else.
+
+## Architecture
+
+Clean architecture, single Gradle module, package
+`com.vishalgupta.photoselector`:
+
+- `domain/` — entities (`Photo`, `RootFolder`, `PhotoId`), repository
+  interfaces, use cases. No framework dependencies.
+- `data/` — repository implementations: `filesystem/`, `favourites/`,
+  `image/` (decoding), `format/`, `export/`.
+- `presentation/` — Compose UI + view models, organised by screen
+  (`rootpicker/`, `browser/`, `favourites/`), plus `navigation/`,
+  `common/`, `theme/`.
+- `di/AppContainer.kt` — manual DI container. **No DI framework.** Add new
+  wiring here.
+- Navigation is a sealed `Screen` interface (`RootPicker | Browser |
+  Favourites`). The browser uses a `BrowseScope` sealed interface
+  (`AllPhotos | FavouritesOnly`) so the same screen can page through the
+  full folder or just the favourites subset.
+- State plumbing: `StateFlow` for screen state, `SharedFlow` / `Channel`
+  for one-shot events (toasts etc).
+
+## Branching
+
+- `develop` is the working branch. Day-to-day commits land here.
+- `main` is the release branch and the GitHub default branch.
+- Never commit directly to `main`. It only receives merges from
+  `release/vX.Y.Z` branches opened by the **Draft Release** workflow.
+
+## Build & Run
+
+JDK 17 (Zulu or JBR — either works). Gradle wrapper checked in.
+
+| Task | Command |
+| --- | --- |
+| Launch the app | `./gradlew run` |
+| Type-check only | `./gradlew compileKotlin` |
+| Run unit tests | `./gradlew test` |
+| Build a macOS DMG | `./gradlew packageDmg` (output under `build/compose/binaries/`) |
+
+`run` is the fastest signal for UI work. `compileKotlin` is enough when you
+just want to verify a refactor builds.
+
+## Release process
+
+Two workflows in `.github/workflows/`:
+
+1. **`draft-release.yml`** — manual (`workflow_dispatch`).
+   - Reads `version = "X.Y.Z"` from `build.gradle.kts` (single source of
+     truth — don't put the version anywhere else).
+   - Walks `main..develop` Conventional Commit subjects and derives the
+     bump:
+     - `<type>(scope)?!:` or `BREAKING CHANGE:` in body → **major**
+     - `feat(...):` → **minor**
+     - everything else → **patch**
+   - `bump_override` input (`auto|patch|minor|major`) forces a specific
+     bump.
+   - Creates `release/vX.Y.Z` off develop, commits
+     `chore(release): bump version to X.Y.Z`, opens a PR titled
+     `release: vX.Y.Z` against `main` with a grouped changelog.
+2. **`release.yml`** — fires on `pull_request: closed` against `main` when
+   the head branch starts with `release/`.
+   - Runs on `macos-latest` (required for `packageDmg`).
+   - Tags `vX.Y.Z`, builds the DMG, publishes a GitHub Release with the
+     DMG attached.
+
+### Required repo setting
+
+Settings → Actions → General → Workflow permissions → **Allow GitHub
+Actions to create and approve pull requests** must be ON. Without it,
+`draft-release.yml` fails at the `gh pr create` step.
+
+### After every release: back-merge into develop
+
+The release workflow only updates `main`. `develop` keeps its old version
+string until you sync it back, and the next Draft Release will refuse to
+re-use the same version. Run after each release:
+
+```bash
+git checkout develop
+git pull --no-ff origin main
+git push
+```
+
+### Local dry-run
+
+`scripts/dry-run-release.sh [auto|patch|minor|major]` prints exactly what
+Draft Release would do (version, branch name, PR body) without touching
+git state. Use this to sanity-check before triggering the real workflow.
+
+### Recovering a failed release run
+
+If `draft-release.yml` fails partway, the `release/vX.Y.Z` branch may
+already be on origin. Don't finish the job manually — delete the branch
+(`git push origin --delete release/vX.Y.Z`) and re-run the workflow. The
+workflow's fail-fast "branch already exists" check is intentional.
+
+## Conventions
+
+- **Conventional Commits everywhere.** Release versioning depends on
+  subjects parsing correctly (`feat:`, `fix:`, `feat!:`, etc).
+- **Commit flow.** When asked to commit: stage the relevant files by name
+  (never `git add -A`), then invoke the `/commit staged` skill — do not
+  run `git diff`/`status`/`log` first; the skill handles that.
+- **No `Co-Authored-By: Claude`** lines in commit messages.
+- **No emojis** in code, commits, or documentation unless explicitly
+  requested.
+
+## Known gotchas
+
+- **macOS trackpad pinch zoom** does not reach Compose Desktop with stock
+  JDK builds. We support two-finger scroll + `+` / `-` / `0` keys +
+  double-click reset instead. Reflective bridges into Apple's gesture
+  classes were tried and abandoned — don't reintroduce them.
+- **`packageDmg` only runs on macOS.** CI uses `macos-latest`; locally you
+  need to be on a Mac.
+- **There is a pre-existing `v1.0.0` tag** on the remote from before the
+  release pipeline existed. It is treated as the "previous release" for
+  notes generation; harmless.
+
+## Files worth knowing
+
+- `build.gradle.kts` — version, Compose Desktop config, DMG packaging.
+- `.github/workflows/draft-release.yml` — release PR workflow.
+- `.github/workflows/release.yml` — tag + DMG + GitHub Release workflow.
+- `scripts/dry-run-release.sh` — local dry-run of the release logic.
+- `src/main/kotlin/com/vishalgupta/photoselector/di/AppContainer.kt` —
+  central wiring; start here when adding a new screen or repository.
