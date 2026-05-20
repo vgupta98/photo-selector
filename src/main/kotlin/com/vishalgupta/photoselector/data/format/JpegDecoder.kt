@@ -8,8 +8,10 @@ import java.nio.file.Path
 class JpegDecoder : PhotoDecoder {
     override val format: PhotoFormat = JpegFormat
 
-    override suspend fun decode(path: Path, targetMaxDimensionPx: Int?): DecodedImage =
-        SkiaImageDecoding.decode(path, targetMaxDimensionPx)
+    override suspend fun decode(path: Path, targetMaxDimensionPx: Int?): DecodedImage {
+        val orientation = ExifReader.readOrientation(path)
+        return SkiaImageDecoding.decode(path, targetMaxDimensionPx, orientation)
+    }
 
     companion object {
         object JpegFormat : PhotoFormat {
