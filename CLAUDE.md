@@ -129,6 +129,29 @@ workflow's fail-fast "branch already exists" check is intentional.
   need a live window (native file dialogs, DMG packaging) — say so
   explicitly and fall back to `./gradlew run`. See
   **Build & Run → Headless screenshot tests** for the mechanics.
+- **Structural changes mean re-reading the docs.** Adding or removing a
+  top-level package, changing the DI wiring shape, renaming a public
+  API, splitting a screen, changing how navigation/state is plumbed,
+  modifying the build/release flow — any of these obliges you to
+  re-read `CLAUDE.md` and `README.md` end-to-end and propose updates
+  for anything they now misrepresent. "Propose" means show the diff in
+  chat and wait for go-ahead before staging. Stale docs are worse than
+  no docs because they actively mislead the next session.
+- **Capturing a learning in `CLAUDE.md` has a high bar.** If the session
+  surfaced something durable, team-relevant, and not derivable from the
+  current code (a sharp edge, a workflow that has to happen in a
+  specific order, a class of bug that keeps recurring), propose a
+  `CLAUDE.md` edit with a one-line justification of *why* it's durable
+  rather than session-specific. Per-user preferences and per-session
+  context belong in the auto-memory system, not here. When in doubt,
+  don't write the bullet — `CLAUDE.md` only stays useful while it
+  stays short.
+- **`README.md` is user-facing.** Only propose edits to it when the
+  change touches something the README already documents: build
+  commands, install steps, the architecture overview, supported
+  platforms, or the release flow visible from the outside. Don't add
+  internal LLM-discipline rules or in-progress design notes — those
+  live in `CLAUDE.md` or stay out of the repo entirely.
 - **No `Co-Authored-By: Claude`** lines in commit messages.
 - **No emojis** in code, commits, or documentation unless explicitly
   requested.
