@@ -176,3 +176,11 @@ workflow's fail-fast "branch already exists" check is intentional.
 - `scripts/dry-run-release.sh` — local dry-run of the release logic.
 - `src/main/kotlin/com/vishalgupta/photoselector/di/AppContainer.kt` —
   central wiring; start here when adding a new screen or repository.
+
+## Agent skills
+
+Compose and Kotlin agent skills are vendored under `.claude/skills/`
+from [chrisbanes/skills](https://github.com/chrisbanes/skills) (Apache
+2.0). They auto-trigger from their descriptions — don't invoke them
+manually. See `.claude/skills/README.md` for the list and for how to
+re-vendor from upstream.
