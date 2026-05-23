@@ -59,7 +59,7 @@ preferred way to verify UI changes that don't require the real app window
 
 ## Release process
 
-Two workflows in `.github/workflows/`:
+Three workflows in `.github/workflows/`:
 
 1. **`draft-release.yml`** — manual (`workflow_dispatch`).
    - Reads `version = "X.Y.Z"` from `build.gradle.kts` (single source of
@@ -74,7 +74,17 @@ Two workflows in `.github/workflows/`:
    - Creates `release/vX.Y.Z` off develop, commits
      `chore(release): bump version to X.Y.Z`, opens a PR titled
      `release: vX.Y.Z` against `main` with a grouped changelog.
-2. **`release.yml`** — fires on `pull_request: closed` against `main` when
+2. **`release-perf.yml`** — fires on `pull_request: opened/synchronize`
+   against `main` when the head branch starts with `release/`.
+   - Runs JMH benchmarks on both the release branch and `main`, diffs
+     the JSON outputs via `tools/perf/diff.sh`, and posts a sticky
+     comment on the release PR.
+   - Runs on `ubuntu-latest` (cheap shared runner; absolute scores are
+     not comparable to local-Mac JMH runs but the cross-branch delta
+     is). Treat deltas under ~10% as noise.
+   - First release after the harness lands has no baseline on `main`;
+     the workflow detects this and posts release-branch numbers only.
+3. **`release.yml`** — fires on `pull_request: closed` against `main` when
    the head branch starts with `release/`.
    - Runs on `macos-latest` (required for `packageDmg`).
    - Tags `vX.Y.Z`, builds the DMG, publishes a GitHub Release with the
