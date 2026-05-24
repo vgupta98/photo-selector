@@ -9,8 +9,7 @@ import com.vishalgupta.photoselector.domain.model.PhotoId
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -31,7 +30,6 @@ class SkikoImageLoader(
 ) : ImageLoader {
 
     private val cache = ImageCache(maxCacheBytes)
-    private val scope = CoroutineScope(SupervisorJob() + decodeDispatcher)
     private val inflight = HashMap<CacheKey, Job>()
     private val inflightLock = Mutex()
 
@@ -51,11 +49,15 @@ class SkikoImageLoader(
         }
     }
 
-    override fun prefetch(photos: List<Photo>, viewportLongEdgePx: Int) {
+    override fun prefetch(
+        photos: List<Photo>,
+        viewportLongEdgePx: Int,
+        scope: CoroutineScope,
+    ) {
         for (photo in photos) {
             val key = CacheKey(photo.id, viewportLongEdgePx)
             if (cache.get(key) != null) continue
-            scope.launch {
+            scope.launch(decodeDispatcher) {
                 inflightLock.withLock {
                     if (inflight[key]?.isActive == true) return@launch
                     inflight[key] = coroutineContext[Job]!!
@@ -63,7 +65,11 @@ class SkikoImageLoader(
                 try {
                     load(photo, viewportLongEdgePx)
                 } finally {
-                    inflightLock.withLock { inflight.remove(key) }
+                    // Cleanup must complete even when the caller's scope is being
+                    // torn down — otherwise the inflight map leaks the key.
+                    withContext(NonCancellable) {
+                        inflightLock.withLock { inflight.remove(key) }
+                    }
                 }
             }
         }

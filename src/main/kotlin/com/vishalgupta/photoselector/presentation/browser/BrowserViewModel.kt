@@ -148,7 +148,7 @@ class BrowserViewModel(
             photos.getOrNull(idx + 2),
             photos.getOrNull(idx + 3),
         )
-        imageLoader.prefetch(targets, viewportLongEdgePx)
+        imageLoader.prefetch(targets, viewportLongEdgePx, scope)
     }
 
     fun loadIfNeeded() {
