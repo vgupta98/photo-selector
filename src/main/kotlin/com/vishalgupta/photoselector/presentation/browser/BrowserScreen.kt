@@ -1,6 +1,9 @@
 package com.vishalgupta.photoselector.presentation.browser
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,9 +30,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -57,7 +57,8 @@ import com.vishalgupta.photoselector.presentation.common.HoverOverlay
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 
-@OptIn(ExperimentalComposeUiApi::class)
+data class FavouriteToastState(val isFavourite: Boolean)
+
 @Composable
 fun BrowserScreen(
     viewModel: BrowserViewModel,
@@ -66,34 +67,69 @@ fun BrowserScreen(
     onBack: (() -> Unit)? = null,
 ) {
     DisposableEffect(viewModel) { onDispose { viewModel.onClear() } }
-
     val state by viewModel.state.collectAsState()
-    val focusRequester = remember { FocusRequester() }
-    val zoom = rememberZoomState()
-    var toastFavourite by remember { mutableStateOf<Boolean?>(null) }
-    var toastVisible by remember { mutableStateOf(false) }
+    var toast by remember { mutableStateOf<FavouriteToastState?>(null) }
 
     LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
         viewModel.loadIfNeeded()
     }
 
     LaunchedEffect(viewModel) {
         viewModel.toggleEvents.collectLatest { nowFavourite ->
-            toastFavourite = nowFavourite
-            toastVisible = true
+            toast = FavouriteToastState(nowFavourite)
             delay(1200)
-            toastVisible = false
+            toast = null
         }
     }
 
     LaunchedEffect(state.currentPhoto?.id) {
-        toastVisible = false
+        toast = null
+    }
+
+    BrowserScreen(
+        state = state,
+        toast = toast,
+        onPrevious = viewModel::previous,
+        onNext = viewModel::next,
+        onToggleFavourite = viewModel::toggleFavourite,
+        onViewportSizeChanged = viewModel::setViewportLongEdgePx,
+        onOpenFavourites = onOpenFavourites,
+        onChangeFolder = onChangeFolder,
+        onBack = onBack,
+    )
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+fun BrowserScreen(
+    state: BrowserUiState,
+    toast: FavouriteToastState?,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onToggleFavourite: () -> Unit,
+    onViewportSizeChanged: (Int) -> Unit,
+    onOpenFavourites: (Int) -> Unit,
+    onChangeFolder: () -> Unit,
+    onBack: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    val focusRequester = remember { FocusRequester() }
+    val zoom = rememberZoomState()
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
+
+    LaunchedEffect(state.currentPhoto?.id) {
         zoom.reset()
     }
 
+    // Hold last non-null toast so AnimatedVisibility content renders during exit fade.
+    var displayedToast by remember { mutableStateOf<FavouriteToastState?>(null) }
+    if (toast != null) displayedToast = toast
+
     Box(
-        Modifier
+        modifier
             .fillMaxSize()
             .background(Color.Black)
             .focusRequester(focusRequester)
@@ -101,9 +137,9 @@ fun BrowserScreen(
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.key) {
-                    Key.DirectionLeft -> { viewModel.previous(); true }
-                    Key.DirectionRight -> { viewModel.next(); true }
-                    Key.F, Key.Spacebar -> { viewModel.toggleFavourite(); true }
+                    Key.DirectionLeft -> { onPrevious(); true }
+                    Key.DirectionRight -> { onNext(); true }
+                    Key.F, Key.Spacebar -> { onToggleFavourite(); true }
                     Key.Equals, Key.Plus -> { zoom.zoomIn(); true }
                     Key.Minus -> { zoom.zoomOut(); true }
                     Key.Zero -> { zoom.reset(); true }
@@ -113,7 +149,7 @@ fun BrowserScreen(
     ) {
         TopBar(
             countLabel = if (state.photos.isEmpty()) "0 / 0"
-                else "${state.currentIndex + 1} / ${state.photos.size}",
+            else "${state.currentIndex + 1} / ${state.photos.size}",
             relativePath = state.currentPhoto?.relativePath.orEmpty(),
             favCount = state.favouriteCount,
             readOnly = state.readOnly,
@@ -133,7 +169,7 @@ fun BrowserScreen(
                 .padding(top = 56.dp)
                 .onSizeChanged { size ->
                     val px = maxOf(size.width, size.height)
-                    if (px > 0) viewModel.setViewportLongEdgePx(px)
+                    if (px > 0) onViewportSizeChanged(px)
                 },
         ) { controlsVisible ->
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -156,7 +192,7 @@ fun BrowserScreen(
                         .padding(start = 12.dp)
                         .alpha(alpha),
                 ) {
-                    FilledTonalIconButton(onClick = viewModel::previous) {
+                    FilledTonalIconButton(onClick = onPrevious) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Previous")
                     }
                 }
@@ -167,7 +203,7 @@ fun BrowserScreen(
                         .padding(end = 12.dp)
                         .alpha(alpha),
                 ) {
-                    FilledTonalIconButton(onClick = viewModel::next) {
+                    FilledTonalIconButton(onClick = onNext) {
                         Icon(Icons.Default.ArrowForward, contentDescription = "Next")
                     }
                 }
@@ -179,7 +215,7 @@ fun BrowserScreen(
                         .alpha(alpha),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    FilledTonalIconButton(onClick = viewModel::toggleFavourite) {
+                    FilledTonalIconButton(onClick = onToggleFavourite) {
                         if (state.isCurrentFavourite) {
                             Icon(
                                 Icons.Filled.Star,
@@ -195,18 +231,20 @@ fun BrowserScreen(
         }
 
         AnimatedVisibility(
-            visible = toastVisible && toastFavourite != null,
+            visible = toast != null,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 96.dp),
         ) {
-            val isFav = toastFavourite == true
-            FavouriteToast(
-                isFavourite = isFav,
-                label = if (isFav) "Favourited" else "Unfavourited",
-            )
+            val dt = displayedToast
+            if (dt != null) {
+                FavouriteToast(
+                    isFavourite = dt.isFavourite,
+                    label = if (dt.isFavourite) "Favourited" else "Unfavourited",
+                )
+            }
         }
     }
 }

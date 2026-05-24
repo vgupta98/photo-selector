@@ -14,7 +14,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
@@ -27,11 +26,29 @@ import kotlinx.coroutines.launch
 @Composable
 fun RootFolderPickerScreen(viewModel: RootFolderPickerViewModel) {
     DisposableEffect(viewModel) { onDispose { viewModel.onClear() } }
-
     val state by viewModel.state.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
-    Box(Modifier.fillMaxSize().padding(PaddingValues(32.dp)), contentAlignment = Alignment.Center) {
+    RootFolderPickerScreen(
+        state = state,
+        onPickFolder = {
+            coroutineScope.launch {
+                val picked = NativeFileDialogs.pickDirectory("Choose photo folder")
+                if (picked != null) viewModel.startScan(picked)
+            }
+        },
+        onCancelScan = viewModel::cancelScan,
+    )
+}
+
+@Composable
+fun RootFolderPickerScreen(
+    state: RootPickerUiState,
+    onPickFolder: () -> Unit,
+    onCancelScan: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier.fillMaxSize().padding(PaddingValues(32.dp)), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -45,31 +62,21 @@ fun RootFolderPickerScreen(viewModel: RootFolderPickerViewModel) {
 
             when (state.phase) {
                 RootPickerUiState.Phase.Idle, RootPickerUiState.Phase.Done -> {
-                    Button(onClick = {
-                        coroutineScope.launch {
-                            val picked = NativeFileDialogs.pickDirectory("Choose photo folder")
-                            if (picked != null) viewModel.startScan(picked)
-                        }
-                    }) {
+                    Button(onClick = onPickFolder) {
                         Text("Choose photo folder…")
                     }
                 }
                 RootPickerUiState.Phase.Scanning -> {
                     CircularProgressIndicator(Modifier.size(48.dp))
                     Text("Scanning…  ${state.found} photos found  (${state.scanned} files seen)")
-                    OutlinedButton(onClick = { viewModel.cancelScan() }) { Text("Cancel") }
+                    OutlinedButton(onClick = onCancelScan) { Text("Cancel") }
                 }
                 RootPickerUiState.Phase.Failed -> {
                     Text(
                         "Scan failed: ${state.errorMessage ?: "Unknown error"}",
                         color = MaterialTheme.colorScheme.error,
                     )
-                    Button(onClick = {
-                        coroutineScope.launch {
-                            val picked = NativeFileDialogs.pickDirectory("Choose photo folder")
-                            if (picked != null) viewModel.startScan(picked)
-                        }
-                    }) { Text("Try again") }
+                    Button(onClick = onPickFolder) { Text("Try again") }
                 }
             }
         }
