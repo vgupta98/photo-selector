@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.nio.file.Path
 
@@ -39,22 +40,28 @@ class RootFolderPickerViewModel(
         scanJob = scope.launch {
             scanRootFolder(root).collect { progress ->
                 when (progress) {
-                    is ScanProgress.InProgress -> _state.value = _state.value.copy(
-                        phase = RootPickerUiState.Phase.Scanning,
-                        scanned = progress.scanned,
-                        found = progress.foundPhotos,
-                    )
-                    is ScanProgress.Done -> {
-                        _state.value = _state.value.copy(
-                            phase = RootPickerUiState.Phase.Done,
-                            found = progress.photos.size,
+                    is ScanProgress.InProgress -> _state.update {
+                        it.copy(
+                            phase = RootPickerUiState.Phase.Scanning,
+                            scanned = progress.scanned,
+                            found = progress.foundPhotos,
                         )
+                    }
+                    is ScanProgress.Done -> {
+                        _state.update {
+                            it.copy(
+                                phase = RootPickerUiState.Phase.Done,
+                                found = progress.photos.size,
+                            )
+                        }
                         onScanComplete(root, progress.photos)
                     }
-                    is ScanProgress.Failed -> _state.value = _state.value.copy(
-                        phase = RootPickerUiState.Phase.Failed,
-                        errorMessage = progress.error.message ?: "Scan failed",
-                    )
+                    is ScanProgress.Failed -> _state.update {
+                        it.copy(
+                            phase = RootPickerUiState.Phase.Failed,
+                            errorMessage = progress.error.message ?: "Scan failed",
+                        )
+                    }
                 }
             }
         }
