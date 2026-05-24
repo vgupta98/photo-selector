@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class BrowserUiState(
@@ -79,12 +80,13 @@ class BrowserViewModel(
     init {
         combine(favouritesFlow, isReadOnly) { favs, readOnly -> favs to readOnly }
             .onEach { (favs, readOnly) ->
-                val current = _state.value.currentPhoto
-                _state.value = _state.value.copy(
-                    isCurrentFavourite = current != null && current.id in favs,
-                    favouriteCount = favs.size,
-                    readOnly = readOnly,
-                )
+                _state.update {
+                    it.copy(
+                        isCurrentFavourite = it.currentPhoto != null && it.currentPhoto.id in favs,
+                        favouriteCount = favs.size,
+                        readOnly = readOnly,
+                    )
+                }
             }
             .launchIn(scope)
     }
@@ -104,13 +106,15 @@ class BrowserViewModel(
         val bounded = ((index % photos.size) + photos.size) % photos.size
         if (bounded == _state.value.currentIndex && _state.value.currentBitmap != null) return
         val photo = photos[bounded]
-        _state.value = _state.value.copy(
-            currentIndex = bounded,
-            currentPhoto = photo,
-            currentBitmap = null,
-            isLoadingBitmap = true,
-            isCurrentFavourite = photo.id in favouritesFlow.value,
-        )
+        _state.update {
+            it.copy(
+                currentIndex = bounded,
+                currentPhoto = photo,
+                currentBitmap = null,
+                isLoadingBitmap = true,
+                isCurrentFavourite = photo.id in favouritesFlow.value,
+            )
+        }
         imageLoader.unpinAllExcept(photo.id)
         imageLoader.pin(photo.id)
         loadCurrent()
@@ -130,11 +134,12 @@ class BrowserViewModel(
         val photo = _state.value.currentPhoto ?: return
         loadJob = scope.launch {
             val bmp = imageLoader.load(photo, viewportLongEdgePx)
-            if (_state.value.currentPhoto?.id == photo.id) {
-                _state.value = _state.value.copy(
-                    currentBitmap = bmp,
-                    isLoadingBitmap = false,
-                )
+            _state.update {
+                if (it.currentPhoto?.id == photo.id) {
+                    it.copy(currentBitmap = bmp, isLoadingBitmap = false)
+                } else {
+                    it
+                }
             }
         }
     }
