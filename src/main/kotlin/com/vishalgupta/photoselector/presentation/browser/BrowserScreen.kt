@@ -35,13 +35,14 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -124,6 +125,11 @@ fun BrowserScreen(
         zoom.reset()
     }
 
+    var viewportPx by remember { mutableIntStateOf(0) }
+    LaunchedEffect(viewportPx) {
+        if (viewportPx > 0) onViewportSizeChanged(viewportPx)
+    }
+
     // Hold last non-null toast so AnimatedVisibility content renders during exit fade.
     var displayedToast by remember { mutableStateOf<FavouriteToastState?>(null) }
     if (toast != null) displayedToast = toast
@@ -170,7 +176,7 @@ fun BrowserScreen(
                 .padding(top = 56.dp)
                 .onSizeChanged { size ->
                     val px = maxOf(size.width, size.height)
-                    if (px > 0) onViewportSizeChanged(px)
+                    if (px > 0) viewportPx = px
                 },
         ) { controlsVisible ->
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -191,7 +197,7 @@ fun BrowserScreen(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .padding(start = 12.dp)
-                        .alpha(alpha),
+                        .graphicsLayer { this.alpha = alpha },
                 ) {
                     FilledTonalIconButton(onClick = onPrevious) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Previous")
@@ -202,7 +208,7 @@ fun BrowserScreen(
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .padding(end = 12.dp)
-                        .alpha(alpha),
+                        .graphicsLayer { this.alpha = alpha },
                 ) {
                     FilledTonalIconButton(onClick = onNext) {
                         Icon(Icons.Default.ArrowForward, contentDescription = "Next")
@@ -213,7 +219,7 @@ fun BrowserScreen(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 24.dp)
-                        .alpha(alpha),
+                        .graphicsLayer { this.alpha = alpha },
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     FilledTonalIconButton(onClick = onToggleFavourite) {
