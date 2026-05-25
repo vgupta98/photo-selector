@@ -1,6 +1,7 @@
 package com.vishalgupta.photoselector.screenshot
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
@@ -23,7 +24,7 @@ class ErrorPlaceholderScreenshotTest {
             AppTheme {
                 Surface {
                     Box(Modifier.size(width = 480.dp, height = 320.dp)) {
-                        ErrorPlaceholder(message = "Couldn't decode photo")
+                        ErrorPlaceholder(message = "Couldn't decode photo", modifier = Modifier.fillMaxSize())
                     }
                 }
             }

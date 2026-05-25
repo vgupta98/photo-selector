@@ -167,7 +167,10 @@ fun FavouritesScreen(
 
         Box(Modifier.fillMaxSize()) {
             if (state.favourites.isEmpty()) {
-                ErrorPlaceholder("No favourites yet. Press F (or the star button) in the browser to add some.")
+                ErrorPlaceholder(
+                    "No favourites yet. Press F (or the star button) in the browser to add some.",
+                    Modifier.fillMaxSize(),
+                )
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(160.dp),
@@ -197,12 +200,13 @@ private fun Thumbnail(
     photo: Photo,
     loader: ImageLoader,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val bitmap by produceState<ImageBitmap?>(null, photo.id) {
         value = loader.load(photo, viewportLongEdgePx = 320)
     }
     Box(
-        Modifier
+        modifier
             .aspectRatio(1f)
             .background(Color(0xFF1E1E1E))
             .clickable(onClick = onClick),

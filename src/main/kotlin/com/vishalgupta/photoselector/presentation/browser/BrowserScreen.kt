@@ -159,7 +159,7 @@ fun BrowserScreen(
         )
 
         if (state.photos.isEmpty()) {
-            ErrorPlaceholder("No JPEG / PNG photos found in this folder.")
+            ErrorPlaceholder("No JPEG / PNG photos found in this folder.", Modifier.fillMaxSize())
             return@Box
         }
 
@@ -250,10 +250,11 @@ fun BrowserScreen(
 }
 
 @Composable
-private fun FavouriteToast(isFavourite: Boolean, label: String) {
+private fun FavouriteToast(isFavourite: Boolean, label: String, modifier: Modifier = Modifier) {
     val bg = if (isFavourite) Color(0xFFE9A93C) else Color(0xFF2A2A2A)
     val fg = if (isFavourite) Color(0xFF1A1A1A) else Color(0xFFE6E6E6)
     Surface(
+        modifier = modifier,
         color = bg,
         contentColor = fg,
         shape = RoundedCornerShape(percent = 50),
@@ -284,9 +285,10 @@ private fun TopBar(
     onBack: (() -> Unit)?,
     onOpenFavourites: () -> Unit,
     onChangeFolder: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .height(56.dp)
             .background(Color.Black.copy(alpha = 0.55f))

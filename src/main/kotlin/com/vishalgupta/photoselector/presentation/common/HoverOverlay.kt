@@ -9,11 +9,13 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 
 /**
  * Wraps [content] and exposes `controlsVisible` that becomes true on mouse-move and
@@ -29,12 +31,12 @@ fun HoverOverlay(
     var visible by remember { mutableStateOf(false) }
     var lastMove by remember { mutableLongStateOf(0L) }
 
-    LaunchedEffect(lastMove) {
-        if (!visible) return@LaunchedEffect
-        delay(idleTimeoutMs)
-        if (System.currentTimeMillis() - lastMove >= idleTimeoutMs) {
-            visible = false
-        }
+    LaunchedEffect(Unit) {
+        snapshotFlow { lastMove }
+            .collectLatest {
+                delay(idleTimeoutMs)
+                visible = false
+            }
     }
 
     Box(
