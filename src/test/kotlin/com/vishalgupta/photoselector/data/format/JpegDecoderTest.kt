@@ -71,7 +71,7 @@ class JpegDecoderTest {
         // Thumb is 240; 240 <= 320 so scale is 1 → output is 240x240.
         assertEquals(240, decoded.width)
         assertEquals(240, decoded.height)
-        assertChannelCloseTo(red = 255, green = 0, blue = 0, pixel = decoded.argbPixels[0])
+        assertChannelCloseTo(red = 255, green = 0, blue = 0, decoded = decoded)
     }
 
     @Test fun `target above threshold bypasses fast path`() {
@@ -84,7 +84,7 @@ class JpegDecoderTest {
 
         assertEquals(800, decoded.width)
         assertEquals(800, decoded.height)
-        assertChannelCloseTo(red = 0, green = 0, blue = 255, pixel = decoded.argbPixels[0])
+        assertChannelCloseTo(red = 0, green = 0, blue = 255, decoded = decoded)
     }
 
     @Test fun `no embedded thumb falls back to full decode`() {
@@ -95,7 +95,7 @@ class JpegDecoderTest {
 
         // Slow path scales 600 → 320.
         assertEquals(320, decoded.width)
-        assertChannelCloseTo(red = 0, green = 255, blue = 0, pixel = decoded.argbPixels[0])
+        assertChannelCloseTo(red = 0, green = 255, blue = 0, decoded = decoded)
     }
 
     @Test fun `tiny thumbnail rejects fast path to avoid upscaling`() {
@@ -108,7 +108,7 @@ class JpegDecoderTest {
 
         // Should have gone through the full decode → output is 320 (outer scaled), blue.
         assertEquals(320, decoded.width)
-        assertChannelCloseTo(red = 0, green = 0, blue = 255, pixel = decoded.argbPixels[0])
+        assertChannelCloseTo(red = 0, green = 0, blue = 255, decoded = decoded)
     }
 
     @Test fun `embedded thumb with orientation 6 produces swapped dimensions`() {
@@ -127,7 +127,7 @@ class JpegDecoderTest {
         // Post-orientation dims: 120 x 200. Longest (200) ≤ 320, so scale is 1.
         assertEquals(120, decoded.width)
         assertEquals(200, decoded.height)
-        assertChannelCloseTo(red = 255, green = 0, blue = 0, pixel = decoded.argbPixels[0])
+        assertChannelCloseTo(red = 255, green = 0, blue = 0, decoded = decoded)
     }
 
     // --- helpers --------------------------------------------------------------------------
@@ -140,10 +140,18 @@ class JpegDecoderTest {
     }
 
     /** Tolerant per-channel comparison: JPEG quantization shifts solid colors by a few values. */
-    private fun assertChannelCloseTo(red: Int, green: Int, blue: Int, pixel: Int, tolerance: Int = 12) {
-        val r = (pixel ushr 16) and 0xFF
-        val g = (pixel ushr 8) and 0xFF
-        val b = pixel and 0xFF
+    private fun assertChannelCloseTo(
+        red: Int,
+        green: Int,
+        blue: Int,
+        decoded: com.vishalgupta.photoselector.domain.model.DecodedImage,
+        pixelIndex: Int = 0,
+        tolerance: Int = 12,
+    ) {
+        val base = pixelIndex * 4
+        val b = decoded.bgraBytes[base].toInt() and 0xFF
+        val g = decoded.bgraBytes[base + 1].toInt() and 0xFF
+        val r = decoded.bgraBytes[base + 2].toInt() and 0xFF
         assertTrue(abs(r - red) <= tolerance, "red: got $r, expected near $red")
         assertTrue(abs(g - green) <= tolerance, "green: got $g, expected near $green")
         assertTrue(abs(b - blue) <= tolerance, "blue: got $b, expected near $blue")

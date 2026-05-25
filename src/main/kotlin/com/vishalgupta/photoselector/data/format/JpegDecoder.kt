@@ -14,8 +14,6 @@ import org.jetbrains.skia.Matrix33
 import org.jetbrains.skia.Rect
 import org.jetbrains.skia.SamplingMode
 import org.jetbrains.skia.Surface
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.nio.file.Path
 
 class JpegDecoder : PhotoDecoder {
@@ -82,8 +80,7 @@ class JpegDecoder : PhotoDecoder {
                     bitmap.allocPixels(info)
                     surface.readPixels(bitmap, 0, 0)
                     val bytes = bitmap.readPixels(info, info.minRowBytes, 0, 0) ?: return null
-                    val pixels = bgraBytesToArgbInts(bytes, outW, outH)
-                    return DecodedImage(width = outW, height = outH, argbPixels = pixels)
+                    return DecodedImage(width = outW, height = outH, bgraBytes = bytes)
                 } finally {
                     bitmap.close()
                 }
@@ -95,19 +92,6 @@ class JpegDecoder : PhotoDecoder {
         } finally {
             source.close()
         }
-    }
-
-    private fun bgraBytesToArgbInts(bytes: ByteArray, width: Int, height: Int): IntArray {
-        val out = IntArray(width * height)
-        val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-        for (i in 0 until width * height) {
-            val b = buf.get().toInt() and 0xFF
-            val g = buf.get().toInt() and 0xFF
-            val r = buf.get().toInt() and 0xFF
-            val a = buf.get().toInt() and 0xFF
-            out[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
-        }
-        return out
     }
 
     companion object {

@@ -3,7 +3,7 @@ package com.vishalgupta.photoselector.domain.model
 class DecodedImage(
     val width: Int,
     val height: Int,
-    val argbPixels: IntArray,
+    val bgraBytes: ByteArray,
 ) {
-    val byteSize: Long get() = width.toLong() * height.toLong() * 4L
+    val byteSize: Long get() = bgraBytes.size.toLong()
 }

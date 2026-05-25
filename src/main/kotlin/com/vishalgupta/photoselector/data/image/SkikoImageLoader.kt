@@ -20,8 +20,6 @@ import org.jetbrains.skia.ColorInfo
 import org.jetbrains.skia.ColorSpace
 import org.jetbrains.skia.ColorType
 import org.jetbrains.skia.ImageInfo
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 
 class SkikoImageLoader(
     private val registry: PhotoFormatRegistry,
@@ -97,27 +95,10 @@ class SkikoImageLoader(
             width = width,
             height = height,
         )
-        val bytes = argbIntsToBgraBytes(argbPixels)
         val bitmap = Bitmap()
         bitmap.allocPixels(info)
-        bitmap.installPixels(info, bytes, info.minRowBytes)
+        bitmap.installPixels(info, bgraBytes, info.minRowBytes)
         return bitmap.asComposeImageBitmap()
-    }
-
-    private fun argbIntsToBgraBytes(pixels: IntArray): ByteArray {
-        val out = ByteArray(pixels.size * 4)
-        val buf = ByteBuffer.wrap(out).order(ByteOrder.LITTLE_ENDIAN)
-        for (px in pixels) {
-            val a = (px ushr 24) and 0xFF
-            val r = (px ushr 16) and 0xFF
-            val g = (px ushr 8) and 0xFF
-            val b = px and 0xFF
-            buf.put(b.toByte())
-            buf.put(g.toByte())
-            buf.put(r.toByte())
-            buf.put(a.toByte())
-        }
-        return out
     }
 
     companion object {
