@@ -156,6 +156,7 @@ fun BrowserScreen(
             onBack = onBack,
             onOpenFavourites = { onOpenFavourites(state.currentIndex) },
             onChangeFolder = onChangeFolder,
+            modifier = Modifier.fillMaxWidth(),
         )
 
         if (state.photos.isEmpty()) {
@@ -289,7 +290,6 @@ private fun TopBar(
 ) {
     Row(
         modifier
-            .fillMaxWidth()
             .height(56.dp)
             .background(Color.Black.copy(alpha = 0.55f))
             .padding(horizontal = 12.dp),

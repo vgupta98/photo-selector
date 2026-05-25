@@ -31,7 +31,7 @@ fun HoverOverlay(
     var visible by remember { mutableStateOf(false) }
     var lastMove by remember { mutableLongStateOf(0L) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(idleTimeoutMs) {
         snapshotFlow { lastMove }
             .collectLatest {
                 delay(idleTimeoutMs)
