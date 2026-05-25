@@ -65,6 +65,7 @@ data class FavouriteToastState(val isFavourite: Boolean)
 @Composable
 fun BrowserScreen(
     viewModel: BrowserViewModel,
+    systemActions: SystemActions,
     onOpenFavourites: () -> Unit,
     onChangeFolder: () -> Unit,
     onBack: (() -> Unit)? = null,
@@ -92,6 +93,7 @@ fun BrowserScreen(
     BrowserScreen(
         state = state,
         toast = toast,
+        systemActions = systemActions,
         onPrevious = viewModel::previous,
         onNext = viewModel::next,
         onToggleFavourite = viewModel::toggleFavourite,
@@ -107,6 +109,7 @@ fun BrowserScreen(
 fun BrowserScreen(
     state: BrowserUiState,
     toast: FavouriteToastState?,
+    systemActions: SystemActions? = null,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onToggleFavourite: () -> Unit,
@@ -150,15 +153,15 @@ fun BrowserScreen(
                     Key.DirectionRight -> { onNext(); true }
                     Key.F -> if (meta) false else { onToggleFavourite(); true }
                     Key.Spacebar -> if (meta) false else {
-                        state.currentPhoto?.absolutePath?.let { SystemActions.quickLook(it) }
+                        state.currentPhoto?.absolutePath?.let { systemActions?.preview(it) }
                         true
                     }
                     Key.R -> if (meta) false else {
-                        state.currentPhoto?.absolutePath?.let { SystemActions.revealInFinder(it) }
+                        state.currentPhoto?.absolutePath?.let { systemActions?.revealInFileManager(it) }
                         true
                     }
                     Key.O -> if (meta) false else {
-                        state.currentPhoto?.absolutePath?.let { SystemActions.openWithDefault(it) }
+                        state.currentPhoto?.absolutePath?.let { systemActions?.openWithDefaultApp(it) }
                         true
                     }
                     Key.Equals, Key.Plus -> { zoom.zoomIn(); true }

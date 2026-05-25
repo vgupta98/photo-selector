@@ -44,6 +44,7 @@ fun App(container: AppContainer) {
                     }
                     BrowserScreen(
                         viewModel = vm,
+                        systemActions = container.systemActions,
                         onOpenFavourites = openFavourites,
                         onChangeFolder = {
                             coroutineScope.launch {

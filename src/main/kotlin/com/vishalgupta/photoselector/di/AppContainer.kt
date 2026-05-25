@@ -27,6 +27,8 @@ import com.vishalgupta.photoselector.domain.usecase.ToggleFavouriteUseCase
 import com.vishalgupta.photoselector.presentation.browser.BrowserViewModel
 import com.vishalgupta.photoselector.presentation.favourites.FavouritesViewModel
 import com.vishalgupta.photoselector.presentation.navigation.BrowseScope
+import com.vishalgupta.photoselector.presentation.common.MacSystemActions
+import com.vishalgupta.photoselector.presentation.common.SystemActions
 import com.vishalgupta.photoselector.presentation.navigation.Screen
 import com.vishalgupta.photoselector.presentation.rootpicker.RootFolderPickerViewModel
 import kotlinx.coroutines.Dispatchers
@@ -66,6 +68,8 @@ class AppContainer {
     private val toggleFavouriteUseCase = ToggleFavouriteUseCase(favouritesRepository)
     private val exportTxtUseCase = ExportFavouritesTxtUseCase(exporter)
     private val copyFavouritesUseCase = CopyFavouritesToFolderUseCase(exporter)
+
+    val systemActions: SystemActions = MacSystemActions()
 
     val currentScreen = MutableStateFlow<Screen>(Screen.RootPicker)
     val currentPhotoPath = MutableStateFlow<Path?>(null)
