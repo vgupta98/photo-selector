@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   release:
@@ -15,6 +16,8 @@ jobs:
       github.event.pull_request.merged == true &&
       startsWith(github.event.pull_request.head.ref, 'release/')
     runs-on: macos-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Check out main at merge commit
         uses: actions/checkout@v4
@@ -180,3 +183,38 @@ jobs:
           else
             echo "Branch $HEAD_REF already gone — nothing to delete."
           fi
+
+  back-merge:
+    name: Back-merge main into develop
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Open back-merge PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          git fetch origin develop
+          if git diff --quiet origin/develop..main -- .; then
+            echo "main and develop are identical — no back-merge needed."
+            exit 0
+          fi
+
+          # Don't create a duplicate if one already exists.
+          EXISTING=$(gh pr list --base develop --head main --state open --json number --jq '.[0].number' || true)
+          if [ -n "$EXISTING" ]; then
+            echo "Back-merge PR #${EXISTING} already open — skipping."
+            exit 0
+          fi
+
+          gh pr create \
+            --base develop \
+            --head main \
+            --title "chore: back-merge main after v${VERSION} release" \
+            --body "Automated back-merge of \`main\` into \`develop\` after the v${VERSION} release. Syncs the version bump in \`build.gradle.kts\` so the next Draft Release computes the correct version."
