@@ -9,5 +9,5 @@ sealed interface Screen {
         val initialIndex: Int = 0,
         val scope: BrowseScope = BrowseScope.AllPhotos,
     ) : Screen
-    data class Favourites(val root: RootFolder, val returnIndex: Int = 0) : Screen
+    data class Favourites(val root: RootFolder) : Screen
 }
