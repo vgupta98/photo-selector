@@ -10,6 +10,7 @@ import com.vishalgupta.photoselector.domain.usecase.ToggleFavouriteUseCase
 import com.vishalgupta.photoselector.presentation.StateHolder
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -53,7 +54,7 @@ class BrowserViewModel(
     private val toggleFavourite: ToggleFavouriteUseCase,
     private val imageLoader: ImageLoader,
     private val isReadOnly: StateFlow<Boolean>,
-    private val onPositionChanged: ((Int) -> Unit)? = null,
+    private val onPositionChanged: (suspend (Int) -> Unit)? = null,
 ) : StateHolder() {
 
     private val favouritesFlow: StateFlow<Set<PhotoId>> = observeFavourites(root)
@@ -76,6 +77,7 @@ class BrowserViewModel(
     val toggleEvents: Flow<Boolean> = _toggleEvents.receiveAsFlow()
 
     private var loadJob: Job? = null
+    private var positionSaveJob: Job? = null
     private var viewportLongEdgePx: Int = 1600
 
     init {
@@ -116,7 +118,13 @@ class BrowserViewModel(
                 isCurrentFavourite = photo.id in favouritesFlow.value,
             )
         }
-        onPositionChanged?.invoke(bounded)
+        onPositionChanged?.let { save ->
+            positionSaveJob?.cancel()
+            positionSaveJob = scope.launch {
+                delay(500)
+                save(bounded)
+            }
+        }
         imageLoader.unpinAllExcept(photo.id)
         imageLoader.pin(photo.id)
         loadCurrent()

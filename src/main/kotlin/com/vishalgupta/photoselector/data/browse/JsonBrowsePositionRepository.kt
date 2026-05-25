@@ -3,11 +3,8 @@ package com.vishalgupta.photoselector.data.browse
 import com.vishalgupta.photoselector.data.favourites.AtomicJsonWriter
 import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.BrowsePositionRepository
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.nio.file.Files
@@ -20,17 +17,17 @@ private data class BrowsePositionDto(
 
 class JsonBrowsePositionRepository(
     private val json: Json,
-    private val ioScope: CoroutineScope = CoroutineScope(Dispatchers.IO),
 ) : BrowsePositionRepository {
 
     private var cachedRoot: RootFolder? = null
     private var cachedIndex: Int = 0
-    private var flushJob: Job? = null
 
-    override fun save(root: RootFolder, index: Int) {
+    override suspend fun save(root: RootFolder, index: Int) {
         cachedRoot = root
         cachedIndex = index
-        scheduleFlush(root, index)
+        withContext(Dispatchers.IO) {
+            writeToDisk(root, index)
+        }
     }
 
     override fun load(root: RootFolder): Int {
@@ -39,14 +36,6 @@ class JsonBrowsePositionRepository(
         cachedRoot = root
         cachedIndex = index
         return index
-    }
-
-    private fun scheduleFlush(root: RootFolder, index: Int) {
-        flushJob?.cancel()
-        flushJob = ioScope.launch {
-            delay(500)
-            writeToDisk(root, index)
-        }
     }
 
     private fun readFromDisk(root: RootFolder): Int {
