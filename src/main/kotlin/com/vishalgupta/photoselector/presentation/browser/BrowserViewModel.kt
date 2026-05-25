@@ -53,6 +53,7 @@ class BrowserViewModel(
     private val toggleFavourite: ToggleFavouriteUseCase,
     private val imageLoader: ImageLoader,
     private val isReadOnly: StateFlow<Boolean>,
+    private val onPositionChanged: ((Int) -> Unit)? = null,
 ) : StateHolder() {
 
     private val favouritesFlow: StateFlow<Set<PhotoId>> = observeFavourites(root)
@@ -115,6 +116,7 @@ class BrowserViewModel(
                 isCurrentFavourite = photo.id in favouritesFlow.value,
             )
         }
+        onPositionChanged?.invoke(bounded)
         imageLoader.unpinAllExcept(photo.id)
         imageLoader.pin(photo.id)
         loadCurrent()

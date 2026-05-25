@@ -1,5 +1,6 @@
 package com.vishalgupta.photoselector.di
 
+import com.vishalgupta.photoselector.data.browse.JsonBrowsePositionRepository
 import com.vishalgupta.photoselector.data.export.CompositePhotoExporter
 import com.vishalgupta.photoselector.data.export.CopyPhotoExporter
 import com.vishalgupta.photoselector.data.export.TxtPhotoExporter
@@ -15,6 +16,7 @@ import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.FavouritesRepository
+import com.vishalgupta.photoselector.domain.repository.BrowsePositionRepository
 import com.vishalgupta.photoselector.domain.repository.PhotoExporter
 import com.vishalgupta.photoselector.domain.repository.PhotoRepository
 import com.vishalgupta.photoselector.domain.usecase.CopyFavouritesToFolderUseCase
@@ -55,6 +57,7 @@ class AppContainer {
 
     private val photoRepository: PhotoRepository = FileSystemPhotoRepository(formatRegistry)
     private val favouritesRepository: FavouritesRepository = JsonFavouritesRepository(json)
+    private val browsePositionRepository: BrowsePositionRepository = JsonBrowsePositionRepository(json)
     private val exporter: PhotoExporter = CompositePhotoExporter(TxtPhotoExporter(), CopyPhotoExporter())
 
     private val scanUseCase = ScanRootFolderUseCase(photoRepository)
@@ -70,6 +73,8 @@ class AppContainer {
 
     fun photosFor(root: RootFolder): List<Photo> =
         if (scannedRoot?.path == root.path) scannedPhotos else emptyList()
+
+    fun loadBrowsePosition(root: RootFolder): Int = browsePositionRepository.load(root)
 
     /** Returns the position of [id] within the current favourites slice (sorted by relativePath). */
     fun favouritesIndexOf(root: RootFolder, id: PhotoId): Int =
@@ -91,7 +96,8 @@ class AppContainer {
         onScanComplete = { root, photos ->
             imageLoader.evictAll()
             setScanResult(root, photos)
-            goTo(Screen.Browser(root))
+            val savedIndex = browsePositionRepository.load(root)
+            goTo(Screen.Browser(root, initialIndex = savedIndex))
         },
     )
 
@@ -107,6 +113,10 @@ class AppContainer {
         toggleFavourite = toggleFavouriteUseCase,
         imageLoader = imageLoader,
         isReadOnly = favouritesRepository.isReadOnly(root),
+        onPositionChanged = when (scope) {
+            BrowseScope.AllPhotos -> { index -> browsePositionRepository.save(root, index) }
+            BrowseScope.FavouritesOnly -> null
+        },
     )
 
     private fun photosForScope(root: RootFolder, scope: BrowseScope): List<Photo> {

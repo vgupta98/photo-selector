@@ -63,7 +63,7 @@ data class FavouriteToastState(val isFavourite: Boolean)
 @Composable
 fun BrowserScreen(
     viewModel: BrowserViewModel,
-    onOpenFavourites: (currentIndex: Int) -> Unit,
+    onOpenFavourites: () -> Unit,
     onChangeFolder: () -> Unit,
     onBack: (() -> Unit)? = null,
 ) {
@@ -109,7 +109,7 @@ fun BrowserScreen(
     onNext: () -> Unit,
     onToggleFavourite: () -> Unit,
     onViewportSizeChanged: (Int) -> Unit,
-    onOpenFavourites: (Int) -> Unit,
+    onOpenFavourites: () -> Unit,
     onChangeFolder: () -> Unit,
     onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -160,7 +160,7 @@ fun BrowserScreen(
             favCount = state.favouriteCount,
             readOnly = state.readOnly,
             onBack = onBack,
-            onOpenFavourites = { onOpenFavourites(state.currentIndex) },
+            onOpenFavourites = onOpenFavourites,
             onChangeFolder = onChangeFolder,
             modifier = Modifier.fillMaxWidth(),
         )
