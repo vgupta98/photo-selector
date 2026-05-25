@@ -32,6 +32,7 @@ import com.vishalgupta.photoselector.presentation.rootpicker.RootFolderPickerVie
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.Json
+import java.nio.file.Path
 
 class AppContainer {
 
@@ -67,6 +68,7 @@ class AppContainer {
     private val copyFavouritesUseCase = CopyFavouritesToFolderUseCase(exporter)
 
     val currentScreen = MutableStateFlow<Screen>(Screen.RootPicker)
+    val currentPhotoPath = MutableStateFlow<Path?>(null)
 
     private var scannedPhotos: List<Photo> = emptyList()
     private var scannedRoot: RootFolder? = null
@@ -88,6 +90,7 @@ class AppContainer {
     }
 
     fun goTo(screen: Screen) {
+        if (screen !is Screen.Browser) currentPhotoPath.value = null
         currentScreen.value = screen
     }
 

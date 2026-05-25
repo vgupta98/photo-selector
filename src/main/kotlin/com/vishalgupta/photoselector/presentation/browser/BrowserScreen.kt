@@ -48,6 +48,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -55,6 +56,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.presentation.common.ErrorPlaceholder
 import com.vishalgupta.photoselector.presentation.common.HoverOverlay
+import com.vishalgupta.photoselector.presentation.common.SystemActions
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 
@@ -142,10 +144,23 @@ fun BrowserScreen(
             .focusable()
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val meta = event.isMetaPressed
                 when (event.key) {
                     Key.DirectionLeft -> { onPrevious(); true }
                     Key.DirectionRight -> { onNext(); true }
-                    Key.F, Key.Spacebar -> { onToggleFavourite(); true }
+                    Key.F -> if (meta) false else { onToggleFavourite(); true }
+                    Key.Spacebar -> if (meta) false else {
+                        state.currentPhoto?.absolutePath?.let { SystemActions.quickLook(it) }
+                        true
+                    }
+                    Key.R -> if (meta) false else {
+                        state.currentPhoto?.absolutePath?.let { SystemActions.revealInFinder(it) }
+                        true
+                    }
+                    Key.O -> if (meta) false else {
+                        state.currentPhoto?.absolutePath?.let { SystemActions.openWithDefault(it) }
+                        true
+                    }
                     Key.Equals, Key.Plus -> { zoom.zoomIn(); true }
                     Key.Minus -> { zoom.zoomOut(); true }
                     Key.Zero -> { zoom.reset(); true }

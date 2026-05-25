@@ -3,6 +3,7 @@ package com.vishalgupta.photoselector
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -32,6 +33,11 @@ fun App(container: AppContainer) {
                 is Screen.Browser -> {
                     val vm = remember(s.root.path, s.initialIndex, s.scope) {
                         container.browserViewModel(s.root, s.initialIndex, s.scope)
+                    }
+                    LaunchedEffect(vm) {
+                        vm.state.collect { state ->
+                            container.currentPhotoPath.value = state.currentPhoto?.absolutePath
+                        }
                     }
                     val openFavourites: () -> Unit = {
                         container.goTo(Screen.Favourites(s.root))
