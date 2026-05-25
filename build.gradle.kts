@@ -4,11 +4,13 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.kapt)
     alias(libs.plugins.compose)
+    alias(libs.plugins.jmh)
 }
 
 group = "com.vishalgupta.photoselector"
-version = "1.1.0"
+version = "1.2.0"
 
 kotlin {
     jvmToolchain(17)
@@ -26,6 +28,25 @@ dependencies {
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.junit)
+    testImplementation(compose.desktop.uiTestJUnit4)
+
+    // JMH (perf benchmarks under `src/jmh/kotlin/`)
+    jmh(libs.jmh.core)
+    jmh(libs.jmh.annprocess)
+    "kaptJmh"(libs.jmh.annprocess)
+}
+
+jmh {
+    resultFormat = "JSON"
+    resultsFile = layout.buildDirectory.file("jmh/results.json")
+    includeTests = false
+    // Skiko needs the Metal renderApi hint on macOS; the rest of the JVM args
+    // mirror the production application config to keep numbers comparable.
+    jvmArgsAppend = listOf(
+        "-Dskiko.renderApi=METAL",
+        "-Dapple.awt.application.appearance=system",
+        "-Dfile.encoding=UTF-8",
+    )
 }
 
 compose.desktop {

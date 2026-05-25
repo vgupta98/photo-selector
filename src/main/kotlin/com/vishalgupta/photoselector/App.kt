@@ -33,17 +33,8 @@ fun App(container: AppContainer) {
                     val vm = remember(s.root.path, s.initialIndex, s.scope) {
                         container.browserViewModel(s.root, s.initialIndex, s.scope)
                     }
-                    val openFavourites: (Int) -> Unit = { currentIndex ->
-                        val returnIndex = when (s.scope) {
-                            BrowseScope.AllPhotos -> currentIndex
-                            BrowseScope.FavouritesOnly -> {
-                                val id = vm.photoIdAtCurrent()
-                                container.photosFor(s.root)
-                                    .indexOfFirst { it.id == id }
-                                    .coerceAtLeast(0)
-                            }
-                        }
-                        container.goTo(Screen.Favourites(s.root, returnIndex = returnIndex))
+                    val openFavourites: () -> Unit = {
+                        container.goTo(Screen.Favourites(s.root))
                     }
                     BrowserScreen(
                         viewModel = vm,
@@ -56,9 +47,7 @@ fun App(container: AppContainer) {
                         },
                         onBack = when (s.scope) {
                             BrowseScope.AllPhotos -> null
-                            BrowseScope.FavouritesOnly -> {
-                                { openFavourites(vm.state.value.currentIndex) }
-                            }
+                            BrowseScope.FavouritesOnly -> { openFavourites }
                         },
                     )
                 }
@@ -67,7 +56,8 @@ fun App(container: AppContainer) {
                     FavouritesScreen(
                         viewModel = vm,
                         onBack = {
-                            container.goTo(Screen.Browser(s.root, initialIndex = s.returnIndex))
+                            val savedIndex = container.loadBrowsePosition(s.root)
+                            container.goTo(Screen.Browser(s.root, initialIndex = savedIndex))
                         },
                         onOpenPhoto = { photo ->
                             val index = container.favouritesIndexOf(s.root, photo.id)

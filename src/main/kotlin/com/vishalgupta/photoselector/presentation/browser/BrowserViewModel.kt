@@ -10,6 +10,7 @@ import com.vishalgupta.photoselector.domain.usecase.ToggleFavouriteUseCase
 import com.vishalgupta.photoselector.presentation.StateHolder
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class BrowserUiState(
@@ -52,6 +54,7 @@ class BrowserViewModel(
     private val toggleFavourite: ToggleFavouriteUseCase,
     private val imageLoader: ImageLoader,
     private val isReadOnly: StateFlow<Boolean>,
+    private val onPositionChanged: (suspend (Int) -> Unit)? = null,
 ) : StateHolder() {
 
     private val favouritesFlow: StateFlow<Set<PhotoId>> = observeFavourites(root)
@@ -74,17 +77,19 @@ class BrowserViewModel(
     val toggleEvents: Flow<Boolean> = _toggleEvents.receiveAsFlow()
 
     private var loadJob: Job? = null
+    private var positionSaveJob: Job? = null
     private var viewportLongEdgePx: Int = 1600
 
     init {
         combine(favouritesFlow, isReadOnly) { favs, readOnly -> favs to readOnly }
             .onEach { (favs, readOnly) ->
-                val current = _state.value.currentPhoto
-                _state.value = _state.value.copy(
-                    isCurrentFavourite = current != null && current.id in favs,
-                    favouriteCount = favs.size,
-                    readOnly = readOnly,
-                )
+                _state.update {
+                    it.copy(
+                        isCurrentFavourite = it.currentPhoto != null && it.currentPhoto.id in favs,
+                        favouriteCount = favs.size,
+                        readOnly = readOnly,
+                    )
+                }
             }
             .launchIn(scope)
     }
@@ -104,13 +109,22 @@ class BrowserViewModel(
         val bounded = ((index % photos.size) + photos.size) % photos.size
         if (bounded == _state.value.currentIndex && _state.value.currentBitmap != null) return
         val photo = photos[bounded]
-        _state.value = _state.value.copy(
-            currentIndex = bounded,
-            currentPhoto = photo,
-            currentBitmap = null,
-            isLoadingBitmap = true,
-            isCurrentFavourite = photo.id in favouritesFlow.value,
-        )
+        _state.update {
+            it.copy(
+                currentIndex = bounded,
+                currentPhoto = photo,
+                currentBitmap = null,
+                isLoadingBitmap = true,
+                isCurrentFavourite = photo.id in favouritesFlow.value,
+            )
+        }
+        onPositionChanged?.let { save ->
+            positionSaveJob?.cancel()
+            positionSaveJob = scope.launch {
+                delay(500)
+                save(bounded)
+            }
+        }
         imageLoader.unpinAllExcept(photo.id)
         imageLoader.pin(photo.id)
         loadCurrent()
@@ -130,11 +144,12 @@ class BrowserViewModel(
         val photo = _state.value.currentPhoto ?: return
         loadJob = scope.launch {
             val bmp = imageLoader.load(photo, viewportLongEdgePx)
-            if (_state.value.currentPhoto?.id == photo.id) {
-                _state.value = _state.value.copy(
-                    currentBitmap = bmp,
-                    isLoadingBitmap = false,
-                )
+            _state.update {
+                if (it.currentPhoto?.id == photo.id) {
+                    it.copy(currentBitmap = bmp, isLoadingBitmap = false)
+                } else {
+                    it
+                }
             }
         }
     }
@@ -148,7 +163,7 @@ class BrowserViewModel(
             photos.getOrNull(idx + 2),
             photos.getOrNull(idx + 3),
         )
-        imageLoader.prefetch(targets, viewportLongEdgePx)
+        imageLoader.prefetch(targets, viewportLongEdgePx, scope)
     }
 
     fun loadIfNeeded() {

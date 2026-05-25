@@ -18,6 +18,7 @@ object PathFilters {
     fun shouldExclude(file: Path, root: RootFolder): Boolean {
         if (isHiddenOrSystem(file)) return true
         if (file == root.favouritesFile) return true
+        if (file == root.positionFile) return true
         return false
     }
 }

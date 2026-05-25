@@ -1,6 +1,9 @@
 package com.vishalgupta.photoselector.presentation.browser
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,21 +30,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -57,43 +58,84 @@ import com.vishalgupta.photoselector.presentation.common.HoverOverlay
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 
-@OptIn(ExperimentalComposeUiApi::class)
+data class FavouriteToastState(val isFavourite: Boolean)
+
 @Composable
 fun BrowserScreen(
     viewModel: BrowserViewModel,
-    onOpenFavourites: (currentIndex: Int) -> Unit,
+    onOpenFavourites: () -> Unit,
     onChangeFolder: () -> Unit,
     onBack: (() -> Unit)? = null,
 ) {
     DisposableEffect(viewModel) { onDispose { viewModel.onClear() } }
-
     val state by viewModel.state.collectAsState()
-    val focusRequester = remember { FocusRequester() }
-    val zoom = rememberZoomState()
-    var toastFavourite by remember { mutableStateOf<Boolean?>(null) }
-    var toastVisible by remember { mutableStateOf(false) }
+    var toast by remember { mutableStateOf<FavouriteToastState?>(null) }
 
     LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
         viewModel.loadIfNeeded()
     }
 
     LaunchedEffect(viewModel) {
         viewModel.toggleEvents.collectLatest { nowFavourite ->
-            toastFavourite = nowFavourite
-            toastVisible = true
+            toast = FavouriteToastState(nowFavourite)
             delay(1200)
-            toastVisible = false
+            toast = null
         }
     }
 
     LaunchedEffect(state.currentPhoto?.id) {
-        toastVisible = false
+        toast = null
+    }
+
+    BrowserScreen(
+        state = state,
+        toast = toast,
+        onPrevious = viewModel::previous,
+        onNext = viewModel::next,
+        onToggleFavourite = viewModel::toggleFavourite,
+        onViewportSizeChanged = viewModel::setViewportLongEdgePx,
+        onOpenFavourites = onOpenFavourites,
+        onChangeFolder = onChangeFolder,
+        onBack = onBack,
+    )
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+fun BrowserScreen(
+    state: BrowserUiState,
+    toast: FavouriteToastState?,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onToggleFavourite: () -> Unit,
+    onViewportSizeChanged: (Int) -> Unit,
+    onOpenFavourites: () -> Unit,
+    onChangeFolder: () -> Unit,
+    onBack: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    val focusRequester = remember { FocusRequester() }
+    val zoom = rememberZoomState()
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
+
+    LaunchedEffect(state.currentPhoto?.id) {
         zoom.reset()
     }
 
+    var viewportPx by remember { mutableIntStateOf(0) }
+    LaunchedEffect(viewportPx) {
+        if (viewportPx > 0) onViewportSizeChanged(viewportPx)
+    }
+
+    // Hold last non-null toast so AnimatedVisibility content renders during exit fade.
+    var displayedToast by remember { mutableStateOf<FavouriteToastState?>(null) }
+    if (toast != null) displayedToast = toast
+
     Box(
-        Modifier
+        modifier
             .fillMaxSize()
             .background(Color.Black)
             .focusRequester(focusRequester)
@@ -101,9 +143,9 @@ fun BrowserScreen(
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.key) {
-                    Key.DirectionLeft -> { viewModel.previous(); true }
-                    Key.DirectionRight -> { viewModel.next(); true }
-                    Key.F, Key.Spacebar -> { viewModel.toggleFavourite(); true }
+                    Key.DirectionLeft -> { onPrevious(); true }
+                    Key.DirectionRight -> { onNext(); true }
+                    Key.F, Key.Spacebar -> { onToggleFavourite(); true }
                     Key.Equals, Key.Plus -> { zoom.zoomIn(); true }
                     Key.Minus -> { zoom.zoomOut(); true }
                     Key.Zero -> { zoom.reset(); true }
@@ -113,17 +155,18 @@ fun BrowserScreen(
     ) {
         TopBar(
             countLabel = if (state.photos.isEmpty()) "0 / 0"
-                else "${state.currentIndex + 1} / ${state.photos.size}",
+            else "${state.currentIndex + 1} / ${state.photos.size}",
             relativePath = state.currentPhoto?.relativePath.orEmpty(),
             favCount = state.favouriteCount,
             readOnly = state.readOnly,
             onBack = onBack,
-            onOpenFavourites = { onOpenFavourites(state.currentIndex) },
+            onOpenFavourites = onOpenFavourites,
             onChangeFolder = onChangeFolder,
+            modifier = Modifier.fillMaxWidth(),
         )
 
         if (state.photos.isEmpty()) {
-            ErrorPlaceholder("No JPEG / PNG photos found in this folder.")
+            ErrorPlaceholder("No JPEG / PNG photos found in this folder.", Modifier.fillMaxSize())
             return@Box
         }
 
@@ -133,7 +176,7 @@ fun BrowserScreen(
                 .padding(top = 56.dp)
                 .onSizeChanged { size ->
                     val px = maxOf(size.width, size.height)
-                    if (px > 0) viewModel.setViewportLongEdgePx(px)
+                    if (px > 0) viewportPx = px
                 },
         ) { controlsVisible ->
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -154,9 +197,9 @@ fun BrowserScreen(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .padding(start = 12.dp)
-                        .alpha(alpha),
+                        .graphicsLayer { this.alpha = alpha },
                 ) {
-                    FilledTonalIconButton(onClick = viewModel::previous) {
+                    FilledTonalIconButton(onClick = onPrevious) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Previous")
                     }
                 }
@@ -165,9 +208,9 @@ fun BrowserScreen(
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .padding(end = 12.dp)
-                        .alpha(alpha),
+                        .graphicsLayer { this.alpha = alpha },
                 ) {
-                    FilledTonalIconButton(onClick = viewModel::next) {
+                    FilledTonalIconButton(onClick = onNext) {
                         Icon(Icons.Default.ArrowForward, contentDescription = "Next")
                     }
                 }
@@ -176,10 +219,10 @@ fun BrowserScreen(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 24.dp)
-                        .alpha(alpha),
+                        .graphicsLayer { this.alpha = alpha },
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    FilledTonalIconButton(onClick = viewModel::toggleFavourite) {
+                    FilledTonalIconButton(onClick = onToggleFavourite) {
                         if (state.isCurrentFavourite) {
                             Icon(
                                 Icons.Filled.Star,
@@ -195,27 +238,30 @@ fun BrowserScreen(
         }
 
         AnimatedVisibility(
-            visible = toastVisible && toastFavourite != null,
+            visible = toast != null,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 96.dp),
         ) {
-            val isFav = toastFavourite == true
-            FavouriteToast(
-                isFavourite = isFav,
-                label = if (isFav) "Favourited" else "Unfavourited",
-            )
+            val dt = displayedToast
+            if (dt != null) {
+                FavouriteToast(
+                    isFavourite = dt.isFavourite,
+                    label = if (dt.isFavourite) "Favourited" else "Unfavourited",
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun FavouriteToast(isFavourite: Boolean, label: String) {
+private fun FavouriteToast(isFavourite: Boolean, label: String, modifier: Modifier = Modifier) {
     val bg = if (isFavourite) Color(0xFFE9A93C) else Color(0xFF2A2A2A)
     val fg = if (isFavourite) Color(0xFF1A1A1A) else Color(0xFFE6E6E6)
     Surface(
+        modifier = modifier,
         color = bg,
         contentColor = fg,
         shape = RoundedCornerShape(percent = 50),
@@ -246,10 +292,10 @@ private fun TopBar(
     onBack: (() -> Unit)?,
     onOpenFavourites: () -> Unit,
     onChangeFolder: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        Modifier
-            .fillMaxWidth()
+        modifier
             .height(56.dp)
             .background(Color.Black.copy(alpha = 0.55f))
             .padding(horizontal = 12.dp),
