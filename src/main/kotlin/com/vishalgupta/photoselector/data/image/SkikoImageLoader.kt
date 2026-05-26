@@ -24,6 +24,7 @@ import org.jetbrains.skia.ImageInfo
 class SkikoImageLoader(
     private val registry: PhotoFormatRegistry,
     private val decodeDispatcher: CoroutineDispatcher,
+    private val diskCache: DiskThumbnailCache? = null,
     maxCacheBytes: Long = DEFAULT_MAX_CACHE_BYTES,
 ) : ImageLoader {
 
@@ -34,6 +35,19 @@ class SkikoImageLoader(
     override suspend fun load(photo: Photo, viewportLongEdgePx: Int): ImageBitmap? {
         val key = CacheKey(photo.id, viewportLongEdgePx)
         cache.get(key)?.let { return it }
+
+        val useDisk = diskCache != null && viewportLongEdgePx <= DiskThumbnailCache.MAX_EDGE_PX
+        if (useDisk) {
+            val diskHit = withContext(decodeDispatcher) {
+                diskCache!!.get(photo, viewportLongEdgePx)
+            }
+            if (diskHit != null) {
+                val bitmap = diskHit.toImageBitmap()
+                cache.put(key, bitmap, diskHit.byteSize)
+                return bitmap
+            }
+        }
+
         val decoder = registry.decoderFor(photo.absolutePath) ?: return null
         return try {
             val decoded = withContext(decodeDispatcher) {
@@ -41,6 +55,11 @@ class SkikoImageLoader(
             }
             val bitmap = decoded.toImageBitmap()
             cache.put(key, bitmap, decoded.byteSize)
+            if (useDisk) {
+                withContext(decodeDispatcher) {
+                    diskCache!!.put(photo, viewportLongEdgePx, decoded)
+                }
+            }
             bitmap
         } catch (_: Throwable) {
             null

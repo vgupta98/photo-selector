@@ -9,6 +9,7 @@ import com.vishalgupta.photoselector.data.filesystem.FileSystemPhotoRepository
 import com.vishalgupta.photoselector.data.format.DefaultPhotoFormatRegistry
 import com.vishalgupta.photoselector.data.format.JpegDecoder
 import com.vishalgupta.photoselector.data.format.PngDecoder
+import com.vishalgupta.photoselector.data.image.DiskThumbnailCache
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.data.image.SkikoImageLoader
 import com.vishalgupta.photoselector.domain.format.PhotoFormatRegistry
@@ -53,9 +54,14 @@ class AppContainer {
         decoders = listOf(JpegDecoder(), PngDecoder()),
     )
 
+    private val diskThumbnailCache = DiskThumbnailCache(
+        cacheDir = Path.of(System.getProperty("user.home"), "Library", "Caches", "PhotoSelector"),
+    )
+
     val imageLoader: ImageLoader = SkikoImageLoader(
         registry = formatRegistry,
         decodeDispatcher = imageDecodeDispatcher,
+        diskCache = diskThumbnailCache,
     )
 
     private val photoRepository: PhotoRepository = FileSystemPhotoRepository(formatRegistry)
