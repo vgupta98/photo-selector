@@ -13,6 +13,10 @@ import org.jetbrains.skia.ImageInfo
 import org.jetbrains.skia.Rect
 import org.jetbrains.skia.SamplingMode
 import org.jetbrains.skia.Surface
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -20,16 +24,15 @@ import java.security.MessageDigest
 import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
-import kotlin.io.path.extension
 
 class DiskThumbnailCache(
-    private val cacheDir: Path,
+    cacheDir: Path,
     private val maxBytes: Long = DEFAULT_MAX_BYTES,
 ) {
     private val thumbsDir = cacheDir.resolve("thumbs")
 
-    fun startEviction() {
-        Thread({ evict() }, "disk-cache-eviction").apply { isDaemon = true }.start()
+    fun startEviction(dispatcher: CoroutineDispatcher) {
+        CoroutineScope(SupervisorJob() + dispatcher).launch { evict() }
     }
 
     fun get(photo: Photo, targetEdgePx: Int): DecodedImage? {
@@ -96,30 +99,26 @@ class DiskThumbnailCache(
     private fun encodeToJpeg(decoded: DecodedImage): ByteArray {
         val info = bgraImageInfo(decoded.width, decoded.height)
         val bitmap = Bitmap()
-        try {
+        bitmap.use { bitmap ->
             bitmap.allocPixels(info)
             bitmap.installPixels(info, decoded.bgraBytes, info.minRowBytes)
             val image = Image.makeFromBitmap(bitmap)
-            try {
+            image.use { image ->
                 return image.encodeToData(EncodedImageFormat.JPEG, JPEG_QUALITY)?.bytes
                     ?: error("JPEG encoding failed")
-            } finally {
-                image.close()
             }
-        } finally {
-            bitmap.close()
         }
     }
 
     private fun decodeJpeg(bytes: ByteArray): DecodedImage {
         val source = Image.makeFromEncoded(bytes)
-        try {
+        source.use { source ->
             val w = source.width
             val h = source.height
             if (w <= 0 || h <= 0) error("Cached thumbnail has zero dimension")
             val info = bgraImageInfo(w, h)
             val surface = Surface.makeRaster(info)
-            try {
+            surface.use { surface ->
                 surface.canvas.drawImageRect(
                     image = source,
                     src = Rect.makeXYWH(0f, 0f, w.toFloat(), h.toFloat()),
@@ -129,20 +128,14 @@ class DiskThumbnailCache(
                     strict = true,
                 )
                 val bitmap = Bitmap()
-                try {
+                bitmap.use { bitmap ->
                     bitmap.allocPixels(info)
                     surface.readPixels(bitmap, 0, 0)
                     val pixels = bitmap.readPixels(info, info.minRowBytes, 0, 0)
                         ?: error("Failed to read pixels from cached thumbnail")
                     return DecodedImage(width = w, height = h, bgraBytes = pixels)
-                } finally {
-                    bitmap.close()
                 }
-            } finally {
-                surface.close()
             }
-        } finally {
-            source.close()
         }
     }
 
