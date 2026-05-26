@@ -27,11 +27,14 @@ import com.vishalgupta.photoselector.domain.usecase.ToggleFavouriteUseCase
 import com.vishalgupta.photoselector.presentation.browser.BrowserViewModel
 import com.vishalgupta.photoselector.presentation.favourites.FavouritesViewModel
 import com.vishalgupta.photoselector.presentation.navigation.BrowseScope
+import com.vishalgupta.photoselector.presentation.common.MacSystemActions
+import com.vishalgupta.photoselector.presentation.common.SystemActions
 import com.vishalgupta.photoselector.presentation.navigation.Screen
 import com.vishalgupta.photoselector.presentation.rootpicker.RootFolderPickerViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.Json
+import java.nio.file.Path
 
 class AppContainer {
 
@@ -66,7 +69,10 @@ class AppContainer {
     private val exportTxtUseCase = ExportFavouritesTxtUseCase(exporter)
     private val copyFavouritesUseCase = CopyFavouritesToFolderUseCase(exporter)
 
+    val systemActions: SystemActions = MacSystemActions()
+
     val currentScreen = MutableStateFlow<Screen>(Screen.RootPicker)
+    val currentPhotoPath = MutableStateFlow<Path?>(null)
 
     private var scannedPhotos: List<Photo> = emptyList()
     private var scannedRoot: RootFolder? = null
@@ -88,6 +94,7 @@ class AppContainer {
     }
 
     fun goTo(screen: Screen) {
+        if (screen !is Screen.Browser) currentPhotoPath.value = null
         currentScreen.value = screen
     }
 
