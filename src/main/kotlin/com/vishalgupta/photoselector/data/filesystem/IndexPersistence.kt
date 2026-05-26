@@ -1,11 +1,12 @@
 package com.vishalgupta.photoselector.data.filesystem
 
 import com.vishalgupta.photoselector.data.favourites.AtomicJsonWriter
+import com.vishalgupta.photoselector.domain.model.Photo
+import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.nio.file.Files
-import java.util.TreeMap
 
 @Serializable
 data class IndexEntryDto(
@@ -17,30 +18,29 @@ data class IndexEntryDto(
 @Serializable
 data class IndexDto(
     val version: Int = 1,
+    val scannedAtMs: Long = 0L,
     val entries: List<IndexEntryDto> = emptyList(),
 )
 
 class IndexPersistence(private val json: Json) {
 
-    fun read(root: RootFolder): MutableMap<String, IndexEntryDto> {
+    fun read(root: RootFolder): IndexDto? {
         val file = root.indexFile
-        if (!Files.exists(file)) return caseInsensitiveMap()
+        if (!Files.exists(file)) return null
         return try {
             val text = Files.readString(file)
-            val dto = json.decodeFromString(IndexDto.serializer(), text)
-            val map = caseInsensitiveMap()
-            for (entry in dto.entries) {
-                map[entry.relPath] = entry
-            }
-            map
+            json.decodeFromString(IndexDto.serializer(), text)
         } catch (_: Throwable) {
-            caseInsensitiveMap()
+            null
         }
     }
 
-    fun write(root: RootFolder, entries: List<IndexEntryDto>) {
+    fun write(root: RootFolder, entries: List<IndexEntryDto>, scannedAtMs: Long) {
         if (!Files.isWritable(root.path)) return
-        val dto = IndexDto(entries = entries.sortedBy { it.relPath })
+        val dto = IndexDto(
+            scannedAtMs = scannedAtMs,
+            entries = entries.sortedBy { it.relPath },
+        )
         val bytes = json.encodeToString(IndexDto.serializer(), dto).toByteArray(Charsets.UTF_8)
         try {
             AtomicJsonWriter.write(root.indexFile, bytes)
@@ -49,6 +49,19 @@ class IndexPersistence(private val json: Json) {
         }
     }
 
-    private fun caseInsensitiveMap(): TreeMap<String, IndexEntryDto> =
-        TreeMap(String.CASE_INSENSITIVE_ORDER)
+    fun rebuildPhotos(root: RootFolder, dto: IndexDto): List<Photo> {
+        val photos = ArrayList<Photo>(dto.entries.size)
+        for (entry in dto.entries) {
+            photos += Photo(
+                id = PhotoId(entry.relPath),
+                absolutePath = root.path.resolve(entry.relPath),
+                relativePath = entry.relPath,
+                fileName = entry.relPath.substringAfterLast('/'),
+                sizeBytes = entry.size,
+                lastModifiedEpochMs = entry.mtimeMs,
+            )
+        }
+        photos.sortBy { it.relativePath }
+        return photos
+    }
 }

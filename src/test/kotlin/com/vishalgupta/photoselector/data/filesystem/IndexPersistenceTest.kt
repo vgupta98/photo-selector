@@ -7,6 +7,8 @@ import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class IndexPersistenceTest {
@@ -15,19 +17,18 @@ class IndexPersistenceTest {
     private val persistence = IndexPersistence(json)
 
     @Test
-    fun `read returns empty map when no index file exists`() {
+    fun `read returns null when no index file exists`() {
         val dir = Files.createTempDirectory("index-test")
         try {
             val root = RootFolder(dir)
-            val result = persistence.read(root)
-            assertTrue(result.isEmpty())
+            assertNull(persistence.read(root))
         } finally {
             dir.toFile().deleteRecursively()
         }
     }
 
     @Test
-    fun `write then read round-trips entries`() {
+    fun `write then read round-trips entries and timestamp`() {
         val dir = Files.createTempDirectory("index-test")
         try {
             val root = RootFolder(dir)
@@ -35,44 +36,28 @@ class IndexPersistenceTest {
                 IndexEntryDto("Ceremony/IMG_001.jpg", 4823901, 1730812401000),
                 IndexEntryDto("Reception/IMG_100.jpg", 3200000, 1730812500000),
             )
-            persistence.write(root, entries)
+            val scannedAt = 1730900000000L
+            persistence.write(root, entries, scannedAt)
             assertTrue(Files.exists(root.indexFile))
 
-            val loaded = persistence.read(root)
-            assertEquals(2, loaded.size)
-            assertEquals(4823901, loaded["Ceremony/IMG_001.jpg"]!!.size)
-            assertEquals(3200000, loaded["Reception/IMG_100.jpg"]!!.size)
+            val dto = persistence.read(root)
+            assertNotNull(dto)
+            assertEquals(2, dto.entries.size)
+            assertEquals(scannedAt, dto.scannedAtMs)
+            assertEquals("Ceremony/IMG_001.jpg", dto.entries[0].relPath)
+            assertEquals(4823901, dto.entries[0].size)
         } finally {
             dir.toFile().deleteRecursively()
         }
     }
 
     @Test
-    fun `read matches case-insensitively`() {
-        val dir = Files.createTempDirectory("index-test")
-        try {
-            val root = RootFolder(dir)
-            val entries = listOf(
-                IndexEntryDto("Ceremony/IMG_001.jpg", 4823901, 1730812401000),
-            )
-            persistence.write(root, entries)
-
-            val loaded = persistence.read(root)
-            val hit = loaded["ceremony/img_001.jpg"]
-            assertEquals(4823901, hit!!.size)
-        } finally {
-            dir.toFile().deleteRecursively()
-        }
-    }
-
-    @Test
-    fun `read returns empty map on malformed JSON`() {
+    fun `read returns null on malformed JSON`() {
         val dir = Files.createTempDirectory("index-test")
         try {
             val root = RootFolder(dir)
             Files.writeString(root.indexFile, "not valid json {{{")
-            val result = persistence.read(root)
-            assertTrue(result.isEmpty())
+            assertNull(persistence.read(root))
         } finally {
             dir.toFile().deleteRecursively()
         }
@@ -87,7 +72,7 @@ class IndexPersistenceTest {
         try {
             val root = RootFolder(readOnlyDir)
             val entries = listOf(IndexEntryDto("a.jpg", 100, 1000))
-            persistence.write(root, entries)
+            persistence.write(root, entries, System.currentTimeMillis())
             assertFalse(Files.exists(root.indexFile))
         } finally {
             readOnlyDir.toFile().setWritable(true)
@@ -104,12 +89,35 @@ class IndexPersistenceTest {
                 IndexEntryDto("z/last.jpg", 100, 1000),
                 IndexEntryDto("a/first.jpg", 200, 2000),
             )
-            persistence.write(root, entries)
+            persistence.write(root, entries, System.currentTimeMillis())
 
             val text = Files.readString(root.indexFile)
             val firstIdx = text.indexOf("a/first.jpg")
             val lastIdx = text.indexOf("z/last.jpg")
             assertTrue(firstIdx < lastIdx)
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `rebuildPhotos reconstructs Photo list from index`() {
+        val dir = Files.createTempDirectory("index-test")
+        try {
+            val root = RootFolder(dir)
+            val dto = IndexDto(
+                scannedAtMs = 1730900000000L,
+                entries = listOf(
+                    IndexEntryDto("b/second.jpg", 200, 2000),
+                    IndexEntryDto("a/first.jpg", 100, 1000),
+                ),
+            )
+            val photos = persistence.rebuildPhotos(root, dto)
+            assertEquals(2, photos.size)
+            assertEquals("a/first.jpg", photos[0].relativePath)
+            assertEquals("b/second.jpg", photos[1].relativePath)
+            assertEquals(100L, photos[0].sizeBytes)
+            assertEquals(dir.resolve("a/first.jpg"), photos[0].absolutePath)
         } finally {
             dir.toFile().deleteRecursively()
         }

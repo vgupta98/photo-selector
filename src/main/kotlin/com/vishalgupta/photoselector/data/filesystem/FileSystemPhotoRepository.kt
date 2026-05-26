@@ -26,11 +26,16 @@ class FileSystemPhotoRepository(
 
     override fun scan(root: RootFolder): Flow<ScanProgress> = channelFlow {
         val producer = this
-        val collected = ArrayList<Photo>(1024)
-        val updatedEntries = ArrayList<IndexEntryDto>(1024)
-        val cachedIndex = indexPersistence?.read(root)
-        var scanned = 0
         try {
+            val cached = indexPersistence?.read(root)
+            if (cached != null && cached.entries.isNotEmpty() && !hasDirectoryChangedSince(root, cached.scannedAtMs)) {
+                val photos = indexPersistence.rebuildPhotos(root, cached)
+                send(ScanProgress.Done(photos))
+                return@channelFlow
+            }
+
+            val collected = ArrayList<Photo>(1024)
+            var scanned = 0
             Files.walkFileTree(
                 root.path,
                 object : SimpleFileVisitor<Path>() {
@@ -50,32 +55,19 @@ class FileSystemPhotoRepository(
                     ): FileVisitResult {
                         scanned++
                         if (PathFilters.shouldExclude(file, root)) return FileVisitResult.CONTINUE
-
+                        if (!formatRegistry.isSupported(file)) return FileVisitResult.CONTINUE
                         val relative = root.path.relativize(file).toString().replace('\\', '/')
-                        val size = attrs.size()
-                        val mtime = attrs.lastModifiedTime().toMillis()
-                        val cached = cachedIndex?.get(relative)
-                        val isPhoto = if (cached != null && cached.size == size && cached.mtimeMs == mtime) {
-                            true
-                        } else {
-                            formatRegistry.isSupported(file)
+                        collected += Photo(
+                            id = PhotoId(relative),
+                            absolutePath = file,
+                            relativePath = relative,
+                            fileName = file.name,
+                            sizeBytes = attrs.size(),
+                            lastModifiedEpochMs = attrs.lastModifiedTime().toMillis(),
+                        )
+                        if (collected.size % 50 == 0) {
+                            producer.trySend(ScanProgress.InProgress(scanned, collected.size))
                         }
-
-                        if (isPhoto) {
-                            collected += Photo(
-                                id = PhotoId(relative),
-                                absolutePath = file,
-                                relativePath = relative,
-                                fileName = file.name,
-                                sizeBytes = size,
-                                lastModifiedEpochMs = mtime,
-                            )
-                            updatedEntries += IndexEntryDto(relPath = relative, size = size, mtimeMs = mtime)
-                            if (collected.size % 50 == 0) {
-                                producer.trySend(ScanProgress.InProgress(scanned, collected.size))
-                            }
-                        }
-
                         return if (producer.isActive) FileVisitResult.CONTINUE else FileVisitResult.TERMINATE
                     }
 
@@ -86,10 +78,34 @@ class FileSystemPhotoRepository(
                 },
             )
             collected.sortBy { it.relativePath }
-            indexPersistence?.write(root, updatedEntries)
+
+            if (indexPersistence != null) {
+                val entries = collected.map {
+                    IndexEntryDto(it.relativePath, it.sizeBytes, it.lastModifiedEpochMs)
+                }
+                indexPersistence.write(root, entries, System.currentTimeMillis())
+            }
+
             send(ScanProgress.Done(collected))
         } catch (t: Throwable) {
             send(ScanProgress.Failed(t))
         }
     }.flowOn(Dispatchers.IO)
+
+    private fun hasDirectoryChangedSince(root: RootFolder, sinceMs: Long): Boolean {
+        var changed = false
+        Files.walkFileTree(root.path, object : SimpleFileVisitor<Path>() {
+            override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
+                if (dir != root.path && PathFilters.isHiddenOrSystem(dir)) return FileVisitResult.SKIP_SUBTREE
+                if (attrs.lastModifiedTime().toMillis() > sinceMs) {
+                    changed = true
+                    return FileVisitResult.TERMINATE
+                }
+                return FileVisitResult.CONTINUE
+            }
+
+            override fun visitFile(file: Path, attrs: BasicFileAttributes) = FileVisitResult.CONTINUE
+        })
+        return changed
+    }
 }
