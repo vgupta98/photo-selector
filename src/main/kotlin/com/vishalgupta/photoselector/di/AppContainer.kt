@@ -6,6 +6,7 @@ import com.vishalgupta.photoselector.data.export.CopyPhotoExporter
 import com.vishalgupta.photoselector.data.export.TxtPhotoExporter
 import com.vishalgupta.photoselector.data.favourites.JsonFavouritesRepository
 import com.vishalgupta.photoselector.data.filesystem.FileSystemPhotoRepository
+import com.vishalgupta.photoselector.data.filesystem.IndexPersistence
 import com.vishalgupta.photoselector.data.format.DefaultPhotoFormatRegistry
 import com.vishalgupta.photoselector.data.format.JpegDecoder
 import com.vishalgupta.photoselector.data.format.PngDecoder
@@ -71,7 +72,8 @@ class AppContainer {
         diskCache = diskThumbnailCache,
     )
 
-    private val photoRepository: PhotoRepository = FileSystemPhotoRepository(formatRegistry)
+    private val indexPersistence = IndexPersistence(json)
+    private val photoRepository: PhotoRepository = FileSystemPhotoRepository(formatRegistry, indexPersistence)
     private val favouritesRepository: FavouritesRepository = JsonFavouritesRepository(json)
     private val browsePositionRepository: BrowsePositionRepository = JsonBrowsePositionRepository(json)
     private val exporter: PhotoExporter = CompositePhotoExporter(TxtPhotoExporter(), CopyPhotoExporter())

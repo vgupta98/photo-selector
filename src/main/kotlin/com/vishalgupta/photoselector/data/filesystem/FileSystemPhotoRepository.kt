@@ -21,11 +21,14 @@ import kotlin.io.path.name
 
 class FileSystemPhotoRepository(
     private val formatRegistry: PhotoFormatRegistry,
+    private val indexPersistence: IndexPersistence? = null,
 ) : PhotoRepository {
 
     override fun scan(root: RootFolder): Flow<ScanProgress> = channelFlow {
         val producer = this
         val collected = ArrayList<Photo>(1024)
+        val updatedEntries = ArrayList<IndexEntryDto>(1024)
+        val cachedIndex = indexPersistence?.read(root)
         var scanned = 0
         try {
             Files.walkFileTree(
@@ -47,11 +50,32 @@ class FileSystemPhotoRepository(
                     ): FileVisitResult {
                         scanned++
                         if (PathFilters.shouldExclude(file, root)) return FileVisitResult.CONTINUE
-                        if (!formatRegistry.isSupported(file)) return FileVisitResult.CONTINUE
-                        collected += toPhoto(file, root, attrs)
-                        if (collected.size % 50 == 0) {
-                            producer.trySend(ScanProgress.InProgress(scanned, collected.size))
+
+                        val relative = root.path.relativize(file).toString().replace('\\', '/')
+                        val size = attrs.size()
+                        val mtime = attrs.lastModifiedTime().toMillis()
+                        val cached = cachedIndex?.get(relative)
+                        val isPhoto = if (cached != null && cached.size == size && cached.mtimeMs == mtime) {
+                            true
+                        } else {
+                            formatRegistry.isSupported(file)
                         }
+
+                        if (isPhoto) {
+                            collected += Photo(
+                                id = PhotoId(relative),
+                                absolutePath = file,
+                                relativePath = relative,
+                                fileName = file.name,
+                                sizeBytes = size,
+                                lastModifiedEpochMs = mtime,
+                            )
+                            updatedEntries += IndexEntryDto(relPath = relative, size = size, mtimeMs = mtime)
+                            if (collected.size % 50 == 0) {
+                                producer.trySend(ScanProgress.InProgress(scanned, collected.size))
+                            }
+                        }
+
                         return if (producer.isActive) FileVisitResult.CONTINUE else FileVisitResult.TERMINATE
                     }
 
@@ -62,21 +86,10 @@ class FileSystemPhotoRepository(
                 },
             )
             collected.sortBy { it.relativePath }
+            indexPersistence?.write(root, updatedEntries)
             send(ScanProgress.Done(collected))
         } catch (t: Throwable) {
             send(ScanProgress.Failed(t))
         }
     }.flowOn(Dispatchers.IO)
-
-    private fun toPhoto(file: Path, root: RootFolder, attrs: BasicFileAttributes): Photo {
-        val relative = root.path.relativize(file).toString().replace('\\', '/')
-        return Photo(
-            id = PhotoId(relative),
-            absolutePath = file,
-            relativePath = relative,
-            fileName = file.name,
-            sizeBytes = attrs.size(),
-            lastModifiedEpochMs = attrs.lastModifiedTime().toMillis(),
-        )
-    }
 }
