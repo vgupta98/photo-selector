@@ -9,6 +9,7 @@ import com.vishalgupta.photoselector.domain.usecase.CopyFavouritesToFolderUseCas
 import com.vishalgupta.photoselector.domain.usecase.ExportFavouritesTxtUseCase
 import com.vishalgupta.photoselector.domain.usecase.ObserveFavouritesUseCase
 import com.vishalgupta.photoselector.presentation.StateHolder
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,7 +33,8 @@ class FavouritesViewModel(
     private val exportTxt: ExportFavouritesTxtUseCase,
     private val copyToFolder: CopyFavouritesToFolderUseCase,
     val imageLoader: ImageLoader,
-) : StateHolder() {
+    parentJob: Job? = null,
+) : StateHolder(parentJob) {
 
     private val _state = MutableStateFlow(FavouritesUiState())
     val state: StateFlow<FavouritesUiState> = _state.asStateFlow()

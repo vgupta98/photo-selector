@@ -26,7 +26,8 @@ data class RootPickerUiState(
 class RootFolderPickerViewModel(
     private val scanRootFolder: ScanRootFolderUseCase,
     private val onScanComplete: (RootFolder, List<Photo>) -> Unit,
-) : StateHolder() {
+    parentJob: Job? = null,
+) : StateHolder(parentJob) {
 
     private val _state = MutableStateFlow(RootPickerUiState())
     val state: StateFlow<RootPickerUiState> = _state.asStateFlow()

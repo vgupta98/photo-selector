@@ -54,8 +54,8 @@ class AppContainer {
     )
 
     private val appScope = CoroutineScope(SupervisorJob() + imageDecodeDispatcher)
-    private var _folderScope = CoroutineScope(SupervisorJob(appScope.coroutineContext[Job]) + imageDecodeDispatcher)
-    val folderScope: CoroutineScope get() = _folderScope
+    private var _folderJob = SupervisorJob(appScope.coroutineContext[Job])
+    val folderJob: Job get() = _folderJob
 
     private val formatRegistry: PhotoFormatRegistry = DefaultPhotoFormatRegistry(
         decoders = listOf(JpegDecoder(), PngDecoder()),
@@ -119,6 +119,7 @@ class AppContainer {
             val savedIndex = browsePositionRepository.load(root)
             goTo(Screen.Browser(root, initialIndex = savedIndex))
         },
+        parentJob = appScope.coroutineContext[Job],
     )
 
     fun browserViewModel(
@@ -133,7 +134,7 @@ class AppContainer {
         toggleFavourite = toggleFavouriteUseCase,
         imageLoader = imageLoader,
         isReadOnly = favouritesRepository.isReadOnly(root),
-        prefetchScope = folderScope,
+        parentJob = folderJob,
         onPositionChanged = when (scope) {
             BrowseScope.AllPhotos -> { index -> browsePositionRepository.save(root, index) }
             BrowseScope.FavouritesOnly -> null
@@ -158,11 +159,12 @@ class AppContainer {
         exportTxt = exportTxtUseCase,
         copyToFolder = copyFavouritesUseCase,
         imageLoader = imageLoader,
+        parentJob = folderJob,
     )
 
     suspend fun resetForNewRoot() {
-        _folderScope.coroutineContext[Job]!!.cancel()
-        _folderScope = CoroutineScope(SupervisorJob(appScope.coroutineContext[Job]) + imageDecodeDispatcher)
+        _folderJob.cancel()
+        _folderJob = SupervisorJob(appScope.coroutineContext[Job])
         favouritesRepository.clearContext()
         imageLoader.evictAll()
         scannedRoot = null

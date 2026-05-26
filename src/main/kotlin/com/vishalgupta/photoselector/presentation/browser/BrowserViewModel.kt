@@ -8,7 +8,6 @@ import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.usecase.ObserveFavouritesUseCase
 import com.vishalgupta.photoselector.domain.usecase.ToggleFavouriteUseCase
 import com.vishalgupta.photoselector.presentation.StateHolder
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -55,9 +54,9 @@ class BrowserViewModel(
     private val toggleFavourite: ToggleFavouriteUseCase,
     private val imageLoader: ImageLoader,
     private val isReadOnly: StateFlow<Boolean>,
-    private val prefetchScope: CoroutineScope,
+    parentJob: Job? = null,
     private val onPositionChanged: (suspend (Int) -> Unit)? = null,
-) : StateHolder() {
+) : StateHolder(parentJob) {
 
     private val favouritesFlow: StateFlow<Set<PhotoId>> = observeFavourites(root)
 
@@ -165,7 +164,7 @@ class BrowserViewModel(
             photos.getOrNull(idx + 2),
             photos.getOrNull(idx + 3),
         )
-        imageLoader.prefetch(targets, viewportLongEdgePx, prefetchScope)
+        imageLoader.prefetch(targets, viewportLongEdgePx, scope)
     }
 
     fun loadIfNeeded() {
