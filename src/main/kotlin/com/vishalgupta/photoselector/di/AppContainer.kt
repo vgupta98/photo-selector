@@ -34,6 +34,7 @@ import com.vishalgupta.photoselector.presentation.navigation.Screen
 import com.vishalgupta.photoselector.presentation.rootpicker.RootFolderPickerViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.Json
@@ -53,6 +54,8 @@ class AppContainer {
     )
 
     private val appScope = CoroutineScope(SupervisorJob() + imageDecodeDispatcher)
+    private var _folderScope = CoroutineScope(SupervisorJob(appScope.coroutineContext[Job]) + imageDecodeDispatcher)
+    val folderScope: CoroutineScope get() = _folderScope
 
     private val formatRegistry: PhotoFormatRegistry = DefaultPhotoFormatRegistry(
         decoders = listOf(JpegDecoder(), PngDecoder()),
@@ -130,6 +133,7 @@ class AppContainer {
         toggleFavourite = toggleFavouriteUseCase,
         imageLoader = imageLoader,
         isReadOnly = favouritesRepository.isReadOnly(root),
+        prefetchScope = folderScope,
         onPositionChanged = when (scope) {
             BrowseScope.AllPhotos -> { index -> browsePositionRepository.save(root, index) }
             BrowseScope.FavouritesOnly -> null
@@ -157,6 +161,8 @@ class AppContainer {
     )
 
     suspend fun resetForNewRoot() {
+        _folderScope.coroutineContext[Job]!!.cancel()
+        _folderScope = CoroutineScope(SupervisorJob(appScope.coroutineContext[Job]) + imageDecodeDispatcher)
         favouritesRepository.clearContext()
         imageLoader.evictAll()
         scannedRoot = null
