@@ -9,6 +9,7 @@ import com.vishalgupta.photoselector.data.filesystem.FileSystemPhotoRepository
 import com.vishalgupta.photoselector.data.format.DefaultPhotoFormatRegistry
 import com.vishalgupta.photoselector.data.format.JpegDecoder
 import com.vishalgupta.photoselector.data.format.PngDecoder
+import com.vishalgupta.photoselector.data.image.DiskThumbnailCache
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.data.image.SkikoImageLoader
 import com.vishalgupta.photoselector.domain.format.PhotoFormatRegistry
@@ -31,7 +32,9 @@ import com.vishalgupta.photoselector.presentation.common.MacSystemActions
 import com.vishalgupta.photoselector.presentation.common.SystemActions
 import com.vishalgupta.photoselector.presentation.navigation.Screen
 import com.vishalgupta.photoselector.presentation.rootpicker.RootFolderPickerViewModel
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.Json
 import java.nio.file.Path
@@ -49,13 +52,20 @@ class AppContainer {
         Runtime.getRuntime().availableProcessors().coerceAtMost(4).coerceAtLeast(2),
     )
 
+    private val appScope = CoroutineScope(SupervisorJob() + imageDecodeDispatcher)
+
     private val formatRegistry: PhotoFormatRegistry = DefaultPhotoFormatRegistry(
         decoders = listOf(JpegDecoder(), PngDecoder()),
     )
 
+    private val diskThumbnailCache = DiskThumbnailCache(
+        cacheDir = Path.of(System.getProperty("user.home"), "Library", "Caches", "PhotoSelector"),
+    ).also { it.startEviction(appScope) }
+
     val imageLoader: ImageLoader = SkikoImageLoader(
         registry = formatRegistry,
         decodeDispatcher = imageDecodeDispatcher,
+        diskCache = diskThumbnailCache,
     )
 
     private val photoRepository: PhotoRepository = FileSystemPhotoRepository(formatRegistry)
