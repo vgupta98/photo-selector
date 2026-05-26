@@ -54,8 +54,9 @@ class BrowserViewModel(
     private val toggleFavourite: ToggleFavouriteUseCase,
     private val imageLoader: ImageLoader,
     private val isReadOnly: StateFlow<Boolean>,
+    parentJob: Job? = null,
     private val onPositionChanged: (suspend (Int) -> Unit)? = null,
-) : StateHolder() {
+) : StateHolder(parentJob) {
 
     private val favouritesFlow: StateFlow<Set<PhotoId>> = observeFavourites(root)
 
