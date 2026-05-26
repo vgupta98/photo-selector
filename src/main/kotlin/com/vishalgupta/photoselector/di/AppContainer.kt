@@ -56,7 +56,7 @@ class AppContainer {
 
     private val diskThumbnailCache = DiskThumbnailCache(
         cacheDir = Path.of(System.getProperty("user.home"), "Library", "Caches", "PhotoSelector"),
-    )
+    ).also { it.startEviction() }
 
     val imageLoader: ImageLoader = SkikoImageLoader(
         registry = formatRegistry,

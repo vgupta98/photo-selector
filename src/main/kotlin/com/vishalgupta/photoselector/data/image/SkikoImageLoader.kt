@@ -6,6 +6,7 @@ import com.vishalgupta.photoselector.domain.format.PhotoFormatRegistry
 import com.vishalgupta.photoselector.domain.model.DecodedImage
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -61,7 +62,8 @@ class SkikoImageLoader(
                 }
             }
             bitmap
-        } catch (_: Throwable) {
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
             null
         }
     }

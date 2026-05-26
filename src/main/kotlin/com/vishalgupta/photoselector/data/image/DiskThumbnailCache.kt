@@ -28,7 +28,7 @@ class DiskThumbnailCache(
 ) {
     private val thumbsDir = cacheDir.resolve("thumbs")
 
-    init {
+    fun startEviction() {
         Thread({ evict() }, "disk-cache-eviction").apply { isDaemon = true }.start()
     }
 
