@@ -13,9 +13,7 @@ import org.jetbrains.skia.ImageInfo
 import org.jetbrains.skia.Rect
 import org.jetbrains.skia.SamplingMode
 import org.jetbrains.skia.Surface
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.nio.file.Files
 import java.nio.file.Path
@@ -31,8 +29,8 @@ class DiskThumbnailCache(
 ) {
     private val thumbsDir = cacheDir.resolve("thumbs")
 
-    fun startEviction(dispatcher: CoroutineDispatcher) {
-        CoroutineScope(SupervisorJob() + dispatcher).launch { evict() }
+    fun startEviction(scope: CoroutineScope) {
+        scope.launch { evict() }
     }
 
     fun get(photo: Photo, targetEdgePx: Int): DecodedImage? {
