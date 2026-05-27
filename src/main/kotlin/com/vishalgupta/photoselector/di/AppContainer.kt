@@ -163,6 +163,7 @@ class AppContainer {
         copyToFolder = copyFavouritesUseCase,
         imageLoader = imageLoader,
         parentJob = folderJob,
+        onScrollPositionChanged = { position -> browsePositionRepository.save(root, position) },
     )
 
     suspend fun resetForNewRoot() {

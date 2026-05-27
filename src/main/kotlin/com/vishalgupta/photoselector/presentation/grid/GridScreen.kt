@@ -46,6 +46,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -105,6 +106,7 @@ fun GridScreen(
             }
         },
         onDismissToast = viewModel::dismissToast,
+        onFirstVisibleItemChanged = viewModel::onFirstVisibleItemChanged,
         imageLoader = viewModel.imageLoader,
     )
 }
@@ -121,6 +123,7 @@ fun GridScreen(
     onExportTxt: () -> Unit,
     onCopyToFolder: (ConflictPolicy) -> Unit,
     onDismissToast: () -> Unit,
+    onFirstVisibleItemChanged: (Int) -> Unit = {},
     imageLoader: com.vishalgupta.photoselector.data.image.ImageLoader,
     modifier: Modifier = Modifier,
 ) {
@@ -147,6 +150,11 @@ fun GridScreen(
         if (state.focusedIndex >= 0) {
             gridState.animateScrollToItem(state.focusedIndex)
         }
+    }
+
+    LaunchedEffect(gridState) {
+        snapshotFlow { gridState.firstVisibleItemIndex }
+            .collect { index -> onFirstVisibleItemChanged(index) }
     }
 
     Column(

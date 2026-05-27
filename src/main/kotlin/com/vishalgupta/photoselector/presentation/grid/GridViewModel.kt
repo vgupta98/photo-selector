@@ -10,9 +10,11 @@ import com.vishalgupta.photoselector.domain.usecase.CopyFavouritesToFolderUseCas
 import com.vishalgupta.photoselector.domain.usecase.ExportFavouritesTxtUseCase
 import com.vishalgupta.photoselector.domain.usecase.ObserveFavouritesUseCase
 import com.vishalgupta.photoselector.domain.usecase.ToggleFavouriteUseCase
+import com.vishalgupta.photoselector.domain.repository.BrowsePosition
 import com.vishalgupta.photoselector.presentation.StateHolder
 import com.vishalgupta.photoselector.presentation.navigation.BrowseScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,11 +47,14 @@ class GridViewModel(
     private val copyToFolder: CopyFavouritesToFolderUseCase,
     val imageLoader: ImageLoader,
     parentJob: Job? = null,
+    private val onScrollPositionChanged: (suspend (BrowsePosition) -> Unit)? = null,
 ) : StateHolder(parentJob) {
 
     private val _scope = MutableStateFlow(initialScope)
     private val _state = MutableStateFlow(GridUiState(scope = initialScope, lastViewedPhotoId = lastViewedPhotoId))
     val state: StateFlow<GridUiState> = _state.asStateFlow()
+
+    private var scrollSaveJob: Job? = null
 
     init {
         combine(observeFavourites(root), _scope) { favIds, browseScope ->
@@ -82,6 +87,18 @@ class GridViewModel(
         }
         _scope.value = newScope
         _state.update { it.copy(focusedIndex = -1) }
+    }
+
+    fun onFirstVisibleItemChanged(index: Int) {
+        if (_scope.value != BrowseScope.AllPhotos) return
+        val photo = _state.value.photos.getOrNull(index)
+        onScrollPositionChanged?.let { save ->
+            scrollSaveJob?.cancel()
+            scrollSaveJob = scope.launch {
+                delay(500)
+                save(BrowsePosition(index, photo?.id))
+            }
+        }
     }
 
     fun setFocusedIndex(index: Int) {
