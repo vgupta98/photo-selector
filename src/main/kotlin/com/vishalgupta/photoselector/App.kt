@@ -11,7 +11,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import com.vishalgupta.photoselector.di.AppContainer
 import com.vishalgupta.photoselector.presentation.browser.BrowserScreen
-import com.vishalgupta.photoselector.presentation.favourites.FavouritesScreen
+import com.vishalgupta.photoselector.presentation.grid.GridScreen
 import com.vishalgupta.photoselector.presentation.navigation.BrowseScope
 import com.vishalgupta.photoselector.presentation.navigation.Screen
 import com.vishalgupta.photoselector.presentation.rootpicker.RootFolderPickerScreen
@@ -30,6 +30,30 @@ fun App(container: AppContainer) {
                     val vm = remember { container.rootPickerViewModel() }
                     RootFolderPickerScreen(vm)
                 }
+                is Screen.Grid -> {
+                    val vm = remember(s.root.path, s.scope) {
+                        container.gridViewModel(s.root, s.scope)
+                    }
+                    GridScreen(
+                        viewModel = vm,
+                        initialScrollIndex = s.initialScrollIndex,
+                        onTileClick = { index ->
+                            container.goTo(
+                                Screen.Browser(
+                                    root = s.root,
+                                    initialIndex = index,
+                                    scope = vm.state.value.scope,
+                                ),
+                            )
+                        },
+                        onChangeFolder = {
+                            coroutineScope.launch {
+                                container.resetForNewRoot()
+                                container.goTo(Screen.RootPicker)
+                            }
+                        },
+                    )
+                }
                 is Screen.Browser -> {
                     val vm = remember(s.root.path, s.initialIndex, s.scope) {
                         container.browserViewModel(s.root, s.initialIndex, s.scope)
@@ -39,42 +63,21 @@ fun App(container: AppContainer) {
                             container.currentPhotoPath.value = state.currentPhoto?.absolutePath
                         }
                     }
-                    val openFavourites: () -> Unit = {
-                        container.goTo(Screen.Favourites(s.root))
-                    }
                     BrowserScreen(
                         viewModel = vm,
                         systemActions = container.systemActions,
-                        onOpenFavourites = openFavourites,
+                        onOpenFavourites = {
+                            container.goTo(Screen.Grid(s.root, BrowseScope.FavouritesOnly))
+                        },
                         onChangeFolder = {
                             coroutineScope.launch {
                                 container.resetForNewRoot()
                                 container.goTo(Screen.RootPicker)
                             }
                         },
-                        onBack = when (s.scope) {
-                            BrowseScope.AllPhotos -> null
-                            BrowseScope.FavouritesOnly -> { openFavourites }
-                        },
-                    )
-                }
-                is Screen.Favourites -> {
-                    val vm = remember(s.root.path) { container.favouritesViewModel(s.root) }
-                    FavouritesScreen(
-                        viewModel = vm,
                         onBack = {
-                            val savedIndex = container.loadBrowsePosition(s.root)
-                            container.goTo(Screen.Browser(s.root, initialIndex = savedIndex))
-                        },
-                        onOpenPhoto = { photo ->
-                            val index = container.favouritesIndexOf(s.root, photo.id)
-                            container.goTo(
-                                Screen.Browser(
-                                    root = s.root,
-                                    initialIndex = index,
-                                    scope = BrowseScope.FavouritesOnly,
-                                ),
-                            )
+                            val idx = vm.state.value.currentIndex
+                            container.goTo(Screen.Grid(s.root, s.scope, initialScrollIndex = idx))
                         },
                     )
                 }

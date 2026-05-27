@@ -1,14 +1,10 @@
 package com.vishalgupta.photoselector.presentation.favourites
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,7 +15,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -37,18 +32,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.model.Photo
+import com.vishalgupta.photoselector.presentation.common.PhotoThumbnail
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
 import com.vishalgupta.photoselector.presentation.common.ErrorPlaceholder
 import com.vishalgupta.photoselector.presentation.common.NativeFileDialogs
@@ -179,9 +171,11 @@ fun FavouritesScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(items = state.favourites, key = { it.id.value }) { photo ->
-                        Thumbnail(
+                        PhotoThumbnail(
                             photo = photo,
                             loader = imageLoader,
+                            isFavourite = false,
+                            isFocused = false,
                             onClick = { onOpenPhoto(photo) },
                         )
                     }
@@ -191,37 +185,6 @@ fun FavouritesScreen(
             SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter)) {
                 Snackbar(snackbarData = it)
             }
-        }
-    }
-}
-
-@Composable
-private fun Thumbnail(
-    photo: Photo,
-    loader: ImageLoader,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val bitmap by produceState<ImageBitmap?>(null, photo.id) {
-        value = loader.load(photo, viewportLongEdgePx = 320)
-    }
-    Box(
-        modifier
-            .aspectRatio(1f)
-            .background(Color(0xFF1E1E1E))
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        val bmp = bitmap
-        if (bmp != null) {
-            Image(
-                bitmap = bmp,
-                contentDescription = photo.fileName,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            CircularProgressIndicator()
         }
     }
 }

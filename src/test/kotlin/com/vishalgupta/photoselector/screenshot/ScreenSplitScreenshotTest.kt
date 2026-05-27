@@ -14,6 +14,9 @@ import com.vishalgupta.photoselector.presentation.browser.BrowserUiState
 import com.vishalgupta.photoselector.presentation.browser.FavouriteToastState
 import com.vishalgupta.photoselector.presentation.favourites.FavouritesScreen
 import com.vishalgupta.photoselector.presentation.favourites.FavouritesUiState
+import com.vishalgupta.photoselector.presentation.grid.GridScreen
+import com.vishalgupta.photoselector.presentation.grid.GridUiState
+import com.vishalgupta.photoselector.presentation.navigation.BrowseScope
 import com.vishalgupta.photoselector.presentation.rootpicker.RootFolderPickerScreen
 import com.vishalgupta.photoselector.presentation.rootpicker.RootPickerUiState
 import com.vishalgupta.photoselector.presentation.theme.AppTheme
@@ -162,6 +165,92 @@ class ScreenSplitScreenshotTest {
         rule.dumpScreenshot("favourites-busy")
     }
 
+    // --- GridScreen ---
+
+    @Test
+    fun grid_allPhotos() {
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    GridScreen(
+                        state = GridUiState(
+                            photos = testPhotos,
+                            scope = BrowseScope.AllPhotos,
+                            favouriteIds = setOf(PhotoId("a")),
+                        ),
+                        initialScrollIndex = 0,
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onToggleScope = {},
+                        onSetFocusedIndex = {},
+                        onToggleFavouriteAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        imageLoader = noOpImageLoader,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("grid-all-photos")
+    }
+
+    @Test
+    fun grid_favouritesOnly() {
+        val favPhotos = testPhotos.take(1)
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    GridScreen(
+                        state = GridUiState(
+                            photos = favPhotos,
+                            scope = BrowseScope.FavouritesOnly,
+                            favouriteIds = setOf(PhotoId("a")),
+                        ),
+                        initialScrollIndex = 0,
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onToggleScope = {},
+                        onSetFocusedIndex = {},
+                        onToggleFavouriteAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        imageLoader = noOpImageLoader,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("grid-favourites-only")
+    }
+
+    @Test
+    fun grid_empty() {
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    GridScreen(
+                        state = GridUiState(),
+                        initialScrollIndex = 0,
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onToggleScope = {},
+                        onSetFocusedIndex = {},
+                        onToggleFavouriteAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        imageLoader = noOpImageLoader,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("grid-empty")
+    }
+
     // --- BrowserScreen ---
 
     @Test
@@ -187,6 +276,7 @@ class ScreenSplitScreenshotTest {
                         onViewportSizeChanged = {},
                         onOpenFavourites = {},
                         onChangeFolder = {},
+                        onBackToGrid = {},
                     )
                 }
             }
@@ -209,6 +299,7 @@ class ScreenSplitScreenshotTest {
                         onViewportSizeChanged = {},
                         onOpenFavourites = {},
                         onChangeFolder = {},
+                        onBackToGrid = {},
                     )
                 }
             }
@@ -240,6 +331,7 @@ class ScreenSplitScreenshotTest {
                         onViewportSizeChanged = {},
                         onOpenFavourites = {},
                         onChangeFolder = {},
+                        onBackToGrid = {},
                     )
                 }
             }

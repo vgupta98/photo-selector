@@ -14,7 +14,6 @@ import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.data.image.SkikoImageLoader
 import com.vishalgupta.photoselector.domain.format.PhotoFormatRegistry
 import com.vishalgupta.photoselector.domain.model.Photo
-import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.FavouritesRepository
 import com.vishalgupta.photoselector.domain.repository.BrowsePositionRepository
@@ -26,7 +25,7 @@ import com.vishalgupta.photoselector.domain.usecase.ObserveFavouritesUseCase
 import com.vishalgupta.photoselector.domain.usecase.ScanRootFolderUseCase
 import com.vishalgupta.photoselector.domain.usecase.ToggleFavouriteUseCase
 import com.vishalgupta.photoselector.presentation.browser.BrowserViewModel
-import com.vishalgupta.photoselector.presentation.favourites.FavouritesViewModel
+import com.vishalgupta.photoselector.presentation.grid.GridViewModel
 import com.vishalgupta.photoselector.presentation.navigation.BrowseScope
 import com.vishalgupta.photoselector.presentation.common.MacSystemActions
 import com.vishalgupta.photoselector.presentation.common.SystemActions
@@ -95,12 +94,6 @@ class AppContainer {
 
     fun loadBrowsePosition(root: RootFolder): Int = browsePositionRepository.load(root)
 
-    /** Returns the position of [id] within the current favourites slice (sorted by relativePath). */
-    fun favouritesIndexOf(root: RootFolder, id: PhotoId): Int =
-        photosForScope(root, BrowseScope.FavouritesOnly)
-            .indexOfFirst { it.id == id }
-            .coerceAtLeast(0)
-
     fun setScanResult(root: RootFolder, photos: List<Photo>) {
         scannedRoot = root
         scannedPhotos = photos
@@ -116,8 +109,7 @@ class AppContainer {
         onScanComplete = { root, photos ->
             imageLoader.evictAll()
             setScanResult(root, photos)
-            val savedIndex = browsePositionRepository.load(root)
-            goTo(Screen.Browser(root, initialIndex = savedIndex))
+            goTo(Screen.Grid(root))
         },
         parentJob = appScope.coroutineContext[Job],
     )
@@ -152,10 +144,12 @@ class AppContainer {
         }
     }
 
-    fun favouritesViewModel(root: RootFolder): FavouritesViewModel = FavouritesViewModel(
+    fun gridViewModel(root: RootFolder, scope: BrowseScope): GridViewModel = GridViewModel(
         root = root,
         allPhotos = photosFor(root),
+        initialScope = scope,
         observeFavourites = observeFavouritesUseCase,
+        toggleFavourite = toggleFavouriteUseCase,
         exportTxt = exportTxtUseCase,
         copyToFolder = copyFavouritesUseCase,
         imageLoader = imageLoader,
