@@ -1,5 +1,6 @@
 package com.vishalgupta.photoselector.presentation.grid
 
+import androidx.compose.foundation.ScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -18,6 +19,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Star
@@ -46,6 +48,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
@@ -242,7 +245,15 @@ fun GridScreen(
                 }
                 VerticalScrollbar(
                     adapter = rememberScrollbarAdapter(gridState),
-                    modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                    modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().padding(end = 4.dp),
+                    style = ScrollbarStyle(
+                        minimalHeight = 48.dp,
+                        thickness = 8.dp,
+                        shape = RoundedCornerShape(4.dp),
+                        hoverDurationMillis = 300,
+                        unhoverColor = Color.White.copy(alpha = 0.3f),
+                        hoverColor = Color.White.copy(alpha = 0.6f),
+                    ),
                 )
             }
 
