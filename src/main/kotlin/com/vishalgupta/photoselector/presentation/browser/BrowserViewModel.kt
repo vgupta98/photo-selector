@@ -5,6 +5,7 @@ import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
+import com.vishalgupta.photoselector.domain.repository.BrowsePosition
 import com.vishalgupta.photoselector.domain.usecase.ObserveFavouritesUseCase
 import com.vishalgupta.photoselector.domain.usecase.ToggleFavouriteUseCase
 import com.vishalgupta.photoselector.presentation.StateHolder
@@ -55,7 +56,7 @@ class BrowserViewModel(
     private val imageLoader: ImageLoader,
     private val isReadOnly: StateFlow<Boolean>,
     parentJob: Job? = null,
-    private val onPositionChanged: (suspend (Int) -> Unit)? = null,
+    private val onPositionChanged: (suspend (BrowsePosition) -> Unit)? = null,
 ) : StateHolder(parentJob) {
 
     private val favouritesFlow: StateFlow<Set<PhotoId>> = observeFavourites(root)
@@ -123,7 +124,7 @@ class BrowserViewModel(
             positionSaveJob?.cancel()
             positionSaveJob = scope.launch {
                 delay(500)
-                save(bounded)
+                save(BrowsePosition(bounded, photo.id))
             }
         }
         imageLoader.unpinAllExcept(photo.id)

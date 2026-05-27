@@ -31,8 +31,8 @@ fun App(container: AppContainer) {
                     RootFolderPickerScreen(vm)
                 }
                 is Screen.Grid -> {
-                    val vm = remember(s.root.path, s.scope) {
-                        container.gridViewModel(s.root, s.scope)
+                    val vm = remember(s.root.path, s.scope, s.lastViewedPhotoId) {
+                        container.gridViewModel(s.root, s.scope, s.lastViewedPhotoId)
                     }
                     GridScreen(
                         viewModel = vm,
@@ -77,7 +77,8 @@ fun App(container: AppContainer) {
                         },
                         onBack = {
                             val idx = vm.state.value.currentIndex
-                            container.goTo(Screen.Grid(s.root, s.scope, initialScrollIndex = idx))
+                            val photoId = vm.state.value.currentPhoto?.id
+                            container.goTo(Screen.Grid(s.root, s.scope, initialScrollIndex = idx, lastViewedPhotoId = photoId))
                         },
                     )
                 }

@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +35,7 @@ fun PhotoThumbnail(
     loader: ImageLoader,
     isFavourite: Boolean,
     isFocused: Boolean,
+    isLastViewed: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -72,6 +75,15 @@ fun PhotoThumbnail(
                     .align(Alignment.TopEnd)
                     .padding(4.dp)
                     .size(18.dp),
+            )
+        }
+        if (isLastViewed) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .background(MaterialTheme.colorScheme.primary),
             )
         }
     }

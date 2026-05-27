@@ -239,6 +239,7 @@ fun GridScreen(
                             loader = imageLoader,
                             isFavourite = photo.id in state.favouriteIds,
                             isFocused = index == state.focusedIndex,
+                            isLastViewed = photo.id == state.lastViewedPhotoId,
                             onClick = { onTileClick(index) },
                         )
                     }

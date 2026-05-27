@@ -177,6 +177,7 @@ class ScreenSplitScreenshotTest {
                             photos = testPhotos,
                             scope = BrowseScope.AllPhotos,
                             favouriteIds = setOf(PhotoId("a")),
+                            lastViewedPhotoId = PhotoId("b"),
                         ),
                         initialScrollIndex = 0,
                         onTileClick = {},

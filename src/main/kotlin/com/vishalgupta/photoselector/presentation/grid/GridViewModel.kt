@@ -27,6 +27,7 @@ data class GridUiState(
     val photos: List<Photo> = emptyList(),
     val scope: BrowseScope = BrowseScope.AllPhotos,
     val favouriteIds: Set<PhotoId> = emptySet(),
+    val lastViewedPhotoId: PhotoId? = null,
     val focusedIndex: Int = -1,
     val isBusy: Boolean = false,
     val progressLabel: String? = null,
@@ -37,6 +38,7 @@ class GridViewModel(
     private val root: RootFolder,
     private val allPhotos: List<Photo>,
     initialScope: BrowseScope,
+    lastViewedPhotoId: PhotoId? = null,
     private val observeFavourites: ObserveFavouritesUseCase,
     private val toggleFavourite: ToggleFavouriteUseCase,
     private val exportTxt: ExportFavouritesTxtUseCase,
@@ -46,7 +48,7 @@ class GridViewModel(
 ) : StateHolder(parentJob) {
 
     private val _scope = MutableStateFlow(initialScope)
-    private val _state = MutableStateFlow(GridUiState(scope = initialScope))
+    private val _state = MutableStateFlow(GridUiState(scope = initialScope, lastViewedPhotoId = lastViewedPhotoId))
     val state: StateFlow<GridUiState> = _state.asStateFlow()
 
     init {

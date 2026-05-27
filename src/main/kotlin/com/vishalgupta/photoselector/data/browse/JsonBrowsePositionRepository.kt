@@ -1,7 +1,9 @@
 package com.vishalgupta.photoselector.data.browse
 
 import com.vishalgupta.photoselector.data.favourites.AtomicJsonWriter
+import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
+import com.vishalgupta.photoselector.domain.repository.BrowsePosition
 import com.vishalgupta.photoselector.domain.repository.BrowsePositionRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -11,8 +13,9 @@ import java.nio.file.Files
 
 @Serializable
 private data class BrowsePositionDto(
-    val version: Int = 1,
+    val version: Int = 2,
     val lastIndex: Int = 0,
+    val lastPhotoId: String? = null,
 )
 
 class JsonBrowsePositionRepository(
@@ -20,37 +23,44 @@ class JsonBrowsePositionRepository(
 ) : BrowsePositionRepository {
 
     private var cachedRoot: RootFolder? = null
-    private var cachedIndex: Int = 0
+    private var cachedPosition: BrowsePosition = BrowsePosition()
 
-    override suspend fun save(root: RootFolder, index: Int) {
+    override suspend fun save(root: RootFolder, position: BrowsePosition) {
         cachedRoot = root
-        cachedIndex = index
+        cachedPosition = position
         withContext(Dispatchers.IO) {
-            writeToDisk(root, index)
+            writeToDisk(root, position)
         }
     }
 
-    override fun load(root: RootFolder): Int {
-        if (cachedRoot?.path == root.path) return cachedIndex
-        val index = readFromDisk(root)
+    override fun load(root: RootFolder): BrowsePosition {
+        if (cachedRoot?.path == root.path) return cachedPosition
+        val position = readFromDisk(root)
         cachedRoot = root
-        cachedIndex = index
-        return index
+        cachedPosition = position
+        return position
     }
 
-    private fun readFromDisk(root: RootFolder): Int {
+    private fun readFromDisk(root: RootFolder): BrowsePosition {
         val file = root.positionFile
-        if (!Files.exists(file)) return 0
+        if (!Files.exists(file)) return BrowsePosition()
         return try {
             val text = Files.readString(file)
-            json.decodeFromString(BrowsePositionDto.serializer(), text).lastIndex
+            val dto = json.decodeFromString(BrowsePositionDto.serializer(), text)
+            BrowsePosition(
+                lastIndex = dto.lastIndex,
+                lastPhotoId = dto.lastPhotoId?.let { PhotoId(it) },
+            )
         } catch (_: Throwable) {
-            0
+            BrowsePosition()
         }
     }
 
-    private fun writeToDisk(root: RootFolder, index: Int) {
-        val dto = BrowsePositionDto(lastIndex = index)
+    private fun writeToDisk(root: RootFolder, position: BrowsePosition) {
+        val dto = BrowsePositionDto(
+            lastIndex = position.lastIndex,
+            lastPhotoId = position.lastPhotoId?.value,
+        )
         val bytes = json.encodeToString(BrowsePositionDto.serializer(), dto).toByteArray(Charsets.UTF_8)
         try {
             AtomicJsonWriter.write(root.positionFile, bytes)

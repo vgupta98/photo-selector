@@ -14,7 +14,9 @@ import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.data.image.SkikoImageLoader
 import com.vishalgupta.photoselector.domain.format.PhotoFormatRegistry
 import com.vishalgupta.photoselector.domain.model.Photo
+import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
+import com.vishalgupta.photoselector.domain.repository.BrowsePosition
 import com.vishalgupta.photoselector.domain.repository.FavouritesRepository
 import com.vishalgupta.photoselector.domain.repository.BrowsePositionRepository
 import com.vishalgupta.photoselector.domain.repository.PhotoExporter
@@ -92,7 +94,7 @@ class AppContainer {
     fun photosFor(root: RootFolder): List<Photo> =
         if (scannedRoot?.path == root.path) scannedPhotos else emptyList()
 
-    fun loadBrowsePosition(root: RootFolder): Int = browsePositionRepository.load(root)
+    fun loadBrowsePosition(root: RootFolder): BrowsePosition = browsePositionRepository.load(root)
 
     fun setScanResult(root: RootFolder, photos: List<Photo>) {
         scannedRoot = root
@@ -109,7 +111,13 @@ class AppContainer {
         onScanComplete = { root, photos ->
             imageLoader.evictAll()
             setScanResult(root, photos)
-            goTo(Screen.Grid(root))
+            val position = browsePositionRepository.load(root)
+            val scrollIndex = if (position.lastPhotoId != null) {
+                photos.indexOfFirst { it.id == position.lastPhotoId }.coerceAtLeast(0)
+            } else {
+                0
+            }
+            goTo(Screen.Grid(root, initialScrollIndex = scrollIndex, lastViewedPhotoId = position.lastPhotoId))
         },
         parentJob = appScope.coroutineContext[Job],
     )
@@ -128,7 +136,7 @@ class AppContainer {
         isReadOnly = favouritesRepository.isReadOnly(root),
         parentJob = folderJob,
         onPositionChanged = when (scope) {
-            BrowseScope.AllPhotos -> { index -> browsePositionRepository.save(root, index) }
+            BrowseScope.AllPhotos -> { position -> browsePositionRepository.save(root, position) }
             BrowseScope.FavouritesOnly -> null
         },
     )
@@ -144,10 +152,11 @@ class AppContainer {
         }
     }
 
-    fun gridViewModel(root: RootFolder, scope: BrowseScope): GridViewModel = GridViewModel(
+    fun gridViewModel(root: RootFolder, scope: BrowseScope, lastViewedPhotoId: PhotoId? = null): GridViewModel = GridViewModel(
         root = root,
         allPhotos = photosFor(root),
         initialScope = scope,
+        lastViewedPhotoId = lastViewedPhotoId,
         observeFavourites = observeFavouritesUseCase,
         toggleFavourite = toggleFavouriteUseCase,
         exportTxt = exportTxtUseCase,
