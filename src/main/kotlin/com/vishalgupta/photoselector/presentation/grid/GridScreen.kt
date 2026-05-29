@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -58,7 +59,6 @@ import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
 import com.vishalgupta.photoselector.presentation.common.ErrorPlaceholder
@@ -66,7 +66,6 @@ import com.vishalgupta.photoselector.presentation.common.NativeFileDialogs
 import com.vishalgupta.photoselector.presentation.common.PhotoThumbnail
 import com.vishalgupta.photoselector.presentation.navigation.BrowseScope
 import kotlinx.coroutines.launch
-import kotlin.math.floor
 
 private val CELL_MIN_SIZE = 160.dp
 
@@ -136,9 +135,6 @@ fun GridScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var policyMenu by remember { mutableStateOf(false) }
 
-    val density = LocalDensity.current
-    val cellMinPx = with(density) { CELL_MIN_SIZE.toPx() }
-
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
     }
@@ -176,7 +172,7 @@ fun GridScreen(
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 val meta = event.isMetaPressed
-                val cols = computeColumnCount(gridState, cellMinPx)
+                val cols = computeColumnCount(gridState)
                 val maxIndex = state.photos.size - 1
                 when (event.key) {
                     Key.DirectionLeft -> {
@@ -366,12 +362,15 @@ private fun GridTopBar(
     }
 }
 
-private fun computeColumnCount(
-    gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
-    cellMinPx: Float,
-): Int {
-    val info = gridState.layoutInfo
-    val viewportWidth = info.viewportSize.width.toFloat()
-    if (viewportWidth <= 0f) return 1
-    return floor(viewportWidth / cellMinPx).toInt().coerceAtLeast(1)
+// Derives the column count from the rendered grid (count of leading visible items
+// sharing the first row's y-offset) so the keyboard model matches what
+// GridCells.Adaptive actually laid out — recomputing from viewport width drifts
+// once contentPadding / horizontalArrangement spacing are taken into account.
+// Returns 1 before first layout (visibleItemsInfo empty), which is safe: the
+// user can't have pressed an arrow yet.
+private fun computeColumnCount(gridState: LazyGridState): Int {
+    val visible = gridState.layoutInfo.visibleItemsInfo
+    if (visible.isEmpty()) return 1
+    val firstRowY = visible.first().offset.y
+    return visible.count { it.offset.y == firstRowY }.coerceAtLeast(1)
 }
