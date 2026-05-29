@@ -24,12 +24,15 @@ class JsonBrowsePositionRepository(
     private val json: Json,
 ) : BrowsePositionRepository {
 
-    private var cachedRoot: RootFolder? = null
-    private var cachedPosition: BrowsePosition = BrowsePosition()
+    // @Volatile because load() is non-suspend and reads these from the main
+    // thread, while writers update them on appScope under writeMutex — without
+    // the volatile, there's no happens-before between writer and reader and
+    // load() could see a torn snapshot.
+    @Volatile private var cachedRoot: RootFolder? = null
+    @Volatile private var cachedPosition: BrowsePosition = BrowsePosition()
     // Serializes load-modify-write so concurrent saveIndex / saveLastPhotoId
     // launched on appScope can't read the same `existing` snapshot and overwrite
-    // each other's field. load() reads the cache without locking — callers that
-    // need a coherent snapshot must go through one of the suspend save methods.
+    // each other's field.
     private val writeMutex = Mutex()
 
     override suspend fun save(root: RootFolder, position: BrowsePosition) {
