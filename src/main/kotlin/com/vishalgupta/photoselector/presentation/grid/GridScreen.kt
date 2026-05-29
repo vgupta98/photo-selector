@@ -60,6 +60,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
+import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
 import com.vishalgupta.photoselector.presentation.common.ErrorPlaceholder
 import com.vishalgupta.photoselector.presentation.common.NativeFileDialogs
@@ -127,7 +128,7 @@ fun GridScreen(
     onCopyToFolder: (ConflictPolicy) -> Unit,
     onDismissToast: () -> Unit,
     onFirstVisibleItemChanged: (Int) -> Unit = {},
-    imageLoader: com.vishalgupta.photoselector.data.image.ImageLoader,
+    imageLoader: ImageLoader,
     modifier: Modifier = Modifier,
 ) {
     val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = initialScrollIndex)
@@ -237,7 +238,7 @@ fun GridScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 LinearProgressIndicator(Modifier.weight(1f))
-                Text(state.progressLabel ?: "Working...")
+                Text(state.progressLabel ?: "Working…")
             }
         }
 
@@ -342,7 +343,7 @@ private fun GridTopBar(
                 Button(
                     enabled = state.favouriteIds.isNotEmpty() && !state.isBusy,
                     onClick = { onPolicyMenuChange(true) },
-                ) { Text("Copy photos to folder...") }
+                ) { Text("Copy photos to folder…") }
                 DropdownMenu(expanded = policyMenu, onDismissRequest = { onPolicyMenuChange(false) }) {
                     listOf(
                         "If exists: Rename" to ConflictPolicy.RENAME,

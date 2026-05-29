@@ -102,7 +102,7 @@ class GridViewModel(
 
     fun exportTxt(destination: Path) {
         scope.launch {
-            _state.update { it.copy(isBusy = true, progressLabel = "Writing list...") }
+            _state.update { it.copy(isBusy = true, progressLabel = "Writing list…") }
             try {
                 val favourites = currentFavouritePhotos()
                 exportTxt.invoke(root, favourites, destination)
