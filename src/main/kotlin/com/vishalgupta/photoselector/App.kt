@@ -32,7 +32,7 @@ fun App(container: AppContainer) {
                     RootFolderPickerScreen(vm)
                 }
                 is Screen.Grid -> key(s) {
-                    val vm = remember(s.root.path, s.scope, s.initialScrollIndex, s.lastViewedPhotoId) {
+                    val vm = remember {
                         container.gridViewModel(s.root, s.scope, s.lastViewedPhotoId)
                     }
                     GridScreen(

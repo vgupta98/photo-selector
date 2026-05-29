@@ -100,10 +100,6 @@ class GridViewModel(
         scope.launch { toggleFavourite(root, photo.id) }
     }
 
-    fun toggleFavourite(photoId: PhotoId) {
-        scope.launch { toggleFavourite(root, photoId) }
-    }
-
     fun exportTxt(destination: Path) {
         scope.launch {
             _state.update { it.copy(isBusy = true, progressLabel = "Writing list...") }
