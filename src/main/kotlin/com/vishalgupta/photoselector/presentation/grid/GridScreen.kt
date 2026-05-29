@@ -174,6 +174,12 @@ fun GridScreen(
                 val meta = event.isMetaPressed
                 val cols = computeColumnCount(gridState)
                 val maxIndex = state.photos.size - 1
+                val isArrow = event.key == Key.DirectionLeft || event.key == Key.DirectionRight ||
+                    event.key == Key.DirectionUp || event.key == Key.DirectionDown
+                if (isArrow && state.focusedIndex < 0 && maxIndex >= 0) {
+                    onSetFocusedIndex(gridState.firstVisibleItemIndex.coerceIn(0, maxIndex))
+                    return@onPreviewKeyEvent true
+                }
                 when (event.key) {
                     Key.DirectionLeft -> {
                         onSetFocusedIndex((state.focusedIndex - 1).coerceAtLeast(0))
