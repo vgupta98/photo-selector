@@ -180,6 +180,37 @@ class ScreenSplitScreenshotTest {
     }
 
     @Test
+    fun grid_focused() {
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    GridScreen(
+                        state = GridUiState(
+                            photos = testPhotos,
+                            scope = BrowseScope.AllPhotos,
+                            favouriteIds = emptySet(),
+                            focusedIndex = 0,
+                        ),
+                        initialScrollIndex = 0,
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onOpenFavourites = {},
+                        onBack = null,
+                        onSetFocusedIndex = {},
+                        onToggleFavouriteAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        imageLoader = noOpImageLoader,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("grid-focused")
+    }
+
+    @Test
     fun grid_empty() {
         rule.setContent {
             AppTheme {
