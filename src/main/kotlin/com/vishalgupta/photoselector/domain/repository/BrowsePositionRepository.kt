@@ -10,5 +10,6 @@ data class BrowsePosition(
 
 interface BrowsePositionRepository {
     suspend fun save(root: RootFolder, position: BrowsePosition)
+    suspend fun saveIndex(root: RootFolder, index: Int)
     fun load(root: RootFolder): BrowsePosition
 }

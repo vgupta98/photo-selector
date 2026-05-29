@@ -10,7 +10,6 @@ import com.vishalgupta.photoselector.domain.usecase.CopyFavouritesToFolderUseCas
 import com.vishalgupta.photoselector.domain.usecase.ExportFavouritesTxtUseCase
 import com.vishalgupta.photoselector.domain.usecase.ObserveFavouritesUseCase
 import com.vishalgupta.photoselector.domain.usecase.ToggleFavouriteUseCase
-import com.vishalgupta.photoselector.domain.repository.BrowsePosition
 import com.vishalgupta.photoselector.presentation.StateHolder
 import com.vishalgupta.photoselector.presentation.navigation.BrowseScope
 import kotlinx.coroutines.Job
@@ -47,7 +46,7 @@ class GridViewModel(
     private val copyToFolder: CopyFavouritesToFolderUseCase,
     val imageLoader: ImageLoader,
     parentJob: Job? = null,
-    private val onScrollPositionChanged: (suspend (BrowsePosition) -> Unit)? = null,
+    private val onScrollIndexChanged: (suspend (Int) -> Unit)? = null,
 ) : StateHolder(parentJob) {
 
     private val _scope = MutableStateFlow(initialScope)
@@ -91,12 +90,11 @@ class GridViewModel(
 
     fun onFirstVisibleItemChanged(index: Int) {
         if (_scope.value != BrowseScope.AllPhotos) return
-        val photo = _state.value.photos.getOrNull(index)
-        onScrollPositionChanged?.let { save ->
+        onScrollIndexChanged?.let { save ->
             scrollSaveJob?.cancel()
             scrollSaveJob = scope.launch {
                 delay(500)
-                save(BrowsePosition(index, photo?.id))
+                save(index)
             }
         }
     }

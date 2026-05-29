@@ -112,11 +112,7 @@ class AppContainer {
             imageLoader.evictAll()
             setScanResult(root, photos)
             val position = browsePositionRepository.load(root)
-            val scrollIndex = if (position.lastPhotoId != null) {
-                photos.indexOfFirst { it.id == position.lastPhotoId }.coerceAtLeast(0)
-            } else {
-                0
-            }
+            val scrollIndex = position.lastIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0))
             goTo(Screen.Grid(root, initialScrollIndex = scrollIndex, lastViewedPhotoId = position.lastPhotoId))
         },
         parentJob = appScope.coroutineContext[Job],
@@ -163,7 +159,7 @@ class AppContainer {
         copyToFolder = copyFavouritesUseCase,
         imageLoader = imageLoader,
         parentJob = folderJob,
-        onScrollPositionChanged = { position -> browsePositionRepository.save(root, position) },
+        onScrollIndexChanged = { index -> browsePositionRepository.saveIndex(root, index) },
     )
 
     suspend fun resetForNewRoot() {
