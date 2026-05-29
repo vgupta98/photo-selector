@@ -6,6 +6,8 @@ import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.BrowsePosition
 import com.vishalgupta.photoselector.domain.repository.BrowsePositionRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -24,36 +26,49 @@ class JsonBrowsePositionRepository(
 
     private var cachedRoot: RootFolder? = null
     private var cachedPosition: BrowsePosition = BrowsePosition()
+    // Serializes load-modify-write so concurrent saveIndex / saveLastPhotoId
+    // launched on appScope can't read the same `existing` snapshot and overwrite
+    // each other's field. load() reads the cache without locking — callers that
+    // need a coherent snapshot must go through one of the suspend save methods.
+    private val writeMutex = Mutex()
 
     override suspend fun save(root: RootFolder, position: BrowsePosition) {
-        cachedRoot = root
-        cachedPosition = position
-        withContext(Dispatchers.IO) {
-            writeToDisk(root, position)
+        writeMutex.withLock {
+            cachedRoot = root
+            cachedPosition = position
+            withContext(Dispatchers.IO) {
+                writeToDisk(root, position)
+            }
         }
     }
 
     override suspend fun saveIndex(root: RootFolder, index: Int) {
-        val existing = load(root)
-        val updated = existing.copy(lastIndex = index)
-        cachedRoot = root
-        cachedPosition = updated
-        withContext(Dispatchers.IO) {
-            writeToDisk(root, updated)
+        writeMutex.withLock {
+            val existing = loadLocked(root)
+            val updated = existing.copy(lastIndex = index)
+            cachedRoot = root
+            cachedPosition = updated
+            withContext(Dispatchers.IO) {
+                writeToDisk(root, updated)
+            }
         }
     }
 
     override suspend fun saveLastPhotoId(root: RootFolder, photoId: PhotoId?) {
-        val existing = load(root)
-        val updated = existing.copy(lastPhotoId = photoId)
-        cachedRoot = root
-        cachedPosition = updated
-        withContext(Dispatchers.IO) {
-            writeToDisk(root, updated)
+        writeMutex.withLock {
+            val existing = loadLocked(root)
+            val updated = existing.copy(lastPhotoId = photoId)
+            cachedRoot = root
+            cachedPosition = updated
+            withContext(Dispatchers.IO) {
+                writeToDisk(root, updated)
+            }
         }
     }
 
-    override fun load(root: RootFolder): BrowsePosition {
+    override fun load(root: RootFolder): BrowsePosition = loadLocked(root)
+
+    private fun loadLocked(root: RootFolder): BrowsePosition {
         if (cachedRoot?.path == root.path) return cachedPosition
         val position = readFromDisk(root)
         cachedRoot = root
