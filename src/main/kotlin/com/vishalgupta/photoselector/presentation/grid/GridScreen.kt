@@ -151,8 +151,15 @@ fun GridScreen(
     }
 
     LaunchedEffect(state.focusedIndex) {
-        if (state.focusedIndex >= 0) {
-            gridState.animateScrollToItem(state.focusedIndex)
+        val idx = state.focusedIndex
+        if (idx < 0) return@LaunchedEffect
+        val layout = gridState.layoutInfo
+        val item = layout.visibleItemsInfo.firstOrNull { it.index == idx }
+        val isFullyVisible = item != null &&
+            item.offset.y >= layout.viewportStartOffset &&
+            item.offset.y + item.size.height <= layout.viewportEndOffset
+        if (!isFullyVisible) {
+            gridState.animateScrollToItem(idx)
         }
     }
 
