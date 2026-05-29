@@ -29,6 +29,7 @@ import com.vishalgupta.photoselector.domain.usecase.ToggleFavouriteUseCase
 import com.vishalgupta.photoselector.presentation.browser.BrowserViewModel
 import com.vishalgupta.photoselector.presentation.grid.GridViewModel
 import com.vishalgupta.photoselector.presentation.navigation.BrowseScope
+import com.vishalgupta.photoselector.presentation.navigation.slice
 import com.vishalgupta.photoselector.presentation.common.MacSystemActions
 import com.vishalgupta.photoselector.presentation.common.SystemActions
 import com.vishalgupta.photoselector.presentation.navigation.Screen
@@ -142,16 +143,8 @@ class AppContainer {
         },
     )
 
-    private fun photosForScope(root: RootFolder, scope: BrowseScope): List<Photo> {
-        val all = photosFor(root)
-        return when (scope) {
-            BrowseScope.AllPhotos -> all
-            BrowseScope.FavouritesOnly -> {
-                val favIds = favouritesRepository.observe(root).value
-                all.filter { it.id in favIds }
-            }
-        }
-    }
+    private fun photosForScope(root: RootFolder, scope: BrowseScope): List<Photo> =
+        scope.slice(photosFor(root), favouritesRepository.observe(root).value)
 
     fun gridViewModel(
         root: RootFolder,

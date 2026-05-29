@@ -12,6 +12,7 @@ import com.vishalgupta.photoselector.domain.usecase.ObserveFavouritesUseCase
 import com.vishalgupta.photoselector.domain.usecase.ToggleFavouriteUseCase
 import com.vishalgupta.photoselector.presentation.StateHolder
 import com.vishalgupta.photoselector.presentation.navigation.BrowseScope
+import com.vishalgupta.photoselector.presentation.navigation.slice
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -57,13 +58,7 @@ class GridViewModel(
     init {
         observeFavourites(root)
             .onEach { favIds ->
-                val photos = when (browseScope) {
-                    BrowseScope.AllPhotos -> allPhotos
-                    BrowseScope.FavouritesOnly -> {
-                        val byId = allPhotos.associateBy { it.id }
-                        favIds.mapNotNull { byId[it] }.sortedBy { it.relativePath }
-                    }
-                }
+                val photos = browseScope.slice(allPhotos, favIds)
                 _state.update {
                     it.copy(
                         photos = photos,
@@ -158,10 +153,8 @@ class GridViewModel(
         _state.update { it.copy(toast = null) }
     }
 
-    private fun currentFavouritePhotos(): List<Photo> {
-        val favIds = _state.value.favouriteIds
-        return allPhotos.filter { it.id in favIds }.sortedBy { it.relativePath }
-    }
+    private fun currentFavouritePhotos(): List<Photo> =
+        BrowseScope.FavouritesOnly.slice(allPhotos, _state.value.favouriteIds)
 
     private fun buildReportToast(report: CopyReport): String {
         val parts = mutableListOf("Copied ${report.copied}")
