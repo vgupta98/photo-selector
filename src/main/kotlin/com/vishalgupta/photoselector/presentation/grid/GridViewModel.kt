@@ -17,7 +17,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
@@ -38,7 +37,7 @@ data class GridUiState(
 class GridViewModel(
     private val root: RootFolder,
     private val allPhotos: List<Photo>,
-    initialScope: BrowseScope,
+    private val browseScope: BrowseScope,
     lastViewedPhotoId: PhotoId? = null,
     private val observeFavourites: ObserveFavouritesUseCase,
     private val toggleFavourite: ToggleFavouriteUseCase,
@@ -46,20 +45,18 @@ class GridViewModel(
     private val copyToFolder: CopyFavouritesToFolderUseCase,
     val imageLoader: ImageLoader,
     parentJob: Job? = null,
-    private val onScrollIndexChanged: (suspend (Int) -> Unit)? = null,
+    private val onScrollIndexChanged: ((Int) -> Unit)? = null,
 ) : StateHolder(parentJob) {
 
-    private val _scope = MutableStateFlow(initialScope)
-    private val _state = MutableStateFlow(GridUiState(scope = initialScope, lastViewedPhotoId = lastViewedPhotoId))
+    private val _state = MutableStateFlow(GridUiState(scope = browseScope, lastViewedPhotoId = lastViewedPhotoId))
     val state: StateFlow<GridUiState> = _state.asStateFlow()
 
     private var scrollSaveJob: Job? = null
+    private var lastKnownIndex: Int? = null
 
     init {
-        combine(observeFavourites(root), _scope) { favIds, browseScope ->
-            favIds to browseScope
-        }
-            .onEach { (favIds, browseScope) ->
+        observeFavourites(root)
+            .onEach { favIds ->
                 val photos = when (browseScope) {
                     BrowseScope.AllPhotos -> allPhotos
                     BrowseScope.FavouritesOnly -> {
@@ -70,7 +67,6 @@ class GridViewModel(
                 _state.update {
                     it.copy(
                         photos = photos,
-                        scope = browseScope,
                         favouriteIds = favIds,
                         focusedIndex = it.focusedIndex.coerceIn(-1, (photos.size - 1).coerceAtLeast(-1)),
                     )
@@ -79,24 +75,25 @@ class GridViewModel(
             .launchIn(scope)
     }
 
-    fun toggleScope() {
-        val newScope = when (_scope.value) {
-            BrowseScope.AllPhotos -> BrowseScope.FavouritesOnly
-            BrowseScope.FavouritesOnly -> BrowseScope.AllPhotos
-        }
-        _scope.value = newScope
-        _state.update { it.copy(focusedIndex = -1) }
-    }
-
     fun onFirstVisibleItemChanged(index: Int) {
-        if (_scope.value != BrowseScope.AllPhotos) return
+        if (browseScope != BrowseScope.AllPhotos) return
+        lastKnownIndex = index
         onScrollIndexChanged?.let { save ->
             scrollSaveJob?.cancel()
             scrollSaveJob = scope.launch {
                 delay(500)
                 save(index)
+                lastKnownIndex = null
             }
         }
+    }
+
+    override fun onClear() {
+        val pending = lastKnownIndex
+        if (pending != null) {
+            onScrollIndexChanged?.invoke(pending)
+        }
+        super.onClear()
     }
 
     fun setFocusedIndex(index: Int) {

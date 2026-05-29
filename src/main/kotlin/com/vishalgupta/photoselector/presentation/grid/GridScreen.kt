@@ -21,14 +21,14 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -76,6 +76,8 @@ fun GridScreen(
     initialScrollIndex: Int,
     onTileClick: (index: Int) -> Unit,
     onChangeFolder: () -> Unit,
+    onOpenFavourites: (currentScrollIndex: Int) -> Unit,
+    onBack: (() -> Unit)?,
 ) {
     DisposableEffect(viewModel) { onDispose { viewModel.onClear() } }
     val state by viewModel.state.collectAsState()
@@ -86,7 +88,8 @@ fun GridScreen(
         initialScrollIndex = initialScrollIndex,
         onTileClick = onTileClick,
         onChangeFolder = onChangeFolder,
-        onToggleScope = viewModel::toggleScope,
+        onOpenFavourites = onOpenFavourites,
+        onBack = onBack,
         onSetFocusedIndex = viewModel::setFocusedIndex,
         onToggleFavouriteAtFocus = viewModel::toggleFavouriteAtFocus,
         onExportTxt = {
@@ -117,7 +120,8 @@ fun GridScreen(
     initialScrollIndex: Int,
     onTileClick: (index: Int) -> Unit,
     onChangeFolder: () -> Unit,
-    onToggleScope: () -> Unit,
+    onOpenFavourites: (currentScrollIndex: Int) -> Unit,
+    onBack: (() -> Unit)?,
     onSetFocusedIndex: (Int) -> Unit,
     onToggleFavouriteAtFocus: () -> Unit,
     onExportTxt: () -> Unit,
@@ -198,13 +202,18 @@ fun GridScreen(
                         onToggleFavouriteAtFocus()
                         true
                     }
+                    Key.Escape -> if (onBack != null) {
+                        onBack()
+                        true
+                    } else false
                     else -> false
                 }
             },
     ) {
         GridTopBar(
             state = state,
-            onToggleScope = onToggleScope,
+            onOpenFavourites = { onOpenFavourites(gridState.firstVisibleItemIndex) },
+            onBack = onBack,
             onChangeFolder = onChangeFolder,
             onExportTxt = onExportTxt,
             policyMenu = policyMenu,
@@ -227,7 +236,7 @@ fun GridScreen(
             if (state.photos.isEmpty()) {
                 val msg = when (state.scope) {
                     BrowseScope.AllPhotos -> "No JPEG / PNG photos found in this folder."
-                    BrowseScope.FavouritesOnly -> "No favourites yet. Switch to All Photos and press F to add some."
+                    BrowseScope.FavouritesOnly -> "No favourites yet. Press back and tap F on a photo to add some."
                 }
                 ErrorPlaceholder(msg, Modifier.fillMaxSize())
             } else {
@@ -276,7 +285,8 @@ fun GridScreen(
 @Composable
 private fun GridTopBar(
     state: GridUiState,
-    onToggleScope: () -> Unit,
+    onOpenFavourites: () -> Unit,
+    onBack: (() -> Unit)?,
     onChangeFolder: () -> Unit,
     onExportTxt: () -> Unit,
     policyMenu: Boolean,
@@ -292,22 +302,25 @@ private fun GridTopBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(
-            "${state.photos.size} photos",
-            style = MaterialTheme.typography.titleLarge,
-        )
-        FilterChip(
-            selected = state.scope == BrowseScope.FavouritesOnly,
-            onClick = onToggleScope,
-            label = { Text("Favourites (${state.favouriteIds.size})") },
-            leadingIcon = {
-                Icon(
-                    if (state.scope == BrowseScope.FavouritesOnly) Icons.Filled.Star
-                    else Icons.Outlined.StarOutline,
-                    contentDescription = null,
-                )
-            },
-        )
+        if (onBack != null) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+        }
+
+        val title = when (state.scope) {
+            BrowseScope.AllPhotos -> "${state.photos.size} photos"
+            BrowseScope.FavouritesOnly -> "Favourites (${state.photos.size})"
+        }
+        Text(title, style = MaterialTheme.typography.titleLarge)
+
+        if (state.scope == BrowseScope.AllPhotos) {
+            OutlinedButton(onClick = onOpenFavourites) {
+                Icon(Icons.Filled.Star, contentDescription = null)
+                Text("  Favourites (${state.favouriteIds.size})")
+            }
+        }
+
         Box(Modifier.weight(1f))
 
         if (state.scope == BrowseScope.FavouritesOnly) {

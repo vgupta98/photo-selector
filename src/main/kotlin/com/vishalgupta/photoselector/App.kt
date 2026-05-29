@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -30,8 +31,8 @@ fun App(container: AppContainer) {
                     val vm = remember { container.rootPickerViewModel() }
                     RootFolderPickerScreen(vm)
                 }
-                is Screen.Grid -> {
-                    val vm = remember(s.root.path, s.scope, s.lastViewedPhotoId) {
+                is Screen.Grid -> key(s) {
+                    val vm = remember(s.root.path, s.scope, s.initialScrollIndex, s.lastViewedPhotoId) {
                         container.gridViewModel(s.root, s.scope, s.lastViewedPhotoId)
                     }
                     GridScreen(
@@ -52,6 +53,32 @@ fun App(container: AppContainer) {
                                 container.goTo(Screen.RootPicker)
                             }
                         },
+                        onOpenFavourites = { currentScrollIndex ->
+                            container.goTo(
+                                Screen.Grid(
+                                    root = s.root,
+                                    scope = BrowseScope.FavouritesOnly,
+                                    lastViewedPhotoId = s.lastViewedPhotoId,
+                                    returnScrollIndex = currentScrollIndex,
+                                ),
+                            )
+                        },
+                        onBack = when (s.scope) {
+                            BrowseScope.AllPhotos -> null
+                            BrowseScope.FavouritesOnly -> {
+                                {
+                                    container.goTo(
+                                        Screen.Grid(
+                                            root = s.root,
+                                            scope = BrowseScope.AllPhotos,
+                                            initialScrollIndex = s.returnScrollIndex
+                                                ?: container.loadBrowsePosition(s.root).lastIndex,
+                                            lastViewedPhotoId = s.lastViewedPhotoId,
+                                        ),
+                                    )
+                                }
+                            }
+                        },
                     )
                 }
                 is Screen.Browser -> {
@@ -67,7 +94,13 @@ fun App(container: AppContainer) {
                         viewModel = vm,
                         systemActions = container.systemActions,
                         onOpenFavourites = {
-                            container.goTo(Screen.Grid(s.root, BrowseScope.FavouritesOnly))
+                            container.goTo(
+                                Screen.Grid(
+                                    s.root,
+                                    BrowseScope.FavouritesOnly,
+                                    lastViewedPhotoId = vm.state.value.currentPhoto?.id,
+                                ),
+                            )
                         },
                         onChangeFolder = {
                             coroutineScope.launch {

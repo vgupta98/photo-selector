@@ -10,6 +10,7 @@ sealed interface Screen {
         val scope: BrowseScope = BrowseScope.AllPhotos,
         val initialScrollIndex: Int = 0,
         val lastViewedPhotoId: PhotoId? = null,
+        val returnScrollIndex: Int? = null,
     ) : Screen
     data class Browser(
         val root: RootFolder,

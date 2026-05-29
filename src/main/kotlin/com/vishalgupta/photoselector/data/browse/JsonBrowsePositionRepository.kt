@@ -43,6 +43,16 @@ class JsonBrowsePositionRepository(
         }
     }
 
+    override suspend fun saveLastPhotoId(root: RootFolder, photoId: PhotoId?) {
+        val existing = load(root)
+        val updated = existing.copy(lastPhotoId = photoId)
+        cachedRoot = root
+        cachedPosition = updated
+        withContext(Dispatchers.IO) {
+            writeToDisk(root, updated)
+        }
+    }
+
     override fun load(root: RootFolder): BrowsePosition {
         if (cachedRoot?.path == root.path) return cachedPosition
         val position = readFromDisk(root)

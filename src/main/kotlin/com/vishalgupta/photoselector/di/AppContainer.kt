@@ -37,6 +37,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.Json
 import java.nio.file.Path
@@ -132,8 +133,12 @@ class AppContainer {
         isReadOnly = favouritesRepository.isReadOnly(root),
         parentJob = folderJob,
         onPositionChanged = when (scope) {
-            BrowseScope.AllPhotos -> { position -> browsePositionRepository.save(root, position) }
-            BrowseScope.FavouritesOnly -> null
+            BrowseScope.AllPhotos -> { position ->
+                appScope.launch { browsePositionRepository.save(root, position) }
+            }
+            BrowseScope.FavouritesOnly -> { position ->
+                appScope.launch { browsePositionRepository.saveLastPhotoId(root, position.lastPhotoId) }
+            }
         },
     )
 
@@ -148,10 +153,14 @@ class AppContainer {
         }
     }
 
-    fun gridViewModel(root: RootFolder, scope: BrowseScope, lastViewedPhotoId: PhotoId? = null): GridViewModel = GridViewModel(
+    fun gridViewModel(
+        root: RootFolder,
+        scope: BrowseScope,
+        lastViewedPhotoId: PhotoId? = null,
+    ): GridViewModel = GridViewModel(
         root = root,
         allPhotos = photosFor(root),
-        initialScope = scope,
+        browseScope = scope,
         lastViewedPhotoId = lastViewedPhotoId,
         observeFavourites = observeFavouritesUseCase,
         toggleFavourite = toggleFavouriteUseCase,
@@ -159,7 +168,9 @@ class AppContainer {
         copyToFolder = copyFavouritesUseCase,
         imageLoader = imageLoader,
         parentJob = folderJob,
-        onScrollIndexChanged = { index -> browsePositionRepository.saveIndex(root, index) },
+        onScrollIndexChanged = { index ->
+            appScope.launch { browsePositionRepository.saveIndex(root, index) }
+        },
     )
 
     suspend fun resetForNewRoot() {
