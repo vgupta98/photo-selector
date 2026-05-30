@@ -7,12 +7,32 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import com.vishalgupta.photoselector.presentation.designsystem.theme.PillShape
+
+/** Background/foreground pair for a [PillToast], kept together so they can't drift apart. */
+@Immutable
+data class PillToastColors(val container: Color, val content: Color)
+
+/** Default color pairings for [PillToast], following the `XxxDefaults` convention. */
+object PillToastDefaults {
+    @Composable
+    fun neutralColors() = PillToastColors(
+        container = AppTheme.colors.toastBackground,
+        content = AppTheme.colors.toastContent,
+    )
+
+    @Composable
+    fun favouriteColors() = PillToastColors(
+        container = AppTheme.colors.favouriteToastBackground,
+        content = AppTheme.colors.favouriteToastContent,
+    )
+}
 
 /**
  * A rounded pill containing an optional [leadingIcon] slot and a [text] label.
@@ -23,13 +43,12 @@ fun PillToast(
     text: String,
     modifier: Modifier = Modifier,
     leadingIcon: (@Composable () -> Unit)? = null,
-    containerColor: Color = AppTheme.colors.toastBackground,
-    contentColor: Color = AppTheme.colors.toastContent,
+    colors: PillToastColors = PillToastDefaults.neutralColors(),
 ) {
     Surface(
         modifier = modifier,
-        color = containerColor,
-        contentColor = contentColor,
+        color = colors.container,
+        contentColor = colors.content,
         shape = PillShape,
         tonalElevation = 6.dp,
         shadowElevation = 6.dp,

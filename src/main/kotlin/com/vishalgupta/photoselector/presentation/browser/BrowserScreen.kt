@@ -50,6 +50,7 @@ import com.vishalgupta.photoselector.presentation.designsystem.atom.FavouriteSta
 import com.vishalgupta.photoselector.presentation.designsystem.atom.LoadingIndicator
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ErrorPlaceholder
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToast
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToastDefaults
 import com.vishalgupta.photoselector.presentation.designsystem.organism.BrowserTopBar
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import kotlinx.coroutines.delay
@@ -270,15 +271,10 @@ fun BrowserScreen(
                             modifier = Modifier.size(AppTheme.dimens.iconSm),
                         )
                     },
-                    containerColor = if (dt.isFavourite) {
-                        AppTheme.colors.favouriteToastBackground
+                    colors = if (dt.isFavourite) {
+                        PillToastDefaults.favouriteColors()
                     } else {
-                        AppTheme.colors.toastBackground
-                    },
-                    contentColor = if (dt.isFavourite) {
-                        AppTheme.colors.favouriteToastContent
-                    } else {
-                        AppTheme.colors.toastContent
+                        PillToastDefaults.neutralColors()
                     },
                 )
             }

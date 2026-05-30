@@ -25,6 +25,7 @@ import com.vishalgupta.photoselector.presentation.designsystem.molecule.Conflict
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ErrorPlaceholder
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.FavouritesButton
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToast
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToastDefaults
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import org.junit.Rule
 import org.junit.Test
@@ -71,8 +72,7 @@ class DesignSystemGalleryScreenshotTest {
                             PillToast(
                                 text = "Favourited",
                                 leadingIcon = { FavouriteStar(filled = true, modifier = Modifier.size(AppTheme.dimens.iconSm)) },
-                                containerColor = AppTheme.colors.favouriteToastBackground,
-                                contentColor = AppTheme.colors.favouriteToastContent,
+                                colors = PillToastDefaults.favouriteColors(),
                             )
                             PillToast(
                                 text = "Unfavourited",
