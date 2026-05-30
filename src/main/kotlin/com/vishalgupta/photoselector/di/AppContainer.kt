@@ -16,6 +16,7 @@ import com.vishalgupta.photoselector.domain.format.PhotoFormatRegistry
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
+import com.vishalgupta.photoselector.domain.repository.BrowsePosition
 import com.vishalgupta.photoselector.domain.repository.FavouritesRepository
 import com.vishalgupta.photoselector.domain.repository.BrowsePositionRepository
 import com.vishalgupta.photoselector.domain.repository.PhotoExporter
@@ -26,8 +27,9 @@ import com.vishalgupta.photoselector.domain.usecase.ObserveFavouritesUseCase
 import com.vishalgupta.photoselector.domain.usecase.ScanRootFolderUseCase
 import com.vishalgupta.photoselector.domain.usecase.ToggleFavouriteUseCase
 import com.vishalgupta.photoselector.presentation.browser.BrowserViewModel
-import com.vishalgupta.photoselector.presentation.favourites.FavouritesViewModel
+import com.vishalgupta.photoselector.presentation.grid.GridViewModel
 import com.vishalgupta.photoselector.presentation.navigation.BrowseScope
+import com.vishalgupta.photoselector.presentation.navigation.slice
 import com.vishalgupta.photoselector.presentation.common.MacSystemActions
 import com.vishalgupta.photoselector.presentation.common.SystemActions
 import com.vishalgupta.photoselector.presentation.navigation.Screen
@@ -36,6 +38,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.Json
 import java.nio.file.Path
@@ -93,13 +96,7 @@ class AppContainer {
     fun photosFor(root: RootFolder): List<Photo> =
         if (scannedRoot?.path == root.path) scannedPhotos else emptyList()
 
-    fun loadBrowsePosition(root: RootFolder): Int = browsePositionRepository.load(root)
-
-    /** Returns the position of [id] within the current favourites slice (sorted by relativePath). */
-    fun favouritesIndexOf(root: RootFolder, id: PhotoId): Int =
-        photosForScope(root, BrowseScope.FavouritesOnly)
-            .indexOfFirst { it.id == id }
-            .coerceAtLeast(0)
+    fun loadBrowsePosition(root: RootFolder): BrowsePosition = browsePositionRepository.load(root)
 
     fun setScanResult(root: RootFolder, photos: List<Photo>) {
         scannedRoot = root
@@ -116,8 +113,9 @@ class AppContainer {
         onScanComplete = { root, photos ->
             imageLoader.evictAll()
             setScanResult(root, photos)
-            val savedIndex = browsePositionRepository.load(root)
-            goTo(Screen.Browser(root, initialIndex = savedIndex))
+            val position = browsePositionRepository.load(root)
+            val scrollIndex = position.lastIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0))
+            goTo(Screen.Grid(root, initialScrollIndex = scrollIndex, lastViewedPhotoId = position.lastPhotoId))
         },
         parentJob = appScope.coroutineContext[Job],
     )
@@ -136,30 +134,36 @@ class AppContainer {
         isReadOnly = favouritesRepository.isReadOnly(root),
         parentJob = folderJob,
         onPositionChanged = when (scope) {
-            BrowseScope.AllPhotos -> { index -> browsePositionRepository.save(root, index) }
-            BrowseScope.FavouritesOnly -> null
+            BrowseScope.AllPhotos -> { position ->
+                appScope.launch { browsePositionRepository.save(root, position) }
+            }
+            BrowseScope.FavouritesOnly -> { position ->
+                appScope.launch { browsePositionRepository.saveLastPhotoId(root, position.lastPhotoId) }
+            }
         },
     )
 
-    private fun photosForScope(root: RootFolder, scope: BrowseScope): List<Photo> {
-        val all = photosFor(root)
-        return when (scope) {
-            BrowseScope.AllPhotos -> all
-            BrowseScope.FavouritesOnly -> {
-                val favIds = favouritesRepository.observe(root).value
-                all.filter { it.id in favIds }
-            }
-        }
-    }
+    private fun photosForScope(root: RootFolder, scope: BrowseScope): List<Photo> =
+        scope.slice(photosFor(root), favouritesRepository.observe(root).value)
 
-    fun favouritesViewModel(root: RootFolder): FavouritesViewModel = FavouritesViewModel(
+    fun gridViewModel(
+        root: RootFolder,
+        scope: BrowseScope,
+        lastViewedPhotoId: PhotoId? = null,
+    ): GridViewModel = GridViewModel(
         root = root,
         allPhotos = photosFor(root),
+        browseScope = scope,
+        lastViewedPhotoId = lastViewedPhotoId,
         observeFavourites = observeFavouritesUseCase,
+        toggleFavourite = toggleFavouriteUseCase,
         exportTxt = exportTxtUseCase,
         copyToFolder = copyFavouritesUseCase,
         imageLoader = imageLoader,
         parentJob = folderJob,
+        onScrollIndexChanged = { index ->
+            appScope.launch { browsePositionRepository.saveIndex(root, index) }
+        },
     )
 
     suspend fun resetForNewRoot() {

@@ -5,6 +5,7 @@ import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
+import com.vishalgupta.photoselector.domain.repository.BrowsePosition
 import com.vishalgupta.photoselector.domain.usecase.ObserveFavouritesUseCase
 import com.vishalgupta.photoselector.domain.usecase.ToggleFavouriteUseCase
 import com.vishalgupta.photoselector.presentation.StateHolder
@@ -55,7 +56,7 @@ class BrowserViewModel(
     private val imageLoader: ImageLoader,
     private val isReadOnly: StateFlow<Boolean>,
     parentJob: Job? = null,
-    private val onPositionChanged: (suspend (Int) -> Unit)? = null,
+    private val onPositionChanged: ((BrowsePosition) -> Unit)? = null,
 ) : StateHolder(parentJob) {
 
     private val favouritesFlow: StateFlow<Set<PhotoId>> = observeFavourites(root)
@@ -79,6 +80,7 @@ class BrowserViewModel(
 
     private var loadJob: Job? = null
     private var positionSaveJob: Job? = null
+    private var pendingSavePosition: BrowsePosition? = null
     private var viewportLongEdgePx: Int = 1600
 
     init {
@@ -93,6 +95,7 @@ class BrowserViewModel(
                 }
             }
             .launchIn(scope)
+        scheduleSavePosition()
     }
 
     fun setViewportLongEdgePx(px: Int) {
@@ -119,17 +122,32 @@ class BrowserViewModel(
                 isCurrentFavourite = photo.id in favouritesFlow.value,
             )
         }
-        onPositionChanged?.let { save ->
-            positionSaveJob?.cancel()
-            positionSaveJob = scope.launch {
-                delay(500)
-                save(bounded)
-            }
-        }
+        scheduleSavePosition()
         imageLoader.unpinAllExcept(photo.id)
         imageLoader.pin(photo.id)
         loadCurrent()
         prefetchAround()
+    }
+
+    private fun scheduleSavePosition() {
+        val save = onPositionChanged ?: return
+        val photo = _state.value.currentPhoto ?: return
+        val position = BrowsePosition(_state.value.currentIndex, photo.id)
+        pendingSavePosition = position
+        positionSaveJob?.cancel()
+        positionSaveJob = scope.launch {
+            delay(500)
+            save(position)
+            pendingSavePosition = null
+        }
+    }
+
+    override fun onClear() {
+        val pending = pendingSavePosition
+        if (pending != null) {
+            onPositionChanged?.invoke(pending)
+        }
+        super.onClear()
     }
 
     fun toggleFavourite() {

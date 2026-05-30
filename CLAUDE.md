@@ -14,14 +14,15 @@ Clean architecture, single Gradle module, package
 - `data/` — repository implementations: `filesystem/`, `favourites/`,
   `image/` (decoding), `format/`, `export/`.
 - `presentation/` — Compose UI + view models, organised by screen
-  (`rootpicker/`, `browser/`, `favourites/`), plus `navigation/`,
+  (`rootpicker/`, `grid/`, `browser/`), plus `navigation/`,
   `common/`, `theme/`.
 - `di/AppContainer.kt` — manual DI container. **No DI framework.** Add new
   wiring here.
-- Navigation is a sealed `Screen` interface (`RootPicker | Browser |
-  Favourites`). The browser uses a `BrowseScope` sealed interface
-  (`AllPhotos | FavouritesOnly`) so the same screen can page through the
-  full folder or just the favourites subset.
+- Navigation is a sealed `Screen` interface (`RootPicker | Grid |
+  Browser`). `Screen.Grid` carries a `BrowseScope` (`AllPhotos |
+  FavouritesOnly`) — Favourites is pushed as its own `Screen.Grid`
+  instance from the All Photos top bar, not toggled in place, so each
+  view has its own scroll state.
 - State plumbing: `StateFlow` for screen state, `SharedFlow` / `Channel`
   for one-shot events (toasts etc).
 

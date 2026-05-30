@@ -68,7 +68,7 @@ fun BrowserScreen(
     systemActions: SystemActions,
     onOpenFavourites: () -> Unit,
     onChangeFolder: () -> Unit,
-    onBack: (() -> Unit)? = null,
+    onBack: () -> Unit,
 ) {
     DisposableEffect(viewModel) { onDispose { viewModel.onClear() } }
     val state by viewModel.state.collectAsState()
@@ -100,7 +100,7 @@ fun BrowserScreen(
         onViewportSizeChanged = viewModel::setViewportLongEdgePx,
         onOpenFavourites = onOpenFavourites,
         onChangeFolder = onChangeFolder,
-        onBack = onBack,
+        onBackToGrid = onBack,
     )
 }
 
@@ -116,7 +116,7 @@ fun BrowserScreen(
     onViewportSizeChanged: (Int) -> Unit,
     onOpenFavourites: () -> Unit,
     onChangeFolder: () -> Unit,
-    onBack: (() -> Unit)? = null,
+    onBackToGrid: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -164,6 +164,8 @@ fun BrowserScreen(
                         state.currentPhoto?.absolutePath?.let { systemActions?.openWithDefaultApp(it) }
                         true
                     }
+                    Key.G -> if (meta) false else { onBackToGrid(); true }
+                    Key.Escape -> { onBackToGrid(); true }
                     Key.Equals, Key.Plus -> { zoom.zoomIn(); true }
                     Key.Minus -> { zoom.zoomOut(); true }
                     Key.Zero -> { zoom.reset(); true }
@@ -177,7 +179,7 @@ fun BrowserScreen(
             relativePath = state.currentPhoto?.relativePath.orEmpty(),
             favCount = state.favouriteCount,
             readOnly = state.readOnly,
-            onBack = onBack,
+            onBack = onBackToGrid,
             onOpenFavourites = onOpenFavourites,
             onChangeFolder = onChangeFolder,
             modifier = Modifier.fillMaxWidth(),
@@ -307,7 +309,7 @@ private fun TopBar(
     relativePath: String,
     favCount: Int,
     readOnly: Boolean,
-    onBack: (() -> Unit)?,
+    onBack: () -> Unit,
     onOpenFavourites: () -> Unit,
     onChangeFolder: () -> Unit,
     modifier: Modifier = Modifier,
@@ -320,10 +322,8 @@ private fun TopBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (onBack != null) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
-            }
+        IconButton(onClick = onBack) {
+            Icon(Icons.Default.ArrowBack, contentDescription = "Back to grid", tint = Color.White)
         }
         Text(countLabel, color = Color.White, style = MaterialTheme.typography.titleMedium)
         Text(
