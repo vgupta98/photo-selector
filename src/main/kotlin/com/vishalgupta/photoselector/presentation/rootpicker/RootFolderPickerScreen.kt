@@ -7,10 +7,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -19,8 +16,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.presentation.common.NativeFileDialogs
+import com.vishalgupta.photoselector.presentation.designsystem.atom.AppButton
+import com.vishalgupta.photoselector.presentation.designsystem.atom.AppOutlinedButton
+import com.vishalgupta.photoselector.presentation.designsystem.atom.LoadingIndicator
+import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import kotlinx.coroutines.launch
 
 @Composable
@@ -48,10 +48,13 @@ fun RootFolderPickerScreen(
     onCancelScan: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier.fillMaxSize().padding(PaddingValues(32.dp)), contentAlignment = Alignment.Center) {
+    Box(
+        modifier.fillMaxSize().padding(PaddingValues(AppTheme.spacing.xxl)),
+        contentAlignment = Alignment.Center,
+    ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.lg),
         ) {
             Text("Photo Selector", style = MaterialTheme.typography.headlineLarge)
             Text(
@@ -62,21 +65,19 @@ fun RootFolderPickerScreen(
 
             when (state.phase) {
                 RootPickerUiState.Phase.Idle, RootPickerUiState.Phase.Done -> {
-                    Button(onClick = onPickFolder) {
-                        Text("Choose photo folder…")
-                    }
+                    AppButton(text = "Choose photo folder…", onClick = onPickFolder)
                 }
                 RootPickerUiState.Phase.Scanning -> {
-                    CircularProgressIndicator(Modifier.size(48.dp))
+                    LoadingIndicator(Modifier.size(AppTheme.dimens.progressIndicatorLg))
                     Text("Scanning…  ${state.found} photos found  (${state.scanned} files seen)")
-                    OutlinedButton(onClick = onCancelScan) { Text("Cancel") }
+                    AppOutlinedButton(text = "Cancel", onClick = onCancelScan)
                 }
                 RootPickerUiState.Phase.Failed -> {
                     Text(
                         "Scan failed: ${state.errorMessage ?: "Unknown error"}",
                         color = MaterialTheme.colorScheme.error,
                     )
-                    Button(onClick = onPickFolder) { Text("Try again") }
+                    AppButton(text = "Try again", onClick = onPickFolder)
                 }
             }
         }

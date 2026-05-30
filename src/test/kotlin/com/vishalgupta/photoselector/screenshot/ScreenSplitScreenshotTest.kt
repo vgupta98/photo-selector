@@ -17,7 +17,7 @@ import com.vishalgupta.photoselector.presentation.grid.GridUiState
 import com.vishalgupta.photoselector.presentation.navigation.BrowseScope
 import com.vishalgupta.photoselector.presentation.rootpicker.RootFolderPickerScreen
 import com.vishalgupta.photoselector.presentation.rootpicker.RootPickerUiState
-import com.vishalgupta.photoselector.presentation.theme.AppTheme
+import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import kotlinx.coroutines.CoroutineScope
 import org.junit.Rule
 import org.junit.Test

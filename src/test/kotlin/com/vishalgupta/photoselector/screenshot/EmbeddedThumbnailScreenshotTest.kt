@@ -25,7 +25,7 @@ import com.vishalgupta.photoselector.data.format.spliceApp1IntoJpeg
 import com.vishalgupta.photoselector.data.image.SkikoImageLoader
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
-import com.vishalgupta.photoselector.presentation.theme.AppTheme
+import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.skia.Color as SkColor
