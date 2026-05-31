@@ -99,6 +99,24 @@ class JsonFavouritesRepositoryTest {
     }
 
     @Test
+    fun observingBeforeScanIsSet_doesNotStickToEmpty() {
+        // Simulates the scan result arriving after the first observe(): binding against an
+        // empty scan must not cache the root as bound, or the persisted favourites would
+        // silently vanish until a folder switch.
+        var scanned = emptyList<Photo>()
+        val root = RootFolder(tmp.root.toPath())
+        val repo = JsonFavouritesRepository(json) { scanned }
+        writeFavouritesFile(root, """{"version":2,"favourites":[{"path":"a.jpg","size":100,"mtimeMs":5}]}""")
+
+        // Scan not ready yet: resolves to empty, but the bind must not stick.
+        assertEquals(emptySet<PhotoId>(), repo.observe(root).value)
+
+        // Scan completes; the next observe re-binds and recovers the favourite.
+        scanned = listOf(photo("a.jpg", 100, 5))
+        assertEquals(setOf(PhotoId("a.jpg")), repo.observe(root).value)
+    }
+
+    @Test
     fun untoggling_removesFromPersistedFile() = runTest {
         val (repo, root) = repo(listOf(photo("a.jpg", 100, 5)))
         repo.toggle(root, PhotoId("a.jpg")) // add
