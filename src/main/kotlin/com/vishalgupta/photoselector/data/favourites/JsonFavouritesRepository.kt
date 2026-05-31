@@ -1,5 +1,6 @@
 package com.vishalgupta.photoselector.data.favourites
 
+import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.FavouritesRepository
@@ -13,8 +14,17 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.nio.file.Files
 
+/**
+ * Persists favourites to `<root>/.photo-selector-favourites.json`.
+ *
+ * On bind, the persisted entries are resolved against the photos found by the current
+ * scan (via [scannedPhotos]) so favourites re-attach after a folder rename or move — see
+ * [FavouritesResolver]. The in-memory model stays a plain `Set<PhotoId>` of *current*
+ * paths; writes serialise the v2 descriptor form (path + size + mtime).
+ */
 class JsonFavouritesRepository(
     private val json: Json,
+    private val scannedPhotos: (RootFolder) -> List<Photo>,
 ) : FavouritesRepository {
 
     private val mutex = Mutex()
@@ -60,26 +70,35 @@ class JsonFavouritesRepository(
     private fun bind(root: RootFolder) {
         // Synchronous read on the calling thread is acceptable: small file, infrequent.
         boundRoot = root
-        favourites.value = readFromDisk(root)
+        val entries = readFromDisk(root)
+        favourites.value = FavouritesResolver.resolve(entries, scannedPhotos(root))
         readOnly.value = !Files.isWritable(root.path)
     }
 
-    private fun readFromDisk(root: RootFolder): Set<PhotoId> {
+    private fun readFromDisk(root: RootFolder): List<PhotoEntryDto> {
         val file = root.favouritesFile
-        if (!Files.exists(file)) return emptySet()
+        if (!Files.exists(file)) return emptyList()
         return try {
-            val text = Files.readString(file)
-            val dto = json.decodeFromString(FavouritesDto.serializer(), text)
-            dto.favourites.map(::PhotoId).toSet()
+            FavouritesFile.decode(json, Files.readString(file))
         } catch (_: Throwable) {
-            emptySet()
+            emptyList()
         }
     }
 
     private suspend fun writeToDisk(root: RootFolder, snapshot: Set<PhotoId>) {
         if (boundRoot?.path != root.path) return
-        val dto = FavouritesDto(favourites = snapshot.map { it.value }.sorted())
-        val bytes = json.encodeToString(FavouritesDto.serializer(), dto).toByteArray(Charsets.UTF_8)
+        val byId = scannedPhotos(root).associateBy { it.id }
+        val entries = snapshot.map { id ->
+            val photo = byId[id]
+            if (photo != null) {
+                PhotoEntryDto(photo.relativePath, photo.sizeBytes, photo.lastModifiedEpochMs)
+            } else {
+                // Favourite has no matching scanned photo: keep it by path so a later
+                // scan can still re-attach it. No identity hint available.
+                PhotoEntryDto(path = id.value)
+            }
+        }
+        val bytes = FavouritesFile.encode(json, entries)
         try {
             withContext(Dispatchers.IO) {
                 AtomicJsonWriter.write(root.favouritesFile, bytes)

@@ -75,7 +75,8 @@ class AppContainer {
     )
 
     private val photoRepository: PhotoRepository = FileSystemPhotoRepository(formatRegistry)
-    private val favouritesRepository: FavouritesRepository = JsonFavouritesRepository(json)
+    private val favouritesRepository: FavouritesRepository =
+        JsonFavouritesRepository(json) { root -> photosFor(root) }
     private val browsePositionRepository: BrowsePositionRepository = JsonBrowsePositionRepository(json)
     private val exporter: PhotoExporter = CompositePhotoExporter(TxtPhotoExporter(), CopyPhotoExporter())
 
