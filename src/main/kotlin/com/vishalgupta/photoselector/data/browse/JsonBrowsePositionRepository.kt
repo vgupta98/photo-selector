@@ -1,6 +1,6 @@
 package com.vishalgupta.photoselector.data.browse
 
-import com.vishalgupta.photoselector.data.favourites.AtomicJsonWriter
+import com.vishalgupta.photoselector.data.io.AtomicJsonWriter
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.BrowsePosition

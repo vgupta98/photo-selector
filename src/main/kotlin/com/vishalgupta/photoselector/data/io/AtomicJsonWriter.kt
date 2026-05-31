@@ -1,4 +1,4 @@
-package com.vishalgupta.photoselector.data.favourites
+package com.vishalgupta.photoselector.data.io
 
 import java.nio.channels.FileChannel
 import java.nio.file.Files
@@ -14,7 +14,7 @@ object AtomicJsonWriter {
     fun write(target: Path, bytes: ByteArray) {
         val parent = target.parent
         Files.createDirectories(parent)
-        val temp = Files.createTempFile(parent, ".fav-", ".tmp")
+        val temp = Files.createTempFile(parent, ".pscat-", ".tmp")
         try {
             FileChannel.open(
                 temp,

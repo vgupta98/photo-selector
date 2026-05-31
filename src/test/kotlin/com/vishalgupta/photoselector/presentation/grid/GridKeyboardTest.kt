@@ -14,7 +14,7 @@ import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
-import com.vishalgupta.photoselector.presentation.navigation.BrowseScope
+import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import kotlinx.coroutines.CoroutineScope
 import org.junit.Assert.assertEquals
@@ -64,16 +64,20 @@ class GridKeyboardTest {
                     GridScreen(
                         state = GridUiState(
                             photos = testPhotos,
-                            scope = BrowseScope.AllPhotos,
+                            scope = CategoryScope.AllPhotos,
                             focusedIndex = -1,
                         ),
                         initialScrollIndex = 0,
                         onTileClick = {},
                         onChangeFolder = {},
-                        onOpenFavourites = {},
+                        onSelectCategory = { _, _ -> },
+                        onCreateCategory = {},
+                        onRenameCategory = { _, _ -> },
+                        onDeleteCategory = {},
                         onBack = null,
                         onSetFocusedIndex = { captured += it },
-                        onToggleFavouriteAtFocus = {},
+                        onToggleMembershipAtFocus = {},
+                        onToggleCategoryAtFocus = {},
                         onExportTxt = {},
                         onCopyToFolder = {},
                         onDismissToast = {},

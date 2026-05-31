@@ -170,7 +170,7 @@ private fun CountedThumbnail(
     PhotoThumbnail(
         photo = photo,
         loader = loader,
-        isFavourite = isFavourite,
+        isMarked = isFavourite,
         isFocused = isFocused,
         onClick = {},
         modifier = Modifier.size(AppTheme.dimens.thumbnailMinCell),

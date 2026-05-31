@@ -2,12 +2,13 @@ package com.vishalgupta.photoselector.presentation.browser
 
 import androidx.compose.ui.graphics.ImageBitmap
 import com.vishalgupta.photoselector.data.image.ImageLoader
+import com.vishalgupta.photoselector.domain.model.Category
+import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.BrowsePosition
-import com.vishalgupta.photoselector.domain.usecase.ObserveFavouritesUseCase
-import com.vishalgupta.photoselector.domain.usecase.ToggleFavouriteUseCase
+import com.vishalgupta.photoselector.domain.repository.CategoriesRepository
 import com.vishalgupta.photoselector.presentation.StateHolder
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -51,25 +52,29 @@ class BrowserViewModel(
     private val root: RootFolder,
     private val photos: List<Photo>,
     private val initialIndex: Int,
-    private val observeFavourites: ObserveFavouritesUseCase,
-    private val toggleFavourite: ToggleFavouriteUseCase,
+    private val categories: CategoriesRepository,
     private val imageLoader: ImageLoader,
     private val isReadOnly: StateFlow<Boolean>,
     parentJob: Job? = null,
     private val onPositionChanged: ((BrowsePosition) -> Unit)? = null,
 ) : StateHolder(parentJob) {
 
-    private val favouritesFlow: StateFlow<Set<PhotoId>> = observeFavourites(root)
+    // The browser's star is the built-in Favourites; F toggles Favourites regardless of
+    // which category grid the user paged in from.
+    private val membershipsFlow: StateFlow<Map<CategoryId, Set<PhotoId>>> = categories.observeMemberships(root)
+
+    private fun favourites(): Set<PhotoId> = membershipsFlow.value[Category.FAVOURITES_ID].orEmpty()
 
     private val _state = MutableStateFlow(
         run {
             val safeIndex = initialIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0))
             val firstPhoto = photos.getOrNull(safeIndex)
+            val favs = favourites()
             BrowserUiState.initial(photos).copy(
                 currentIndex = safeIndex,
                 currentPhoto = firstPhoto,
-                isCurrentFavourite = firstPhoto != null && firstPhoto.id in favouritesFlow.value,
-                favouriteCount = favouritesFlow.value.size,
+                isCurrentFavourite = firstPhoto != null && firstPhoto.id in favs,
+                favouriteCount = favs.size,
             )
         },
     )
@@ -84,7 +89,9 @@ class BrowserViewModel(
     private var viewportLongEdgePx: Int = 1600
 
     init {
-        combine(favouritesFlow, isReadOnly) { favs, readOnly -> favs to readOnly }
+        combine(membershipsFlow, isReadOnly) { members, readOnly ->
+            members[Category.FAVOURITES_ID].orEmpty() to readOnly
+        }
             .onEach { (favs, readOnly) ->
                 _state.update {
                     it.copy(
@@ -119,7 +126,7 @@ class BrowserViewModel(
                 currentPhoto = photo,
                 currentBitmap = null,
                 isLoadingBitmap = true,
-                isCurrentFavourite = photo.id in favouritesFlow.value,
+                isCurrentFavourite = photo.id in favourites(),
             )
         }
         scheduleSavePosition()
@@ -153,7 +160,7 @@ class BrowserViewModel(
     fun toggleFavourite() {
         val photo = _state.value.currentPhoto ?: return
         scope.launch {
-            val nowFavourite = toggleFavourite(root, photo.id)
+            val nowFavourite = categories.toggleMembership(root, Category.FAVOURITES_ID, photo.id)
             _toggleEvents.trySend(nowFavourite)
         }
     }

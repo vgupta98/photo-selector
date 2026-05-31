@@ -39,6 +39,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import com.vishalgupta.photoselector.data.image.ImageLoader
+import com.vishalgupta.photoselector.domain.model.Category
+import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
 import com.vishalgupta.photoselector.presentation.common.NativeFileDialogs
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BusyBar
@@ -46,7 +48,7 @@ import com.vishalgupta.photoselector.presentation.designsystem.molecule.ErrorPla
 import com.vishalgupta.photoselector.presentation.designsystem.organism.GridTopBar
 import com.vishalgupta.photoselector.presentation.designsystem.organism.PhotoThumbnail
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
-import com.vishalgupta.photoselector.presentation.navigation.BrowseScope
+import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import kotlinx.coroutines.launch
 
 @Composable
@@ -55,7 +57,7 @@ fun GridScreen(
     initialScrollIndex: Int,
     onTileClick: (index: Int) -> Unit,
     onChangeFolder: () -> Unit,
-    onOpenFavourites: (currentScrollIndex: Int) -> Unit,
+    onSelectCategory: (currentScrollIndex: Int, id: CategoryId) -> Unit,
     onBack: (() -> Unit)?,
 ) {
     DisposableEffect(viewModel) { onDispose { viewModel.onClear() } }
@@ -67,15 +69,19 @@ fun GridScreen(
         initialScrollIndex = initialScrollIndex,
         onTileClick = onTileClick,
         onChangeFolder = onChangeFolder,
-        onOpenFavourites = onOpenFavourites,
+        onSelectCategory = onSelectCategory,
+        onCreateCategory = viewModel::createCategory,
+        onRenameCategory = viewModel::renameCategory,
+        onDeleteCategory = viewModel::deleteCategory,
         onBack = onBack,
         onSetFocusedIndex = viewModel::setFocusedIndex,
-        onToggleFavouriteAtFocus = viewModel::toggleFavouriteAtFocus,
+        onToggleMembershipAtFocus = viewModel::toggleMembershipAtFocus,
+        onToggleCategoryAtFocus = viewModel::toggleCategoryAtFocus,
         onExportTxt = {
             coroutineScope.launch {
                 val target = NativeFileDialogs.pickSaveFile(
-                    title = "Export favourites list",
-                    defaultName = "favourites.txt",
+                    title = "Export list",
+                    defaultName = "photos.txt",
                 ) ?: return@launch
                 viewModel.exportTxt(target)
             }
@@ -99,10 +105,14 @@ fun GridScreen(
     initialScrollIndex: Int,
     onTileClick: (index: Int) -> Unit,
     onChangeFolder: () -> Unit,
-    onOpenFavourites: (currentScrollIndex: Int) -> Unit,
+    onSelectCategory: (currentScrollIndex: Int, id: CategoryId) -> Unit,
+    onCreateCategory: (String) -> Unit,
+    onRenameCategory: (CategoryId, String) -> Unit,
+    onDeleteCategory: (CategoryId) -> Unit,
     onBack: (() -> Unit)?,
     onSetFocusedIndex: (Int) -> Unit,
-    onToggleFavouriteAtFocus: () -> Unit,
+    onToggleMembershipAtFocus: () -> Unit,
+    onToggleCategoryAtFocus: (displayIndex: Int) -> Unit,
     onExportTxt: () -> Unit,
     onCopyToFolder: (ConflictPolicy) -> Unit,
     onDismissToast: () -> Unit,
@@ -113,6 +123,10 @@ fun GridScreen(
     val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = initialScrollIndex)
     val focusRequester = remember { FocusRequester() }
     val snackbarHostState = remember { SnackbarHostState() }
+
+    val currentCategory: Category? = (state.scope as? CategoryScope.Category)
+        ?.let { sc -> state.categories.firstOrNull { it.id == sc.id } }
+    val categoryEntries = state.categories.map { it to (state.memberships[it.id]?.size ?: 0) }
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -159,6 +173,13 @@ fun GridScreen(
                     onSetFocusedIndex(gridState.firstVisibleItemIndex.coerceIn(0, maxIndex))
                     return@onPreviewKeyEvent true
                 }
+                // Cmd+1..9 toggles the focused photo in the Nth category (display order),
+                // the only way to add a photo to a custom category from All Photos.
+                val digit = if (meta) digitIndex(event.key) else null
+                if (digit != null) {
+                    if (state.focusedIndex in 0..maxIndex) onToggleCategoryAtFocus(digit)
+                    return@onPreviewKeyEvent true
+                }
                 when (event.key) {
                     Key.DirectionLeft -> {
                         onSetFocusedIndex((state.focusedIndex - 1).coerceAtLeast(0))
@@ -183,11 +204,11 @@ fun GridScreen(
                         true
                     }
                     Key.F -> if (meta) false else {
-                        onToggleFavouriteAtFocus()
+                        onToggleMembershipAtFocus()
                         true
                     }
                     Key.Spacebar -> if (meta) false else {
-                        onToggleFavouriteAtFocus()
+                        onToggleMembershipAtFocus()
                         true
                     }
                     Key.Escape -> if (onBack != null) {
@@ -200,11 +221,15 @@ fun GridScreen(
     ) {
         GridTopBar(
             scope = state.scope,
+            currentCategory = currentCategory,
             photoCount = state.photos.size,
-            favouriteCount = state.favouriteIds.size,
+            categoryEntries = categoryEntries,
             isBusy = state.isBusy,
             onBack = onBack,
-            onOpenFavourites = { onOpenFavourites(gridState.firstVisibleItemIndex) },
+            onSelectCategory = { id -> onSelectCategory(gridState.firstVisibleItemIndex, id) },
+            onCreateCategory = onCreateCategory,
+            onRenameCategory = onRenameCategory,
+            onDeleteCategory = onDeleteCategory,
             onExportTxt = onExportTxt,
             onCopyToFolder = onCopyToFolder,
             onChangeFolder = onChangeFolder,
@@ -217,8 +242,10 @@ fun GridScreen(
         Box(Modifier.fillMaxSize()) {
             if (state.photos.isEmpty()) {
                 val msg = when (state.scope) {
-                    BrowseScope.AllPhotos -> "No JPEG / PNG photos found in this folder."
-                    BrowseScope.FavouritesOnly -> "No favourites yet. Press back and tap F on a photo to add some."
+                    CategoryScope.AllPhotos -> "No JPEG / PNG photos found in this folder."
+                    is CategoryScope.Category ->
+                        "No photos in ${currentCategory?.name ?: "this category"} yet. " +
+                            "From All Photos, focus a photo and press F (Favourites) or Cmd+1..9 to add it."
                 }
                 ErrorPlaceholder(msg, Modifier.fillMaxSize())
             } else {
@@ -241,7 +268,7 @@ fun GridScreen(
                         PhotoThumbnail(
                             photo = photo,
                             loader = imageLoader,
-                            isFavourite = photo.id in state.favouriteIds,
+                            isMarked = photo.id in state.markedIds,
                             isFocused = index == state.focusedIndex,
                             isLastViewed = photo.id == state.lastViewedPhotoId,
                             onClick = { onTileClick(index) },
@@ -267,6 +294,20 @@ fun GridScreen(
             }
         }
     }
+}
+
+// Maps a number-row key (with Cmd held) to a zero-based category display index, or null.
+private fun digitIndex(key: Key): Int? = when (key) {
+    Key.One -> 0
+    Key.Two -> 1
+    Key.Three -> 2
+    Key.Four -> 3
+    Key.Five -> 4
+    Key.Six -> 5
+    Key.Seven -> 6
+    Key.Eight -> 7
+    Key.Nine -> 8
+    else -> null
 }
 
 // Derives the column count from the rendered grid (count of leading visible items

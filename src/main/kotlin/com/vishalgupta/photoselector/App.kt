@@ -11,9 +11,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import com.vishalgupta.photoselector.di.AppContainer
+import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.presentation.browser.BrowserScreen
 import com.vishalgupta.photoselector.presentation.grid.GridScreen
-import com.vishalgupta.photoselector.presentation.navigation.BrowseScope
+import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.navigation.Screen
 import com.vishalgupta.photoselector.presentation.rootpicker.RootFolderPickerScreen
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
@@ -44,6 +45,7 @@ fun App(container: AppContainer) {
                                     root = s.root,
                                     initialIndex = index,
                                     scope = vm.state.value.scope,
+                                    returnScrollIndex = s.returnScrollIndex,
                                 ),
                             )
                         },
@@ -53,24 +55,24 @@ fun App(container: AppContainer) {
                                 container.goTo(Screen.RootPicker)
                             }
                         },
-                        onOpenFavourites = { currentScrollIndex ->
+                        onSelectCategory = { currentScrollIndex, id ->
                             container.goTo(
                                 Screen.Grid(
                                     root = s.root,
-                                    scope = BrowseScope.FavouritesOnly,
+                                    scope = CategoryScope.Category(id),
                                     lastViewedPhotoId = s.lastViewedPhotoId,
                                     returnScrollIndex = currentScrollIndex,
                                 ),
                             )
                         },
                         onBack = when (s.scope) {
-                            BrowseScope.AllPhotos -> null
-                            BrowseScope.FavouritesOnly -> {
+                            CategoryScope.AllPhotos -> null
+                            is CategoryScope.Category -> {
                                 {
                                     container.goTo(
                                         Screen.Grid(
                                             root = s.root,
-                                            scope = BrowseScope.AllPhotos,
+                                            scope = CategoryScope.AllPhotos,
                                             initialScrollIndex = s.returnScrollIndex
                                                 ?: container.loadBrowsePosition(s.root).lastIndex,
                                             lastViewedPhotoId = s.lastViewedPhotoId,
@@ -97,7 +99,7 @@ fun App(container: AppContainer) {
                             container.goTo(
                                 Screen.Grid(
                                     s.root,
-                                    BrowseScope.FavouritesOnly,
+                                    CategoryScope.Category(Category.FAVOURITES_ID),
                                     lastViewedPhotoId = vm.state.value.currentPhoto?.id,
                                 ),
                             )
@@ -111,7 +113,15 @@ fun App(container: AppContainer) {
                         onBack = {
                             val idx = vm.state.value.currentIndex
                             val photoId = vm.state.value.currentPhoto?.id
-                            container.goTo(Screen.Grid(s.root, s.scope, initialScrollIndex = idx, lastViewedPhotoId = photoId))
+                            container.goTo(
+                                Screen.Grid(
+                                    s.root,
+                                    s.scope,
+                                    initialScrollIndex = idx,
+                                    lastViewedPhotoId = photoId,
+                                    returnScrollIndex = s.returnScrollIndex,
+                                ),
+                            )
                         },
                     )
                 }
