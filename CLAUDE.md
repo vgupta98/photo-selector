@@ -9,10 +9,11 @@ context. Read the source for everything else.
 Clean architecture, single Gradle module, package
 `com.vishalgupta.photoselector`:
 
-- `domain/` — entities (`Photo`, `RootFolder`, `PhotoId`), repository
-  interfaces, use cases. No framework dependencies.
-- `data/` — repository implementations: `filesystem/`, `favourites/`,
-  `image/` (decoding), `format/`, `export/`.
+- `domain/` — entities (`Photo`, `RootFolder`, `PhotoId`, `Category`,
+  `CategoryId`), repository interfaces, use cases. No framework dependencies.
+- `data/` — repository implementations: `filesystem/`, `categories/`,
+  `image/` (decoding), `format/`, `export/`, plus `io/` (the shared
+  `AtomicJsonWriter`).
 - `presentation/` — Compose UI + view models, organised by screen
   (`rootpicker/`, `grid/`, `browser/`), plus `navigation/` and
   `common/` (non-UI plumbing: file dialogs, system actions, hover).
@@ -24,10 +25,17 @@ Clean architecture, single Gradle module, package
 - `di/AppContainer.kt` — manual DI container. **No DI framework.** Add new
   wiring here.
 - Navigation is a sealed `Screen` interface (`RootPicker | Grid |
-  Browser`). `Screen.Grid` carries a `BrowseScope` (`AllPhotos |
-  FavouritesOnly`) — Favourites is pushed as its own `Screen.Grid`
-  instance from the All Photos top bar, not toggled in place, so each
-  view has its own scroll state.
+  Browser`). `Screen.Grid` carries a `CategoryScope` (`AllPhotos |
+  Category(id)`). Photos live in N flat per-root categories;
+  **Favourites** is the built-in one (fixed id `favourites`, cannot be
+  renamed or deleted). Each category is pushed as its own `Screen.Grid`
+  instance from the All Photos categories dropdown, not toggled in place,
+  so each view has its own scroll state. Memberships persist to
+  `<root>/.photo-selector-categories.json` (v3); a legacy
+  `.photo-selector-favourites.json` migrates into the built-in category
+  on first read and is renamed `.bak`. `CategoriesRepository` exposes
+  membership as one `observeMemberships` map flow (a future smart category
+  resolves behind it — the scope and `slice()` stay predicate-blind).
 - State plumbing: `StateFlow` for screen state, `SharedFlow` / `Channel`
   for one-shot events (toasts etc).
 

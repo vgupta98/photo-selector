@@ -1,19 +1,20 @@
 # Photo Selector
 
-A fast, keyboard-driven macOS desktop app for triaging large photo folders (e.g. wedding shoots with thousands of JPEGs). Open a folder, swipe through photos, hit **F** to favourite, then export the shortlist as either a `.txt` of relative paths or a copied folder that preserves your subfolder structure.
+A fast, keyboard-driven macOS desktop app for triaging large photo folders (e.g. wedding shoots with thousands of JPEGs). Open a folder, swipe through photos, sort them into categories (**Favourites** plus any you create — Selects, Maybes, …), then export a category as either a `.txt` of relative paths or a copied folder that preserves your subfolder structure.
 
 Built with Kotlin + Compose Multiplatform Desktop, following Clean Architecture.
 
 ## Features
 
 - **Browse** an entire folder tree of JPEG / PNG photos full-screen.
-- **Keyboard-first navigation** — `←` / `→` to move, `F` (or `Space`) to favourite/unfavourite.
-- **Persistent favourites** stored as a single `.photo-selector-favourites.json` file inside your photo folder. Switch folders and each retains its own list.
-- **Favourites grid** with thumbnails; click any thumbnail to jump back to that photo in the browser.
-- **Toast feedback** on every favourite toggle so you can never silently lose a selection.
-- **Export TXT** — write all favourites as relative paths, one per line, UTF-8.
-- **Export Copy** — copy favourites into a destination folder while preserving subfolder structure. Pick OVERWRITE / SKIP / RENAME on conflicts.
-- **Read-only volumes** are detected — favourites still work in-memory with a clear banner.
+- **Keyboard-first navigation** — `←` / `→` to move, `F` (or `Space`) to toggle Favourites, `Cmd+1`…`Cmd+9` to toggle the other categories.
+- **Categories** — sort photos into as many flat lists as you like (Selects, Maybes, For Album X…). **Favourites** is the built-in one; create, rename and delete the rest from the top bar. A photo can be in several at once.
+- **Persistent** — categories are stored as a single `.photo-selector-categories.json` file inside your photo folder. Switch folders and each retains its own lists.
+- **Category grids** with thumbnails; click any thumbnail to jump back to that photo in the browser.
+- **Toast feedback** on every Favourites toggle so you can never silently lose a selection.
+- **Export TXT** — write a category's photos as relative paths, one per line, UTF-8.
+- **Export Copy** — copy a category into a destination folder while preserving subfolder structure. Pick OVERWRITE / SKIP / RENAME on conflicts.
+- **Read-only volumes** are detected — selections still work in-memory with a clear banner.
 - **Handles 30k+ photos**: cancellable directory scan with live progress, LRU bitmap cache, prefetcher.
 
 ## Requirements
@@ -43,11 +44,12 @@ For developers:
 |---|---|
 | `←` | Previous photo |
 | `→` | Next photo |
-| `F` or `Space` | Toggle favourite for current photo |
+| `F` or `Space` | Toggle Favourites for current photo |
+| `Cmd+1` … `Cmd+9` | Toggle the focused photo in the Nth category (grid) |
 
-### Exporting favourites
+### Categories and exporting
 
-From the top bar click **Favourites (n)** to open the grid, then:
+From the All Photos top bar click **Categories** to open the dropdown: pick a category to open its grid, or **New category…** to create one. To add photos to a custom category, focus a photo in All Photos and press `Cmd+N` for that category's number. Inside a category grid, the **⋯** menu renames or deletes it (the built-in Favourites can't be renamed or deleted). From any category grid:
 
 - **Export list (.txt)** — pick a destination `.txt` file; one relative path per line.
 - **Copy photos to folder…** — pick a destination folder; subfolder structure is preserved. Use the policy menu to choose how filename conflicts are handled (default: rename to `foo (2).jpg`).
@@ -77,7 +79,7 @@ src/main/kotlin/com/vishalgupta/photoselector/
 ├── Main.kt, App.kt                  # entry point + screen router
 ├── di/                              # manual DI graph (AppContainer)
 ├── domain/                          # pure-Kotlin entities, repositories, use cases
-├── data/                            # filesystem, favourites JSON, image decoding, exporters
+├── data/                            # filesystem, categories JSON, image decoding, exporters
 └── presentation/                    # Compose screens + view models
     ├── rootpicker/
     ├── browser/
