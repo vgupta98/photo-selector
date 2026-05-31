@@ -72,6 +72,15 @@ fun ZoomableImage(
             filterQuality = FilterQuality.High,
             modifier = Modifier
                 .fillMaxSize()
+                // Keep the lambda form. Reading zoom.scale/offset inside this block
+                // defers the read to the draw phase, so a per-frame scroll-zoom or
+                // pan gesture updates the layer WITHOUT recomposing ZoomableImage.
+                // The value form — graphicsLayer(scaleX = zoom.scale, ...) — looks
+                // identical and renders identically, but moves the read into
+                // composition and recomposes this composable every frame of the
+                // gesture. Do not "simplify" it. (This can't be caught by a test:
+                // the recomposition is confined to this scope and unobservable from
+                // outside; see CLAUDE.md "Checking for unnecessary recompositions".)
                 .graphicsLayer {
                     scaleX = zoom.scale
                     scaleY = zoom.scale
