@@ -1,6 +1,7 @@
 package com.vishalgupta.photoselector.perf
 
 import com.vishalgupta.photoselector.data.favourites.JsonFavouritesRepository
+import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
 import kotlinx.coroutines.runBlocking
@@ -50,7 +51,18 @@ open class FavouritesToggleBenchmark {
     fun setup() {
         tmpDir = Files.createTempDirectory("favbench-")
         root = RootFolder(tmpDir)
-        repo = JsonFavouritesRepository(Json { prettyPrint = true; encodeDefaults = true })
+        // A single scanned photo matching the toggled id, so bind resolves a populated
+        // scan (the self-healing bind only caches boundRoot for a non-empty scan) and
+        // every toggle persists a real v2 descriptor — exercising the disk write path.
+        val photo = Photo(
+            id = id,
+            absolutePath = tmpDir.resolve("bench-photo"),
+            relativePath = "bench-photo",
+            fileName = "bench-photo",
+            sizeBytes = 4823901,
+            lastModifiedEpochMs = 1730812401000,
+        )
+        repo = JsonFavouritesRepository(Json { prettyPrint = true; encodeDefaults = true }) { listOf(photo) }
         // Force initial bind so the first measured toggle isn't disproportionately slow.
         repo.observe(root)
     }
