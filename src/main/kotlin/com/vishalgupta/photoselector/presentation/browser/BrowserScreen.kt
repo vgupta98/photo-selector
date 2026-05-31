@@ -11,25 +11,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.outlined.Star
-import androidx.compose.material.icons.outlined.StarOutline
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -42,10 +32,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isMetaPressed
@@ -54,9 +44,15 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
-import com.vishalgupta.photoselector.presentation.common.ErrorPlaceholder
 import com.vishalgupta.photoselector.presentation.common.HoverOverlay
 import com.vishalgupta.photoselector.presentation.common.SystemActions
+import com.vishalgupta.photoselector.presentation.designsystem.atom.FavouriteStar
+import com.vishalgupta.photoselector.presentation.designsystem.atom.LoadingIndicator
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.ErrorPlaceholder
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToast
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToastDefaults
+import com.vishalgupta.photoselector.presentation.designsystem.organism.BrowserTopBar
+import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 
@@ -173,11 +169,11 @@ fun BrowserScreen(
                 }
             },
     ) {
-        TopBar(
+        BrowserTopBar(
             countLabel = if (state.photos.isEmpty()) "0 / 0"
             else "${state.currentIndex + 1} / ${state.photos.size}",
             relativePath = state.currentPhoto?.relativePath.orEmpty(),
-            favCount = state.favouriteCount,
+            favouriteCount = state.favouriteCount,
             readOnly = state.readOnly,
             onBack = onBackToGrid,
             onOpenFavourites = onOpenFavourites,
@@ -193,7 +189,7 @@ fun BrowserScreen(
         HoverOverlay(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = 56.dp)
+                .padding(top = AppTheme.dimens.topBarHeight)
                 .onSizeChanged { size ->
                     val px = maxOf(size.width, size.height)
                     if (px > 0) viewportPx = px
@@ -202,7 +198,7 @@ fun BrowserScreen(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 val bmp = state.currentBitmap
                 when {
-                    state.isLoadingBitmap && bmp == null -> CircularProgressIndicator()
+                    state.isLoadingBitmap && bmp == null -> LoadingIndicator()
                     bmp == null -> ErrorPlaceholder("Cannot decode this photo. Press → to continue.")
                     else -> ZoomableImage(
                         bitmap = bmp,
@@ -216,7 +212,7 @@ fun BrowserScreen(
                 Row(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
-                        .padding(start = 12.dp)
+                        .padding(start = AppTheme.spacing.md)
                         .graphicsLayer { this.alpha = alpha },
                 ) {
                     FilledTonalIconButton(onClick = onPrevious) {
@@ -227,7 +223,7 @@ fun BrowserScreen(
                 Row(
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
-                        .padding(end = 12.dp)
+                        .padding(end = AppTheme.spacing.md)
                         .graphicsLayer { this.alpha = alpha },
                 ) {
                     FilledTonalIconButton(onClick = onNext) {
@@ -238,20 +234,20 @@ fun BrowserScreen(
                 Row(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 24.dp)
+                        .padding(bottom = AppTheme.spacing.xl)
                         .graphicsLayer { this.alpha = alpha },
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.md),
                 ) {
                     FilledTonalIconButton(onClick = onToggleFavourite) {
-                        if (state.isCurrentFavourite) {
-                            Icon(
-                                Icons.Filled.Star,
-                                contentDescription = "Unfavourite",
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        } else {
-                            Icon(Icons.Outlined.StarOutline, contentDescription = "Favourite")
-                        }
+                        FavouriteStar(
+                            filled = state.isCurrentFavourite,
+                            tint = if (state.isCurrentFavourite) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                LocalContentColor.current
+                            },
+                            contentDescription = if (state.isCurrentFavourite) "Unfavourite" else "Favourite",
+                        )
                     }
                 }
             }
@@ -267,86 +263,21 @@ fun BrowserScreen(
         ) {
             val dt = displayedToast
             if (dt != null) {
-                FavouriteToast(
-                    isFavourite = dt.isFavourite,
-                    label = if (dt.isFavourite) "Favourited" else "Unfavourited",
+                PillToast(
+                    text = if (dt.isFavourite) "Favourited" else "Unfavourited",
+                    leadingIcon = {
+                        FavouriteStar(
+                            filled = dt.isFavourite,
+                            modifier = Modifier.size(AppTheme.dimens.iconSm),
+                        )
+                    },
+                    colors = if (dt.isFavourite) {
+                        PillToastDefaults.favouriteColors()
+                    } else {
+                        PillToastDefaults.neutralColors()
+                    },
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun FavouriteToast(isFavourite: Boolean, label: String, modifier: Modifier = Modifier) {
-    val bg = if (isFavourite) Color(0xFFE9A93C) else Color(0xFF2A2A2A)
-    val fg = if (isFavourite) Color(0xFF1A1A1A) else Color(0xFFE6E6E6)
-    Surface(
-        modifier = modifier,
-        color = bg,
-        contentColor = fg,
-        shape = RoundedCornerShape(percent = 50),
-        tonalElevation = 6.dp,
-        shadowElevation = 6.dp,
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-        ) {
-            Icon(
-                imageVector = if (isFavourite) Icons.Filled.Star else Icons.Outlined.StarOutline,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-            )
-            Text(label, style = MaterialTheme.typography.labelLarge)
-        }
-    }
-}
-
-@Composable
-private fun TopBar(
-    countLabel: String,
-    relativePath: String,
-    favCount: Int,
-    readOnly: Boolean,
-    onBack: () -> Unit,
-    onOpenFavourites: () -> Unit,
-    onChangeFolder: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier
-            .height(56.dp)
-            .background(Color.Black.copy(alpha = 0.55f))
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        IconButton(onClick = onBack) {
-            Icon(Icons.Default.ArrowBack, contentDescription = "Back to grid", tint = Color.White)
-        }
-        Text(countLabel, color = Color.White, style = MaterialTheme.typography.titleMedium)
-        Text(
-            text = "—  $relativePath",
-            color = Color.White.copy(alpha = 0.8f),
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.weight(1f),
-            maxLines = 1,
-        )
-        if (readOnly) {
-            Text(
-                "Read-only folder · selections in-memory only",
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        TextButton(onClick = onOpenFavourites) {
-            Icon(Icons.Outlined.Star, contentDescription = null)
-            Text("  Favourites ($favCount)")
-        }
-        TextButton(onClick = onChangeFolder) {
-            Icon(Icons.Default.Folder, contentDescription = null)
-            Text("  Change folder")
         }
     }
 }

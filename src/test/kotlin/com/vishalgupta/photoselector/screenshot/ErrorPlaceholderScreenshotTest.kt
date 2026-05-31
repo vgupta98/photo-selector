@@ -7,8 +7,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
-import com.vishalgupta.photoselector.presentation.common.ErrorPlaceholder
-import com.vishalgupta.photoselector.presentation.theme.AppTheme
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.ErrorPlaceholder
+import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertTrue

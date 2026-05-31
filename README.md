@@ -81,7 +81,10 @@ src/main/kotlin/com/vishalgupta/photoselector/
 └── presentation/                    # Compose screens + view models
     ├── rootpicker/
     ├── browser/
-    └── favourites/
+    ├── grid/
+    ├── navigation/
+    ├── common/                      # file dialogs, system actions, hover
+    └── designsystem/                # atomic design: theme tokens, atoms, molecules, organisms
 ```
 
 Dependency rule: `presentation → domain`, `data → domain`. `domain` depends on nothing.

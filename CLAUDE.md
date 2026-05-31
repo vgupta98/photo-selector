@@ -14,8 +14,13 @@ Clean architecture, single Gradle module, package
 - `data/` — repository implementations: `filesystem/`, `favourites/`,
   `image/` (decoding), `format/`, `export/`.
 - `presentation/` — Compose UI + view models, organised by screen
-  (`rootpicker/`, `grid/`, `browser/`), plus `navigation/`,
-  `common/`, `theme/`.
+  (`rootpicker/`, `grid/`, `browser/`), plus `navigation/` and
+  `common/` (non-UI plumbing: file dialogs, system actions, hover).
+- `presentation/designsystem/` — the Atomic Design system. `theme/`
+  (tokens: `AppColors`/`Spacing`/`Dimens` read via `AppTheme.*`, plus
+  `AppTypography`/`AppShapes`), then `atom/`, `molecule/`, `organism/`.
+  Screens are the "pages" tier. Build UI from these and add shared
+  tokens/components here rather than inlining literals in screens.
 - `di/AppContainer.kt` — manual DI container. **No DI framework.** Add new
   wiring here.
 - Navigation is a sealed `Screen` interface (`RootPicker | Grid |

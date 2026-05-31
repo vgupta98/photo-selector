@@ -1,4 +1,4 @@
-package com.vishalgupta.photoselector.presentation.common
+package com.vishalgupta.photoselector.presentation.designsystem.organism
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -11,39 +11,46 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.model.Photo
+import com.vishalgupta.photoselector.presentation.designsystem.atom.FavouriteStar
+import com.vishalgupta.photoselector.presentation.designsystem.atom.LoadingIndicator
+import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 
+private const val THUMBNAIL_VIEWPORT_PX = 320
+
+/**
+ * A square photo tile: decoded image (cropped to fill), an optional favourite
+ * star, a focus border, and a "last viewed" underline. Decodes lazily through
+ * [loader], keyed on the photo id.
+ */
 @Composable
 fun PhotoThumbnail(
     photo: Photo,
     loader: ImageLoader,
     isFavourite: Boolean,
     isFocused: Boolean,
-    isLastViewed: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    isLastViewed: Boolean = false,
 ) {
     val bitmap by produceState<ImageBitmap?>(null, photo.id) {
-        value = loader.load(photo, viewportLongEdgePx = 320)
+        value = loader.load(photo, viewportLongEdgePx = THUMBNAIL_VIEWPORT_PX)
     }
     val borderMod = if (isFocused) {
-        Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+        Modifier.border(
+            AppTheme.dimens.focusBorderWidth,
+            MaterialTheme.colorScheme.primary,
+            MaterialTheme.shapes.small,
+        )
     } else {
         Modifier
     }
@@ -51,7 +58,7 @@ fun PhotoThumbnail(
         modifier
             .aspectRatio(1f)
             .then(borderMod)
-            .background(Color(0xFF1E1E1E))
+            .background(AppTheme.colors.tileBackground)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -64,17 +71,17 @@ fun PhotoThumbnail(
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
-            CircularProgressIndicator()
+            LoadingIndicator()
         }
         if (isFavourite) {
-            Icon(
-                Icons.Filled.Star,
+            FavouriteStar(
+                filled = true,
+                tint = AppTheme.colors.favourite,
                 contentDescription = "Favourite",
-                tint = Color(0xFFE9A93C),
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(4.dp)
-                    .size(18.dp),
+                    .padding(AppTheme.spacing.xs)
+                    .size(AppTheme.dimens.iconSm),
             )
         }
         if (isLastViewed) {
@@ -82,7 +89,7 @@ fun PhotoThumbnail(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .height(3.dp)
+                    .height(AppTheme.dimens.lastViewedIndicatorHeight)
                     .background(MaterialTheme.colorScheme.primary),
             )
         }

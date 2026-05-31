@@ -2,17 +2,13 @@ package com.vishalgupta.photoselector.presentation.grid
 
 import androidx.compose.foundation.ScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
-import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -20,37 +16,20 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollbarAdapter
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
@@ -59,16 +38,16 @@ import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
-import com.vishalgupta.photoselector.presentation.common.ErrorPlaceholder
 import com.vishalgupta.photoselector.presentation.common.NativeFileDialogs
-import com.vishalgupta.photoselector.presentation.common.PhotoThumbnail
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.BusyBar
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.ErrorPlaceholder
+import com.vishalgupta.photoselector.presentation.designsystem.organism.GridTopBar
+import com.vishalgupta.photoselector.presentation.designsystem.organism.PhotoThumbnail
+import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import com.vishalgupta.photoselector.presentation.navigation.BrowseScope
 import kotlinx.coroutines.launch
-
-private val CELL_MIN_SIZE = 160.dp
 
 @Composable
 fun GridScreen(
@@ -134,7 +113,6 @@ fun GridScreen(
     val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = initialScrollIndex)
     val focusRequester = remember { FocusRequester() }
     val snackbarHostState = remember { SnackbarHostState() }
-    var policyMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -221,25 +199,19 @@ fun GridScreen(
             },
     ) {
         GridTopBar(
-            state = state,
-            onOpenFavourites = { onOpenFavourites(gridState.firstVisibleItemIndex) },
+            scope = state.scope,
+            photoCount = state.photos.size,
+            favouriteCount = state.favouriteIds.size,
+            isBusy = state.isBusy,
             onBack = onBack,
-            onChangeFolder = onChangeFolder,
+            onOpenFavourites = { onOpenFavourites(gridState.firstVisibleItemIndex) },
             onExportTxt = onExportTxt,
-            policyMenu = policyMenu,
-            onPolicyMenuChange = { policyMenu = it },
             onCopyToFolder = onCopyToFolder,
+            onChangeFolder = onChangeFolder,
         )
 
         if (state.isBusy) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                LinearProgressIndicator(Modifier.weight(1f))
-                Text(state.progressLabel ?: "Working…")
-            }
+            BusyBar(label = state.progressLabel ?: "Working…")
         }
 
         Box(Modifier.fillMaxSize()) {
@@ -252,10 +224,15 @@ fun GridScreen(
             } else {
                 LazyVerticalGrid(
                     state = gridState,
-                    columns = GridCells.Adaptive(CELL_MIN_SIZE),
-                    contentPadding = PaddingValues(start = 12.dp, end = 24.dp, top = 12.dp, bottom = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    columns = GridCells.Adaptive(AppTheme.dimens.thumbnailMinCell),
+                    contentPadding = PaddingValues(
+                        start = AppTheme.spacing.md,
+                        end = AppTheme.spacing.xl,
+                        top = AppTheme.spacing.md,
+                        bottom = AppTheme.spacing.md,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.sm),
+                    horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.sm),
                 ) {
                     itemsIndexed(
                         items = state.photos,
@@ -273,14 +250,14 @@ fun GridScreen(
                 }
                 VerticalScrollbar(
                     adapter = rememberScrollbarAdapter(gridState),
-                    modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().padding(end = 4.dp),
+                    modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().padding(end = AppTheme.spacing.xs),
                     style = ScrollbarStyle(
-                        minimalHeight = 48.dp,
-                        thickness = 8.dp,
-                        shape = RoundedCornerShape(4.dp),
+                        minimalHeight = AppTheme.dimens.scrollbarMinHeight,
+                        thickness = AppTheme.dimens.scrollbarThickness,
+                        shape = MaterialTheme.shapes.small,
                         hoverDurationMillis = 300,
-                        unhoverColor = Color.White.copy(alpha = 0.3f),
-                        hoverColor = Color.White.copy(alpha = 0.6f),
+                        unhoverColor = AppTheme.colors.scrollbarIdle,
+                        hoverColor = AppTheme.colors.scrollbarHover,
                     ),
                 )
             }
@@ -288,83 +265,6 @@ fun GridScreen(
             SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter)) {
                 Snackbar(snackbarData = it)
             }
-        }
-    }
-}
-
-@Composable
-private fun GridTopBar(
-    state: GridUiState,
-    onOpenFavourites: () -> Unit,
-    onBack: (() -> Unit)?,
-    onChangeFolder: () -> Unit,
-    onExportTxt: () -> Unit,
-    policyMenu: Boolean,
-    onPolicyMenuChange: (Boolean) -> Unit,
-    onCopyToFolder: (ConflictPolicy) -> Unit,
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        if (onBack != null) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-            }
-        }
-
-        val title = when (state.scope) {
-            BrowseScope.AllPhotos -> "${state.photos.size} photos"
-            BrowseScope.FavouritesOnly -> "Favourites (${state.photos.size})"
-        }
-        Text(title, style = MaterialTheme.typography.titleLarge)
-
-        if (state.scope == BrowseScope.AllPhotos) {
-            OutlinedButton(onClick = onOpenFavourites) {
-                Icon(Icons.Filled.Star, contentDescription = null)
-                Text("  Favourites (${state.favouriteIds.size})")
-            }
-        }
-
-        Box(Modifier.weight(1f))
-
-        if (state.scope == BrowseScope.FavouritesOnly) {
-            OutlinedButton(
-                enabled = state.favouriteIds.isNotEmpty() && !state.isBusy,
-                onClick = onExportTxt,
-            ) { Text("Export list (.txt)") }
-
-            Box {
-                Button(
-                    enabled = state.favouriteIds.isNotEmpty() && !state.isBusy,
-                    onClick = { onPolicyMenuChange(true) },
-                ) { Text("Copy photos to folder…") }
-                DropdownMenu(expanded = policyMenu, onDismissRequest = { onPolicyMenuChange(false) }) {
-                    listOf(
-                        "If exists: Rename" to ConflictPolicy.RENAME,
-                        "If exists: Skip" to ConflictPolicy.SKIP,
-                        "If exists: Overwrite" to ConflictPolicy.OVERWRITE,
-                    ).forEach { (label, policy) ->
-                        DropdownMenuItem(
-                            text = { Text(label) },
-                            onClick = {
-                                onPolicyMenuChange(false)
-                                onCopyToFolder(policy)
-                            },
-                        )
-                    }
-                }
-            }
-        }
-
-        TextButton(onClick = onChangeFolder) {
-            Icon(Icons.Default.Folder, contentDescription = null)
-            Text("  Change folder")
         }
     }
 }
