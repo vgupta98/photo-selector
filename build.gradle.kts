@@ -16,6 +16,18 @@ kotlin {
     jvmToolchain(17)
 }
 
+// Compose compiler stability reports. Off by default (zero build cost); enable
+// with `-PcomposeReports=true` to dump *-composables.txt / *-classes.txt under
+// build/compose_compiler/. Inspect those to spot a composable that can't skip
+// or a param/class that turned unstable. See CLAUDE.md "Recomposition checks".
+composeCompiler {
+    if (project.findProperty("composeReports") == "true") {
+        val dir = layout.buildDirectory.dir("compose_compiler")
+        reportsDestination = dir
+        metricsDestination = dir
+    }
+}
+
 dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
