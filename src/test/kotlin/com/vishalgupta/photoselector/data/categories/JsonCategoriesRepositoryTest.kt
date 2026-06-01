@@ -195,4 +195,21 @@ class JsonCategoriesRepositoryTest {
         scanned = listOf(photo("a.jpg", 100, 5))
         assertEquals(setOf(PhotoId("a.jpg")), favouriteIds(repo, root))
     }
+
+    @Test
+    fun corruptCategoriesFile_reportsReadOnlyAndIsNotClobberedByALaterWrite() = runTest {
+        // A present-but-undecodable file must not be mistaken for an empty model: the next
+        // toggle would otherwise overwrite it with just the built-in Favourites, destroying
+        // every salvageable custom category and its memberships.
+        val (repo, root) = repo(listOf(photo("a.jpg", 100, 5)))
+        val corrupt = "{ this is not valid json"
+        writeCategoriesFile(root, corrupt)
+
+        assertTrue("decode failure should surface as read-only", repo.isReadOnly(root).value)
+        assertEquals(emptySet<PhotoId>(), favouriteIds(repo, root))
+
+        repo.toggleMembership(root, Category.FAVOURITES_ID, PhotoId("a.jpg"))
+
+        assertEquals("unreadable file must be left untouched", corrupt, Files.readString(root.categoriesFile))
+    }
 }

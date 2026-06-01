@@ -117,8 +117,18 @@ class JsonCategoriesRepository(
     private fun bind(root: RootFolder) {
         // Synchronous read on the calling thread is acceptable: small file, infrequent.
         val scanned = scannedPhotos(root)
-        photosById = scanned.associateBy { it.id }
         val loaded = loadFromDisk(root)
+        if (loaded == null) {
+            // An existing file failed to decode (corrupt, locked, or partially written).
+            // Surface it as read-only and leave the root unbound: writeToDisk early-returns
+            // while boundRoot is null, so the next mutation can't overwrite — and thereby
+            // destroy — a file that may still be salvageable. The next observe/mutation
+            // re-reads and recovers once the file is readable again.
+            readOnly.value = true
+            boundRoot = null
+            return
+        }
+        photosById = scanned.associateBy { it.id }
         categoriesFlow.value = loaded.map { Category(CategoryId(it.id), it.name, it.builtIn) }
         membershipsFlow.value = loaded.associate {
             CategoryId(it.id) to MembershipResolver.resolve(it.photos, scanned)
@@ -148,18 +158,20 @@ class JsonCategoriesRepository(
     }
 
     /** Reads the categories file (v3), migrates a legacy favourites file, or starts fresh —
-     *  always returning a normalised list with the built-in Favourites first. */
-    private fun loadFromDisk(root: RootFolder): List<CategoryDto> {
+     *  always returning a normalised list with the built-in Favourites first. Returns null
+     *  when a file *exists* but fails to decode, so [bind] can refuse to bind rather than
+     *  expose an empty model that a later write would persist over the unreadable file. */
+    private fun loadFromDisk(root: RootFolder): List<CategoryDto>? {
         val categoriesFile = root.categoriesFile
         if (Files.exists(categoriesFile)) {
             val decoded = runCatching { CategoriesFile.decode(json, Files.readString(categoriesFile)) }
-                .getOrDefault(emptyList())
+                .getOrElse { return null }
             return normalise(decoded)
         }
         val favouritesFile = root.favouritesFile
         if (Files.exists(favouritesFile)) {
             val entries = runCatching { LegacyFavouritesFile.decode(json, Files.readString(favouritesFile)) }
-                .getOrDefault(emptyList())
+                .getOrElse { return null }
             return normalise(listOf(favouritesCategory(entries)))
         }
         return normalise(emptyList())

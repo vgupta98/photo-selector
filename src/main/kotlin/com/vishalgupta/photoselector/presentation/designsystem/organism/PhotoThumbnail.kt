@@ -29,8 +29,9 @@ private const val THUMBNAIL_VIEWPORT_PX = 320
 
 /**
  * A square photo tile: decoded image (cropped to fill), an optional star marking
- * membership in the active category, a focus border, and a "last viewed" underline.
- * Decodes lazily through [loader], keyed on the photo id.
+ * Favourites membership (in any scope, including a custom-category grid), a focus
+ * border, and a "last viewed" underline. Decodes lazily through [loader], keyed on the
+ * photo id.
  */
 @Composable
 fun PhotoThumbnail(
@@ -77,7 +78,7 @@ fun PhotoThumbnail(
             FavouriteStar(
                 filled = true,
                 tint = AppTheme.colors.favourite,
-                contentDescription = "In category",
+                contentDescription = "Favourited",
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(AppTheme.spacing.xs)
