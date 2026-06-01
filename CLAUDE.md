@@ -9,19 +9,33 @@ context. Read the source for everything else.
 Clean architecture, single Gradle module, package
 `com.vishalgupta.photoselector`:
 
-- `domain/` — entities (`Photo`, `RootFolder`, `PhotoId`), repository
-  interfaces, use cases. No framework dependencies.
-- `data/` — repository implementations: `filesystem/`, `favourites/`,
-  `image/` (decoding), `format/`, `export/`.
+- `domain/` — entities (`Photo`, `RootFolder`, `PhotoId`, `Category`,
+  `CategoryId`), repository interfaces, use cases. No framework dependencies.
+- `data/` — repository implementations: `filesystem/`, `categories/`,
+  `image/` (decoding), `format/`, `export/`, plus `io/` (the shared
+  `AtomicJsonWriter`).
 - `presentation/` — Compose UI + view models, organised by screen
-  (`rootpicker/`, `browser/`, `favourites/`), plus `navigation/`,
-  `common/`, `theme/`.
+  (`rootpicker/`, `grid/`, `browser/`), plus `navigation/` and
+  `common/` (non-UI plumbing: file dialogs, system actions, hover).
+- `presentation/designsystem/` — the Atomic Design system. `theme/`
+  (tokens: `AppColors`/`Spacing`/`Dimens` read via `AppTheme.*`, plus
+  `AppTypography`/`AppShapes`), then `atom/`, `molecule/`, `organism/`.
+  Screens are the "pages" tier. Build UI from these and add shared
+  tokens/components here rather than inlining literals in screens.
 - `di/AppContainer.kt` — manual DI container. **No DI framework.** Add new
   wiring here.
-- Navigation is a sealed `Screen` interface (`RootPicker | Browser |
-  Favourites`). The browser uses a `BrowseScope` sealed interface
-  (`AllPhotos | FavouritesOnly`) so the same screen can page through the
-  full folder or just the favourites subset.
+- Navigation is a sealed `Screen` interface (`RootPicker | Grid |
+  Browser`). `Screen.Grid` carries a `CategoryScope` (`AllPhotos |
+  Category(id)`). Photos live in N flat per-root categories;
+  **Favourites** is the built-in one (fixed id `favourites`, cannot be
+  renamed or deleted). Each category is pushed as its own `Screen.Grid`
+  instance from the All Photos categories dropdown, not toggled in place,
+  so each view has its own scroll state. Memberships persist to
+  `<root>/.photo-selector-categories.json` (v2); a legacy
+  `.photo-selector-favourites.json` migrates into the built-in category
+  on first read and is renamed `.bak`. `CategoriesRepository` exposes
+  membership as one `observeMemberships` map flow (a future smart category
+  resolves behind it — the scope and `slice()` stay predicate-blind).
 - State plumbing: `StateFlow` for screen state, `SharedFlow` / `Channel`
   for one-shot events (toasts etc).
 
@@ -56,6 +70,26 @@ against a golden, or have an LLM session read them back. This is the
 preferred way to verify UI changes that don't require the real app window
 (theming, layout, simple interactions). For things that need a live window
 (native file picker, DMG packaging), fall back to `./gradlew run`.
+
+### Checking for unnecessary recompositions
+
+Two complementary tools, both desktop-friendly (no Layout Inspector here):
+
+- **Compiler stability reports (static).** `./gradlew compileKotlin
+  -PcomposeReports=true --rerun-tasks` dumps `*-composables.txt` /
+  `*-classes.txt` under `build/compose_compiler/`. Read them to spot a
+  composable that can't skip or a param/class that turned unstable. Off by
+  default (zero build cost). `--rerun-tasks` is required — an up-to-date
+  `compileKotlin` won't regenerate them.
+- **Recomposition-count tests (dynamic).** `RecompositionTracker` +
+  `GridRecompositionTest` assert that flipping one tile's favourite/focus
+  recomposes only that tile. Three gotchas baked into that test, learned
+  the hard way: (1) `record()` must sit directly in the body of the
+  restartable composable you measure — a `@Composable () -> Unit` wrapper
+  gets its own restart scope and measures the wrong thing; (2) drive state
+  via `runOnIdle { }`, a bare test-thread write isn't observed; (3) use a
+  plain layout, not a Lazy one, to isolate component skipping from the lazy
+  grid's own item subcomposition.
 
 ## Release process
 

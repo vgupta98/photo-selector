@@ -1,4 +1,4 @@
-package com.vishalgupta.photoselector.presentation.common
+package com.vishalgupta.photoselector.presentation.designsystem.molecule
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,17 +12,26 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 
+/**
+ * Centered icon + message, used for empty and undecodable states. [icon]
+ * defaults to a broken-image glyph but callers can supply a more fitting one.
+ */
 @Composable
-fun ErrorPlaceholder(message: String, modifier: Modifier = Modifier) {
+fun ErrorPlaceholder(
+    message: String,
+    modifier: Modifier = Modifier,
+    icon: ImageVector = Icons.Outlined.BrokenImage,
+) {
     Box(modifier, contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.sm),
         ) {
             Icon(
-                Icons.Outlined.BrokenImage,
+                icon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -30,7 +39,7 @@ fun ErrorPlaceholder(message: String, modifier: Modifier = Modifier) {
                 message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 24.dp),
+                modifier = Modifier.padding(horizontal = AppTheme.spacing.xl),
             )
         }
     }

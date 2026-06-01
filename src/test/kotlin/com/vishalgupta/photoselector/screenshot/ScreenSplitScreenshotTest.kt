@@ -1,22 +1,37 @@
 package com.vishalgupta.photoselector.screenshot
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Surface
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.data.image.ImageLoader
+import com.vishalgupta.photoselector.domain.model.Category
+import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.presentation.browser.BrowserScreen
 import com.vishalgupta.photoselector.presentation.browser.BrowserUiState
-import com.vishalgupta.photoselector.presentation.browser.FavouriteToastState
-import com.vishalgupta.photoselector.presentation.favourites.FavouritesScreen
-import com.vishalgupta.photoselector.presentation.favourites.FavouritesUiState
+import com.vishalgupta.photoselector.presentation.browser.CategoryToastState
+import com.vishalgupta.photoselector.presentation.designsystem.organism.BrowserCategoryHud
+import com.vishalgupta.photoselector.presentation.grid.GridScreen
+import com.vishalgupta.photoselector.presentation.grid.GridUiState
+import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.rootpicker.RootFolderPickerScreen
 import com.vishalgupta.photoselector.presentation.rootpicker.RootPickerUiState
-import com.vishalgupta.photoselector.presentation.theme.AppTheme
+import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import kotlinx.coroutines.CoroutineScope
 import org.junit.Rule
 import org.junit.Test
@@ -26,6 +41,9 @@ class ScreenSplitScreenshotTest {
 
     @get:Rule
     val rule = createComposeRule()
+
+    private val selectsId = CategoryId("selects")
+    private val categories = listOf(Category.favourites(), Category(selectsId, "Selects", builtIn = false))
 
     private val testPhotos = listOf(
         Photo(
@@ -52,6 +70,28 @@ class ScreenSplitScreenshotTest {
         override fun evictAll() {}
         override fun pin(id: PhotoId) {}
         override fun unpinAllExcept(id: PhotoId?) {}
+    }
+
+    @androidx.compose.runtime.Composable
+    private fun Grid(state: GridUiState, onBack: (() -> Unit)?) {
+        GridScreen(
+            state = state,
+            initialScrollIndex = 0,
+            onTileClick = {},
+            onChangeFolder = {},
+            onSelectCategory = { _, _ -> },
+            onCreateCategory = {},
+            onRenameCategory = { _, _ -> },
+            onDeleteCategory = {},
+            onBack = onBack,
+            onSetFocusedIndex = {},
+            onToggleMembershipAtFocus = {},
+            onToggleCustomCategoryAtFocus = {},
+            onExportTxt = {},
+            onCopyToFolder = {},
+            onDismissToast = {},
+            imageLoader = noOpImageLoader,
+        )
     }
 
     // --- RootFolderPickerScreen ---
@@ -114,52 +154,140 @@ class ScreenSplitScreenshotTest {
         rule.dumpScreenshot("root-picker-failed")
     }
 
-    // --- FavouritesScreen ---
+    // --- GridScreen ---
 
     @Test
-    fun favourites_empty() {
+    fun grid_allPhotos() {
         rule.setContent {
             AppTheme {
                 Surface(Modifier.size(800.dp, 600.dp)) {
-                    FavouritesScreen(
-                        state = FavouritesUiState(),
-                        onBack = {},
-                        onOpenPhoto = {},
-                        onExportTxt = {},
-                        onCopyToFolder = {},
-                        onDismissToast = {},
-                        imageLoader = noOpImageLoader,
+                    Grid(
+                        state = GridUiState(
+                            photos = testPhotos,
+                            scope = CategoryScope.AllPhotos,
+                            categories = categories,
+                            memberships = mapOf(Category.FAVOURITES_ID to setOf(PhotoId("a"))),
+                            lastViewedPhotoId = PhotoId("b"),
+                        ),
+                        onBack = null,
                     )
                 }
             }
         }
         rule.waitForIdle()
-        rule.dumpScreenshot("favourites-empty")
+        rule.dumpScreenshot("grid-all-photos")
     }
 
     @Test
-    fun favourites_busy() {
+    fun grid_categoryMenuOpen() {
         rule.setContent {
             AppTheme {
                 Surface(Modifier.size(800.dp, 600.dp)) {
-                    FavouritesScreen(
-                        state = FavouritesUiState(
-                            favourites = testPhotos,
-                            isBusy = true,
-                            progressLabel = "1 / 2",
+                    Grid(
+                        state = GridUiState(
+                            photos = testPhotos,
+                            scope = CategoryScope.AllPhotos,
+                            categories = categories,
+                            memberships = mapOf(
+                                Category.FAVOURITES_ID to setOf(PhotoId("a")),
+                                selectsId to setOf(PhotoId("b")),
+                            ),
                         ),
-                        onBack = {},
-                        onOpenPhoto = {},
-                        onExportTxt = {},
-                        onCopyToFolder = {},
-                        onDismissToast = {},
-                        imageLoader = noOpImageLoader,
+                        onBack = null,
                     )
                 }
             }
         }
         rule.waitForIdle()
-        rule.dumpScreenshot("favourites-busy")
+        rule.onNodeWithText("Categories (2)").performClick()
+        rule.waitForIdle()
+        // Favourites carries the "F" hotkey; custom categories get bare digits 1..9.
+        rule.onNodeWithText("F  Favourites  (1)").assertIsDisplayed()
+        rule.onNodeWithText("1  Selects  (1)").assertIsDisplayed()
+        rule.onNodeWithText("New category…").assertIsDisplayed()
+        // The menu renders in its own popup root; capture that, not the base screen.
+        rule.dumpScreenshot("grid-category-menu-open", rule.onAllNodes(isRoot()).onLast())
+    }
+
+    @Test
+    fun grid_favouritesCategory() {
+        val favPhotos = testPhotos.take(1)
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    Grid(
+                        state = GridUiState(
+                            photos = favPhotos,
+                            scope = CategoryScope.Category(Category.FAVOURITES_ID),
+                            categories = categories,
+                            memberships = mapOf(Category.FAVOURITES_ID to setOf(PhotoId("a"))),
+                        ),
+                        onBack = {},
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("grid-favourites-category")
+    }
+
+    @Test
+    fun grid_customCategoryActionsMenuOpen() {
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    Grid(
+                        state = GridUiState(
+                            photos = testPhotos.take(1),
+                            scope = CategoryScope.Category(selectsId),
+                            categories = categories,
+                            memberships = mapOf(selectsId to setOf(PhotoId("a"))),
+                        ),
+                        onBack = {},
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithContentDescription("Category actions").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("Rename…").assertIsDisplayed()
+        rule.onNodeWithText("Delete…").assertIsDisplayed()
+        rule.dumpScreenshot("grid-custom-category-actions-menu", rule.onAllNodes(isRoot()).onLast())
+    }
+
+    @Test
+    fun grid_focused() {
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    Grid(
+                        state = GridUiState(
+                            photos = testPhotos,
+                            scope = CategoryScope.AllPhotos,
+                            categories = categories,
+                            focusedIndex = 0,
+                        ),
+                        onBack = null,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("grid-focused")
+    }
+
+    @Test
+    fun grid_empty() {
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    Grid(state = GridUiState(categories = categories), onBack = null)
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("grid-empty")
     }
 
     // --- BrowserScreen ---
@@ -183,10 +311,11 @@ class ScreenSplitScreenshotTest {
                         toast = null,
                         onPrevious = {},
                         onNext = {},
-                        onToggleFavourite = {},
+                        onToggleCategory = {},
                         onViewportSizeChanged = {},
                         onOpenFavourites = {},
                         onChangeFolder = {},
+                        onBackToGrid = {},
                     )
                 }
             }
@@ -205,10 +334,11 @@ class ScreenSplitScreenshotTest {
                         toast = null,
                         onPrevious = {},
                         onNext = {},
-                        onToggleFavourite = {},
+                        onToggleCategory = {},
                         onViewportSizeChanged = {},
                         onOpenFavourites = {},
                         onChangeFolder = {},
+                        onBackToGrid = {},
                     )
                 }
             }
@@ -233,18 +363,108 @@ class ScreenSplitScreenshotTest {
                             favouriteCount = 1,
                             readOnly = false,
                         ),
-                        toast = FavouriteToastState(isFavourite = true),
+                        toast = CategoryToastState("Favourites", isFavourite = true, added = true),
                         onPrevious = {},
                         onNext = {},
-                        onToggleFavourite = {},
+                        onToggleCategory = {},
                         onViewportSizeChanged = {},
                         onOpenFavourites = {},
                         onChangeFolder = {},
+                        onBackToGrid = {},
                     )
                 }
             }
         }
         rule.waitForIdle()
         rule.dumpScreenshot("browser-with-toast")
+    }
+
+    @Test
+    fun browser_withRemoveToast() {
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    BrowserScreen(
+                        state = BrowserUiState(
+                            photos = testPhotos,
+                            currentIndex = 0,
+                            currentPhoto = testPhotos[0],
+                            currentBitmap = ImageBitmap(200, 150),
+                            isLoadingBitmap = false,
+                            isCurrentFavourite = false,
+                            favouriteCount = 0,
+                            readOnly = false,
+                            categories = categories,
+                        ),
+                        toast = CategoryToastState("Selects", isFavourite = false, added = false),
+                        onPrevious = {},
+                        onNext = {},
+                        onToggleCategory = {},
+                        onViewportSizeChanged = {},
+                        onOpenFavourites = {},
+                        onChangeFolder = {},
+                        onBackToGrid = {},
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("browser-with-remove-toast")
+    }
+
+    // --- BrowserCategoryHud ---
+    // The HUD auto-hides inside the live browser (reveal on key/mouse), so its appearance
+    // is captured by rendering the organism directly over a photo-like dark backdrop.
+
+    @Test
+    fun browser_categoryHud() {
+        val maybesId = CategoryId("maybes")
+        val hudCategories = listOf(
+            Category.favourites(),
+            Category(selectsId, "Selects", builtIn = false),
+            Category(maybesId, "Maybes", builtIn = false),
+        )
+        rule.setContent {
+            AppTheme {
+                Box(
+                    Modifier.size(800.dp, 160.dp).background(Color.Black),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BrowserCategoryHud(
+                        categories = hudCategories,
+                        currentMemberships = setOf(Category.FAVOURITES_ID, selectsId),
+                        onToggle = {},
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("Favourites").assertIsDisplayed()
+        rule.onNodeWithText("Selects").assertIsDisplayed()
+        rule.onNodeWithText("Maybes").assertIsDisplayed()
+        rule.dumpScreenshot("browser-category-hud")
+    }
+
+    @Test
+    fun browser_categoryHudEmpty() {
+        rule.setContent {
+            AppTheme {
+                Box(
+                    Modifier.size(800.dp, 160.dp).background(Color.Black),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BrowserCategoryHud(
+                        categories = listOf(Category.favourites()),
+                        currentMemberships = emptySet(),
+                        onToggle = {},
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("Favourites").assertIsDisplayed()
+        rule.dumpScreenshot("browser-category-hud-empty")
     }
 }

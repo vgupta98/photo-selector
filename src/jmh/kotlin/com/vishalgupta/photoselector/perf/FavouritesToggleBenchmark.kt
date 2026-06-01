@@ -1,6 +1,8 @@
 package com.vishalgupta.photoselector.perf
 
-import com.vishalgupta.photoselector.data.favourites.JsonFavouritesRepository
+import com.vishalgupta.photoselector.data.categories.JsonCategoriesRepository
+import com.vishalgupta.photoselector.domain.model.Category
+import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
 import kotlinx.coroutines.runBlocking
@@ -23,15 +25,14 @@ import java.util.Comparator
 import java.util.concurrent.TimeUnit
 
 /**
- * Measures end-to-end latency of `JsonFavouritesRepository.toggle`. Each
- * invocation flips a single id and waits for the suspending toggle to return.
+ * Measures end-to-end latency of toggling a photo's Favourites membership via
+ * `JsonCategoriesRepository.toggleMembership`. Each invocation flips a single id and
+ * waits for the suspending toggle to return.
  *
- * Same id is flipped every invocation so the set alternately gains and loses
- * one entry — every toggle dirties the JSON and exercises the disk write path.
- * `develop` schedules a debounced write (toggle returns immediately, ~µs);
- * `chore/repo-scope-ownership` performs the atomic-rename write inline (toggle
- * returns ~hundreds of µs to low ms depending on the filesystem). The delta is
- * the cost we're trading "no silent loss on quit" for.
+ * Same id is flipped every invocation so the set alternately gains and loses one entry —
+ * every toggle dirties the JSON and exercises the atomic-rename disk write path (which
+ * the toggle performs inline, returning ~hundreds of µs to low ms depending on the
+ * filesystem). The delta vs a debounced write is the cost of "no silent loss on quit".
  */
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
@@ -43,16 +44,30 @@ open class FavouritesToggleBenchmark {
 
     private lateinit var tmpDir: Path
     private lateinit var root: RootFolder
-    private lateinit var repo: JsonFavouritesRepository
+    private lateinit var repo: JsonCategoriesRepository
     private val id = PhotoId("bench-photo")
 
     @Setup(Level.Trial)
     fun setup() {
         tmpDir = Files.createTempDirectory("favbench-")
         root = RootFolder(tmpDir)
-        repo = JsonFavouritesRepository(Json { prettyPrint = true; encodeDefaults = true })
+        // A single scanned photo matching the toggled id, so bind resolves a populated
+        // scan (the self-healing bind only caches boundRoot for a non-empty scan) and
+        // every toggle persists a real v3 descriptor — exercising the disk write path.
+        val photo = Photo(
+            id = id,
+            absolutePath = tmpDir.resolve("bench-photo"),
+            relativePath = "bench-photo",
+            fileName = "bench-photo",
+            sizeBytes = 4823901,
+            lastModifiedEpochMs = 1730812401000,
+        )
+        repo = JsonCategoriesRepository(
+            Json { prettyPrint = true; encodeDefaults = true },
+            scannedPhotos = { listOf(photo) },
+        )
         // Force initial bind so the first measured toggle isn't disproportionately slow.
-        repo.observe(root)
+        repo.observeMemberships(root)
     }
 
     @TearDown(Level.Trial)
@@ -67,6 +82,6 @@ open class FavouritesToggleBenchmark {
 
     @Benchmark
     fun toggleSameId() = runBlocking {
-        repo.toggle(root, id)
+        repo.toggleMembership(root, Category.FAVOURITES_ID, id)
     }
 }

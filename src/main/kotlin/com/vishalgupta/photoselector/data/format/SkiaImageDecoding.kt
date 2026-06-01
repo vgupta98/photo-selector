@@ -13,8 +13,6 @@ import org.jetbrains.skia.ImageInfo
 import org.jetbrains.skia.Rect
 import org.jetbrains.skia.SamplingMode
 import org.jetbrains.skia.Surface
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -59,8 +57,7 @@ internal object SkiaImageDecoding {
                     surface.readPixels(bitmap, 0, 0)
                     val bytes = bitmap.readPixels(info, info.minRowBytes, 0, 0)
                         ?: error("Could not read pixels for: $path")
-                    val pixels = bgraBytesToArgbInts(bytes, outW, outH)
-                    return DecodedImage(width = outW, height = outH, argbPixels = pixels)
+                    return DecodedImage(width = outW, height = outH, bgraBytes = bytes)
                 } finally {
                     bitmap.close()
                 }
@@ -77,24 +74,6 @@ internal object SkiaImageDecoding {
         val longest = maxOf(srcW, srcH)
         return if (longest <= targetMaxDim) 1f
         else targetMaxDim.toFloat() / longest.toFloat()
-    }
-
-    /** Skia row order is BGRA bytes, little-endian, premul alpha. Convert to ARGB ints. */
-    private fun bgraBytesToArgbInts(bytes: ByteArray, width: Int, height: Int): IntArray {
-        val expected = width * height * 4
-        require(bytes.size >= expected) {
-            "Pixel buffer too small: expected $expected got ${bytes.size}"
-        }
-        val out = IntArray(width * height)
-        val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-        for (i in 0 until width * height) {
-            val b = buf.get().toInt() and 0xFF
-            val g = buf.get().toInt() and 0xFF
-            val r = buf.get().toInt() and 0xFF
-            val a = buf.get().toInt() and 0xFF
-            out[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
-        }
-        return out
     }
 
     @Suppress("unused")

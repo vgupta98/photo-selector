@@ -6,30 +6,17 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.outlined.Star
-import androidx.compose.material.icons.outlined.StarOutline
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -42,42 +29,57 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
-import com.vishalgupta.photoselector.presentation.common.ErrorPlaceholder
+import com.vishalgupta.photoselector.domain.model.Category
+import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.presentation.common.HoverOverlay
+import com.vishalgupta.photoselector.presentation.common.SystemActions
+import com.vishalgupta.photoselector.presentation.common.customCategories
+import com.vishalgupta.photoselector.presentation.common.digitSlot
+import com.vishalgupta.photoselector.presentation.designsystem.atom.FavouriteStar
+import com.vishalgupta.photoselector.presentation.designsystem.atom.LoadingIndicator
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.ErrorPlaceholder
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToast
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToastDefaults
+import com.vishalgupta.photoselector.presentation.designsystem.organism.BrowserCategoryHud
+import com.vishalgupta.photoselector.presentation.designsystem.organism.BrowserTopBar
+import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 
-data class FavouriteToastState(val isFavourite: Boolean)
+/** State for the transient confirmation pill shown after a membership toggle. */
+data class CategoryToastState(val categoryName: String, val isFavourite: Boolean, val added: Boolean)
 
 @Composable
 fun BrowserScreen(
     viewModel: BrowserViewModel,
+    systemActions: SystemActions,
     onOpenFavourites: () -> Unit,
     onChangeFolder: () -> Unit,
-    onBack: (() -> Unit)? = null,
+    onBack: () -> Unit,
 ) {
     DisposableEffect(viewModel) { onDispose { viewModel.onClear() } }
     val state by viewModel.state.collectAsState()
-    var toast by remember { mutableStateOf<FavouriteToastState?>(null) }
+    var toast by remember { mutableStateOf<CategoryToastState?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.loadIfNeeded()
     }
 
     LaunchedEffect(viewModel) {
-        viewModel.toggleEvents.collectLatest { nowFavourite ->
-            toast = FavouriteToastState(nowFavourite)
+        viewModel.toggleEvents.collectLatest { event ->
+            toast = CategoryToastState(event.categoryName, event.isFavourite, event.added)
             delay(1200)
             toast = null
         }
@@ -90,13 +92,14 @@ fun BrowserScreen(
     BrowserScreen(
         state = state,
         toast = toast,
+        systemActions = systemActions,
         onPrevious = viewModel::previous,
         onNext = viewModel::next,
-        onToggleFavourite = viewModel::toggleFavourite,
+        onToggleCategory = viewModel::toggleCategory,
         onViewportSizeChanged = viewModel::setViewportLongEdgePx,
         onOpenFavourites = onOpenFavourites,
         onChangeFolder = onChangeFolder,
-        onBack = onBack,
+        onBackToGrid = onBack,
     )
 }
 
@@ -104,18 +107,30 @@ fun BrowserScreen(
 @Composable
 fun BrowserScreen(
     state: BrowserUiState,
-    toast: FavouriteToastState?,
+    toast: CategoryToastState?,
+    systemActions: SystemActions? = null,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
-    onToggleFavourite: () -> Unit,
+    onToggleCategory: (CategoryId) -> Unit,
     onViewportSizeChanged: (Int) -> Unit,
     onOpenFavourites: () -> Unit,
     onChangeFolder: () -> Unit,
-    onBack: (() -> Unit)? = null,
+    onBackToGrid: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val focusRequester = remember { FocusRequester() }
     val zoom = rememberZoomState()
+
+    // The HUD auto-hides; any handled keystroke (and, via HoverOverlay, mouse movement)
+    // reveals it. Bumping this token restarts the hide timer.
+    var revealHud by remember { mutableIntStateOf(0) }
+    var keyRevealActive by remember { mutableStateOf(false) }
+    LaunchedEffect(revealHud) {
+        if (revealHud == 0) return@LaunchedEffect
+        keyRevealActive = true
+        delay(2500)
+        keyRevealActive = false
+    }
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -131,7 +146,7 @@ fun BrowserScreen(
     }
 
     // Hold last non-null toast so AnimatedVisibility content renders during exit fade.
-    var displayedToast by remember { mutableStateOf<FavouriteToastState?>(null) }
+    var displayedToast by remember { mutableStateOf<CategoryToastState?>(null) }
     if (toast != null) displayedToast = toast
 
     Box(
@@ -142,24 +157,48 @@ fun BrowserScreen(
             .focusable()
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                when (event.key) {
+                val meta = event.isMetaPressed
+                // Bare 1..9 toggles the current photo in the Nth custom category.
+                val slot = if (meta) null else digitSlot(event.key)
+                if (slot != null) {
+                    state.categories.customCategories().getOrNull(slot)?.let { onToggleCategory(it.id) }
+                    revealHud++
+                    return@onPreviewKeyEvent true
+                }
+                val handled = when (event.key) {
                     Key.DirectionLeft -> { onPrevious(); true }
                     Key.DirectionRight -> { onNext(); true }
-                    Key.F, Key.Spacebar -> { onToggleFavourite(); true }
+                    Key.F -> if (meta) false else { onToggleCategory(Category.FAVOURITES_ID); true }
+                    Key.Spacebar -> if (meta) false else {
+                        state.currentPhoto?.absolutePath?.let { systemActions?.preview(it) }
+                        true
+                    }
+                    Key.R -> if (meta) false else {
+                        state.currentPhoto?.absolutePath?.let { systemActions?.revealInFileManager(it) }
+                        true
+                    }
+                    Key.O -> if (meta) false else {
+                        state.currentPhoto?.absolutePath?.let { systemActions?.openWithDefaultApp(it) }
+                        true
+                    }
+                    Key.G -> if (meta) false else { onBackToGrid(); true }
+                    Key.Escape -> { onBackToGrid(); true }
                     Key.Equals, Key.Plus -> { zoom.zoomIn(); true }
                     Key.Minus -> { zoom.zoomOut(); true }
                     Key.Zero -> { zoom.reset(); true }
                     else -> false
                 }
+                if (handled) revealHud++
+                handled
             },
     ) {
-        TopBar(
+        BrowserTopBar(
             countLabel = if (state.photos.isEmpty()) "0 / 0"
             else "${state.currentIndex + 1} / ${state.photos.size}",
             relativePath = state.currentPhoto?.relativePath.orEmpty(),
-            favCount = state.favouriteCount,
+            favouriteCount = state.favouriteCount,
             readOnly = state.readOnly,
-            onBack = onBack,
+            onBack = onBackToGrid,
             onOpenFavourites = onOpenFavourites,
             onChangeFolder = onChangeFolder,
             modifier = Modifier.fillMaxWidth(),
@@ -173,7 +212,7 @@ fun BrowserScreen(
         HoverOverlay(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = 56.dp)
+                .padding(top = AppTheme.dimens.topBarHeight)
                 .onSizeChanged { size ->
                     val px = maxOf(size.width, size.height)
                     if (px > 0) viewportPx = px
@@ -182,7 +221,7 @@ fun BrowserScreen(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 val bmp = state.currentBitmap
                 when {
-                    state.isLoadingBitmap && bmp == null -> CircularProgressIndicator()
+                    state.isLoadingBitmap && bmp == null -> LoadingIndicator()
                     bmp == null -> ErrorPlaceholder("Cannot decode this photo. Press → to continue.")
                     else -> ZoomableImage(
                         bitmap = bmp,
@@ -192,11 +231,13 @@ fun BrowserScreen(
                 }
 
                 val alpha by animateFloatAsState(if (controlsVisible) 1f else 0f)
+                // The HUD also reveals on keystrokes, so it tracks its own visibility.
+                val hudVisible = controlsVisible || keyRevealActive
 
                 Row(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
-                        .padding(start = 12.dp)
+                        .padding(start = AppTheme.spacing.md)
                         .graphicsLayer { this.alpha = alpha },
                 ) {
                     FilledTonalIconButton(onClick = onPrevious) {
@@ -207,7 +248,7 @@ fun BrowserScreen(
                 Row(
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
-                        .padding(end = 12.dp)
+                        .padding(end = AppTheme.spacing.md)
                         .graphicsLayer { this.alpha = alpha },
                 ) {
                     FilledTonalIconButton(onClick = onNext) {
@@ -215,24 +256,19 @@ fun BrowserScreen(
                     }
                 }
 
-                Row(
+                AnimatedVisibility(
+                    visible = hudVisible,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 24.dp)
-                        .graphicsLayer { this.alpha = alpha },
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        .padding(bottom = AppTheme.spacing.xl),
                 ) {
-                    FilledTonalIconButton(onClick = onToggleFavourite) {
-                        if (state.isCurrentFavourite) {
-                            Icon(
-                                Icons.Filled.Star,
-                                contentDescription = "Unfavourite",
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        } else {
-                            Icon(Icons.Outlined.StarOutline, contentDescription = "Favourite")
-                        }
-                    }
+                    BrowserCategoryHud(
+                        categories = state.categories,
+                        currentMemberships = state.currentMemberships,
+                        onToggle = onToggleCategory,
+                    )
                 }
             }
         }
@@ -247,88 +283,27 @@ fun BrowserScreen(
         ) {
             val dt = displayedToast
             if (dt != null) {
-                FavouriteToast(
-                    isFavourite = dt.isFavourite,
-                    label = if (dt.isFavourite) "Favourited" else "Unfavourited",
+                PillToast(
+                    text = when {
+                        dt.isFavourite && dt.added -> "Favourited"
+                        dt.isFavourite -> "Unfavourited"
+                        dt.added -> "Added to ${dt.categoryName}"
+                        else -> "Removed from ${dt.categoryName}"
+                    },
+                    leadingIcon = if (dt.isFavourite) {
+                        { FavouriteStar(filled = dt.added, modifier = Modifier.size(AppTheme.dimens.iconSm)) }
+                    } else {
+                        null
+                    },
+                    // Colour encodes the action (added vs removed), not which category — a fast
+                    // peripheral cue when flipping through a cull. Favourites keeps its star too.
+                    colors = if (dt.added) {
+                        PillToastDefaults.addedColors()
+                    } else {
+                        PillToastDefaults.removedColors()
+                    },
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun FavouriteToast(isFavourite: Boolean, label: String, modifier: Modifier = Modifier) {
-    val bg = if (isFavourite) Color(0xFFE9A93C) else Color(0xFF2A2A2A)
-    val fg = if (isFavourite) Color(0xFF1A1A1A) else Color(0xFFE6E6E6)
-    Surface(
-        modifier = modifier,
-        color = bg,
-        contentColor = fg,
-        shape = RoundedCornerShape(percent = 50),
-        tonalElevation = 6.dp,
-        shadowElevation = 6.dp,
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-        ) {
-            Icon(
-                imageVector = if (isFavourite) Icons.Filled.Star else Icons.Outlined.StarOutline,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-            )
-            Text(label, style = MaterialTheme.typography.labelLarge)
-        }
-    }
-}
-
-@Composable
-private fun TopBar(
-    countLabel: String,
-    relativePath: String,
-    favCount: Int,
-    readOnly: Boolean,
-    onBack: (() -> Unit)?,
-    onOpenFavourites: () -> Unit,
-    onChangeFolder: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier
-            .height(56.dp)
-            .background(Color.Black.copy(alpha = 0.55f))
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        if (onBack != null) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
-            }
-        }
-        Text(countLabel, color = Color.White, style = MaterialTheme.typography.titleMedium)
-        Text(
-            text = "—  $relativePath",
-            color = Color.White.copy(alpha = 0.8f),
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.weight(1f),
-            maxLines = 1,
-        )
-        if (readOnly) {
-            Text(
-                "Read-only folder · selections in-memory only",
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        TextButton(onClick = onOpenFavourites) {
-            Icon(Icons.Outlined.Star, contentDescription = null)
-            Text("  Favourites ($favCount)")
-        }
-        TextButton(onClick = onChangeFolder) {
-            Icon(Icons.Default.Folder, contentDescription = null)
-            Text("  Change folder")
         }
     }
 }
