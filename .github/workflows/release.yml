@@ -171,6 +171,31 @@ jobs:
             --notes-file /tmp/notes.md \
             "$DMG"
 
+      - name: Bump Homebrew cask
+        env:
+          # Fine-grained PAT scoped to vgupta98/homebrew-tap (Contents: read/write).
+          # The default GITHUB_TOKEN can't push to a different repo.
+          GH_TOKEN: ${{ secrets.TAP_PUSH_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          DMG: ${{ steps.artifact.outputs.path }}
+        run: |
+          SHA=$(shasum -a 256 "$DMG" | awk '{print $1}')
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/vgupta98/homebrew-tap.git" tap
+          CASK=tap/Casks/photo-selector.rb
+          # macOS runner: BSD sed needs the '' empty-suffix argument for -i.
+          sed -i '' -E "s/^  version \".*\"/  version \"${VERSION}\"/" "$CASK"
+          sed -i '' -E "s/^  sha256 \".*\"/  sha256 \"${SHA}\"/" "$CASK"
+          cd tap
+          if git diff --quiet; then
+            echo "Cask already at ${VERSION} — nothing to bump."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/photo-selector.rb
+          git commit -m "Update photo-selector to ${VERSION}"
+          git push
+
       - name: Delete release branch
         if: success()
         env:
