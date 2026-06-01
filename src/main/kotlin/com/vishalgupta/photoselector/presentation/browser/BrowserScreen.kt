@@ -6,7 +6,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,8 +17,6 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -44,19 +41,25 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
+import com.vishalgupta.photoselector.domain.model.Category
+import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.presentation.common.HoverOverlay
 import com.vishalgupta.photoselector.presentation.common.SystemActions
+import com.vishalgupta.photoselector.presentation.common.customCategories
+import com.vishalgupta.photoselector.presentation.common.digitSlot
 import com.vishalgupta.photoselector.presentation.designsystem.atom.FavouriteStar
 import com.vishalgupta.photoselector.presentation.designsystem.atom.LoadingIndicator
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ErrorPlaceholder
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToast
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToastDefaults
+import com.vishalgupta.photoselector.presentation.designsystem.organism.BrowserCategoryHud
 import com.vishalgupta.photoselector.presentation.designsystem.organism.BrowserTopBar
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 
-data class FavouriteToastState(val isFavourite: Boolean)
+/** State for the transient confirmation pill shown after a membership toggle. */
+data class CategoryToastState(val categoryName: String, val isFavourite: Boolean, val added: Boolean)
 
 @Composable
 fun BrowserScreen(
@@ -68,15 +71,15 @@ fun BrowserScreen(
 ) {
     DisposableEffect(viewModel) { onDispose { viewModel.onClear() } }
     val state by viewModel.state.collectAsState()
-    var toast by remember { mutableStateOf<FavouriteToastState?>(null) }
+    var toast by remember { mutableStateOf<CategoryToastState?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.loadIfNeeded()
     }
 
     LaunchedEffect(viewModel) {
-        viewModel.toggleEvents.collectLatest { nowFavourite ->
-            toast = FavouriteToastState(nowFavourite)
+        viewModel.toggleEvents.collectLatest { event ->
+            toast = CategoryToastState(event.categoryName, event.isFavourite, event.added)
             delay(1200)
             toast = null
         }
@@ -92,7 +95,7 @@ fun BrowserScreen(
         systemActions = systemActions,
         onPrevious = viewModel::previous,
         onNext = viewModel::next,
-        onToggleFavourite = viewModel::toggleFavourite,
+        onToggleCategory = viewModel::toggleCategory,
         onViewportSizeChanged = viewModel::setViewportLongEdgePx,
         onOpenFavourites = onOpenFavourites,
         onChangeFolder = onChangeFolder,
@@ -104,11 +107,11 @@ fun BrowserScreen(
 @Composable
 fun BrowserScreen(
     state: BrowserUiState,
-    toast: FavouriteToastState?,
+    toast: CategoryToastState?,
     systemActions: SystemActions? = null,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
-    onToggleFavourite: () -> Unit,
+    onToggleCategory: (CategoryId) -> Unit,
     onViewportSizeChanged: (Int) -> Unit,
     onOpenFavourites: () -> Unit,
     onChangeFolder: () -> Unit,
@@ -117,6 +120,17 @@ fun BrowserScreen(
 ) {
     val focusRequester = remember { FocusRequester() }
     val zoom = rememberZoomState()
+
+    // The HUD auto-hides; any handled keystroke (and, via HoverOverlay, mouse movement)
+    // reveals it. Bumping this token restarts the hide timer.
+    var revealHud by remember { mutableIntStateOf(0) }
+    var keyRevealActive by remember { mutableStateOf(false) }
+    LaunchedEffect(revealHud) {
+        if (revealHud == 0) return@LaunchedEffect
+        keyRevealActive = true
+        delay(2500)
+        keyRevealActive = false
+    }
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -132,7 +146,7 @@ fun BrowserScreen(
     }
 
     // Hold last non-null toast so AnimatedVisibility content renders during exit fade.
-    var displayedToast by remember { mutableStateOf<FavouriteToastState?>(null) }
+    var displayedToast by remember { mutableStateOf<CategoryToastState?>(null) }
     if (toast != null) displayedToast = toast
 
     Box(
@@ -144,10 +158,17 @@ fun BrowserScreen(
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 val meta = event.isMetaPressed
-                when (event.key) {
+                // Bare 1..9 toggles the current photo in the Nth custom category.
+                val slot = if (meta) null else digitSlot(event.key)
+                if (slot != null) {
+                    state.categories.customCategories().getOrNull(slot)?.let { onToggleCategory(it.id) }
+                    revealHud++
+                    return@onPreviewKeyEvent true
+                }
+                val handled = when (event.key) {
                     Key.DirectionLeft -> { onPrevious(); true }
                     Key.DirectionRight -> { onNext(); true }
-                    Key.F -> if (meta) false else { onToggleFavourite(); true }
+                    Key.F -> if (meta) false else { onToggleCategory(Category.FAVOURITES_ID); true }
                     Key.Spacebar -> if (meta) false else {
                         state.currentPhoto?.absolutePath?.let { systemActions?.preview(it) }
                         true
@@ -167,6 +188,8 @@ fun BrowserScreen(
                     Key.Zero -> { zoom.reset(); true }
                     else -> false
                 }
+                if (handled) revealHud++
+                handled
             },
     ) {
         BrowserTopBar(
@@ -208,6 +231,8 @@ fun BrowserScreen(
                 }
 
                 val alpha by animateFloatAsState(if (controlsVisible) 1f else 0f)
+                // The HUD also reveals on keystrokes, so it tracks its own visibility.
+                val hudVisible = controlsVisible || keyRevealActive
 
                 Row(
                     modifier = Modifier
@@ -231,24 +256,19 @@ fun BrowserScreen(
                     }
                 }
 
-                Row(
+                AnimatedVisibility(
+                    visible = hudVisible,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = AppTheme.spacing.xl)
-                        .graphicsLayer { this.alpha = alpha },
-                    horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.md),
+                        .padding(bottom = AppTheme.spacing.xl),
                 ) {
-                    FilledTonalIconButton(onClick = onToggleFavourite) {
-                        FavouriteStar(
-                            filled = state.isCurrentFavourite,
-                            tint = if (state.isCurrentFavourite) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                LocalContentColor.current
-                            },
-                            contentDescription = if (state.isCurrentFavourite) "Unfavourite" else "Favourite",
-                        )
-                    }
+                    BrowserCategoryHud(
+                        categories = state.categories,
+                        currentMemberships = state.currentMemberships,
+                        onToggle = onToggleCategory,
+                    )
                 }
             }
         }
@@ -264,12 +284,16 @@ fun BrowserScreen(
             val dt = displayedToast
             if (dt != null) {
                 PillToast(
-                    text = if (dt.isFavourite) "Favourited" else "Unfavourited",
-                    leadingIcon = {
-                        FavouriteStar(
-                            filled = dt.isFavourite,
-                            modifier = Modifier.size(AppTheme.dimens.iconSm),
-                        )
+                    text = when {
+                        dt.isFavourite && dt.added -> "Favourited"
+                        dt.isFavourite -> "Unfavourited"
+                        dt.added -> "Added to ${dt.categoryName}"
+                        else -> "Removed from ${dt.categoryName}"
+                    },
+                    leadingIcon = if (dt.isFavourite) {
+                        { FavouriteStar(filled = dt.added, modifier = Modifier.size(AppTheme.dimens.iconSm)) }
+                    } else {
+                        null
                     },
                     colors = if (dt.isFavourite) {
                         PillToastDefaults.favouriteColors()

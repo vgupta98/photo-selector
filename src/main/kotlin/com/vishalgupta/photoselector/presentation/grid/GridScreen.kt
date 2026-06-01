@@ -43,6 +43,7 @@ import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
 import com.vishalgupta.photoselector.presentation.common.NativeFileDialogs
+import com.vishalgupta.photoselector.presentation.common.digitSlot
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BusyBar
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ErrorPlaceholder
 import com.vishalgupta.photoselector.presentation.designsystem.organism.GridTopBar
@@ -76,7 +77,7 @@ fun GridScreen(
         onBack = onBack,
         onSetFocusedIndex = viewModel::setFocusedIndex,
         onToggleMembershipAtFocus = viewModel::toggleMembershipAtFocus,
-        onToggleCategoryAtFocus = viewModel::toggleCategoryAtFocus,
+        onToggleCustomCategoryAtFocus = viewModel::toggleCustomCategoryAtFocus,
         onExportTxt = {
             coroutineScope.launch {
                 val target = NativeFileDialogs.pickSaveFile(
@@ -112,7 +113,7 @@ fun GridScreen(
     onBack: (() -> Unit)?,
     onSetFocusedIndex: (Int) -> Unit,
     onToggleMembershipAtFocus: () -> Unit,
-    onToggleCategoryAtFocus: (displayIndex: Int) -> Unit,
+    onToggleCustomCategoryAtFocus: (slot: Int) -> Unit,
     onExportTxt: () -> Unit,
     onCopyToFolder: (ConflictPolicy) -> Unit,
     onDismissToast: () -> Unit,
@@ -173,11 +174,11 @@ fun GridScreen(
                     onSetFocusedIndex(gridState.firstVisibleItemIndex.coerceIn(0, maxIndex))
                     return@onPreviewKeyEvent true
                 }
-                // Cmd+1..9 toggles the focused photo in the Nth category (display order),
-                // the only way to add a photo to a custom category from All Photos.
-                val digit = if (meta) digitIndex(event.key) else null
-                if (digit != null) {
-                    if (state.focusedIndex in 0..maxIndex) onToggleCategoryAtFocus(digit)
+                // Bare 1..9 toggles the focused photo in the Nth custom category — the keyboard
+                // path for filing into a category without leaving All Photos.
+                val slot = if (meta) null else digitSlot(event.key)
+                if (slot != null) {
+                    if (state.focusedIndex in 0..maxIndex) onToggleCustomCategoryAtFocus(slot)
                     return@onPreviewKeyEvent true
                 }
                 when (event.key) {
@@ -245,7 +246,7 @@ fun GridScreen(
                     CategoryScope.AllPhotos -> "No JPEG / PNG photos found in this folder."
                     is CategoryScope.Category ->
                         "No photos in ${currentCategory?.name ?: "this category"} yet. " +
-                            "From All Photos, focus a photo and press F (Favourites) or Cmd+1..9 to add it."
+                            "From All Photos, focus a photo and press F (Favourites) or 1..9 to add it."
                 }
                 ErrorPlaceholder(msg, Modifier.fillMaxSize())
             } else {
@@ -294,20 +295,6 @@ fun GridScreen(
             }
         }
     }
-}
-
-// Maps a number-row key (with Cmd held) to a zero-based category display index, or null.
-private fun digitIndex(key: Key): Int? = when (key) {
-    Key.One -> 0
-    Key.Two -> 1
-    Key.Three -> 2
-    Key.Four -> 3
-    Key.Five -> 4
-    Key.Six -> 5
-    Key.Seven -> 6
-    Key.Eight -> 7
-    Key.Nine -> 8
-    else -> null
 }
 
 // Derives the column count from the rendered grid (count of leading visible items

@@ -18,8 +18,8 @@ import com.vishalgupta.photoselector.presentation.designsystem.atom.AppOutlinedB
 /**
  * The All-Photos top-bar entry point into categories: a "Categories" button opening a
  * menu of every category with its member count, plus a "New category…" item. The leading
- * digit (1..9) hints the `Cmd+N` membership shortcut for that category. Owns its own menu
- * visibility — purely local UI state.
+ * key hints the membership shortcut — `F` for Favourites, bare `1..9` for the custom
+ * categories in order. Owns its own menu visibility — purely local UI state.
  */
 @Composable
 fun CategoryMenu(
@@ -32,8 +32,15 @@ fun CategoryMenu(
     Box(modifier) {
         AppOutlinedButton(text = "Categories (${entries.size})", onClick = { expanded = true })
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            entries.forEachIndexed { index, (category, count) ->
-                val prefix = if (index < 9) "${index + 1}  " else ""
+            var customSlot = 0
+            entries.forEach { (category, count) ->
+                val prefix = when {
+                    category.builtIn -> "F  "
+                    else -> {
+                        val slot = customSlot++
+                        if (slot < 9) "${slot + 1}  " else ""
+                    }
+                }
                 DropdownMenuItem(
                     text = { Text("$prefix${category.name}  ($count)") },
                     onClick = {

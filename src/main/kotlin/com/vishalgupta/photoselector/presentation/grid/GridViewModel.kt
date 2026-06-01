@@ -12,6 +12,7 @@ import com.vishalgupta.photoselector.domain.repository.CopyReport
 import com.vishalgupta.photoselector.domain.usecase.CopyPhotosToFolderUseCase
 import com.vishalgupta.photoselector.domain.usecase.ExportPhotosTxtUseCase
 import com.vishalgupta.photoselector.presentation.StateHolder
+import com.vishalgupta.photoselector.presentation.common.customCategories
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.navigation.activeCategoryId
 import com.vishalgupta.photoselector.presentation.navigation.slice
@@ -38,8 +39,8 @@ data class GridUiState(
     val progressLabel: String? = null,
     val toast: String? = null,
 ) {
-    /** Photos marked in the category the focused-tile toggle acts on (Favourites in All Photos). */
-    val markedIds: Set<PhotoId> get() = memberships[scope.activeCategoryId].orEmpty()
+    /** Photos in the built-in Favourites — what the tile star indicates, in any scope. */
+    val markedIds: Set<PhotoId> get() = memberships[Category.FAVOURITES_ID].orEmpty()
 }
 
 class GridViewModel(
@@ -105,16 +106,16 @@ class GridViewModel(
         _state.update { it.copy(focusedIndex = index.coerceIn(-1, (it.photos.size - 1).coerceAtLeast(-1))) }
     }
 
-    /** Toggles the focused photo in the active category (the scoped one, or Favourites in All Photos). */
+    /** Toggles the focused photo's Favourites membership (F / Space, in any scope). */
     fun toggleMembershipAtFocus() {
         val photo = _state.value.photos.getOrNull(_state.value.focusedIndex) ?: return
-        scope.launch { categories.toggleMembership(root, categoryScope.activeCategoryId, photo.id) }
+        scope.launch { categories.toggleMembership(root, Category.FAVOURITES_ID, photo.id) }
     }
 
-    /** Toggles the focused photo in the category at [displayIndex] (Cmd+1..9), if one exists. */
-    fun toggleCategoryAtFocus(displayIndex: Int) {
+    /** Toggles the focused photo in the Nth custom category (bare digit 1..9), if one exists. */
+    fun toggleCustomCategoryAtFocus(slot: Int) {
         val photo = _state.value.photos.getOrNull(_state.value.focusedIndex) ?: return
-        val category = _state.value.categories.getOrNull(displayIndex) ?: return
+        val category = _state.value.categories.customCategories().getOrNull(slot) ?: return
         scope.launch { categories.toggleMembership(root, category.id, photo.id) }
     }
 

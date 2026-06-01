@@ -77,7 +77,7 @@ class GridKeyboardTest {
                         onBack = null,
                         onSetFocusedIndex = { captured += it },
                         onToggleMembershipAtFocus = {},
-                        onToggleCategoryAtFocus = {},
+                        onToggleCustomCategoryAtFocus = {},
                         onExportTxt = {},
                         onCopyToFolder = {},
                         onDismissToast = {},
@@ -94,5 +94,46 @@ class GridKeyboardTest {
         // The shortcut path fires onSetFocusedIndex(0) and returns, so we expect
         // exactly one emission with index 0 — not a directional-math result.
         assertEquals(listOf(0), captured)
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun bareDigitKey_togglesNthCustomCategoryAtFocusedTile() {
+        val slots = mutableListOf<Int>()
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    GridScreen(
+                        state = GridUiState(
+                            photos = testPhotos,
+                            scope = CategoryScope.AllPhotos,
+                            focusedIndex = 0,
+                        ),
+                        initialScrollIndex = 0,
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onSelectCategory = { _, _ -> },
+                        onCreateCategory = {},
+                        onRenameCategory = { _, _ -> },
+                        onDeleteCategory = {},
+                        onBack = null,
+                        onSetFocusedIndex = {},
+                        onToggleMembershipAtFocus = {},
+                        onToggleCustomCategoryAtFocus = { slots += it },
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        imageLoader = noOpImageLoader,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        // Bare "2" (no Cmd) toggles the focused tile in the 2nd custom category — slot 1.
+        rule.onRoot().performKeyInput { pressKey(Key.Two) }
+        rule.waitForIdle()
+
+        assertEquals(listOf(1), slots)
     }
 }

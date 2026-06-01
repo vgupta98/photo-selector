@@ -1,8 +1,13 @@
 package com.vishalgupta.photoselector.screenshot
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Surface
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.isRoot
@@ -19,7 +24,8 @@ import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.presentation.browser.BrowserScreen
 import com.vishalgupta.photoselector.presentation.browser.BrowserUiState
-import com.vishalgupta.photoselector.presentation.browser.FavouriteToastState
+import com.vishalgupta.photoselector.presentation.browser.CategoryToastState
+import com.vishalgupta.photoselector.presentation.designsystem.organism.BrowserCategoryHud
 import com.vishalgupta.photoselector.presentation.grid.GridScreen
 import com.vishalgupta.photoselector.presentation.grid.GridUiState
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
@@ -80,7 +86,7 @@ class ScreenSplitScreenshotTest {
             onBack = onBack,
             onSetFocusedIndex = {},
             onToggleMembershipAtFocus = {},
-            onToggleCategoryAtFocus = {},
+            onToggleCustomCategoryAtFocus = {},
             onExportTxt = {},
             onCopyToFolder = {},
             onDismissToast = {},
@@ -195,10 +201,9 @@ class ScreenSplitScreenshotTest {
         rule.waitForIdle()
         rule.onNodeWithText("Categories (2)").performClick()
         rule.waitForIdle()
-        // Each category shows with its leading Cmd-shortcut digit, count, and the
-        // "New category…" affordance.
-        rule.onNodeWithText("1  Favourites  (1)").assertIsDisplayed()
-        rule.onNodeWithText("2  Selects  (1)").assertIsDisplayed()
+        // Favourites carries the "F" hotkey; custom categories get bare digits 1..9.
+        rule.onNodeWithText("F  Favourites  (1)").assertIsDisplayed()
+        rule.onNodeWithText("1  Selects  (1)").assertIsDisplayed()
         rule.onNodeWithText("New category…").assertIsDisplayed()
         // The menu renders in its own popup root; capture that, not the base screen.
         rule.dumpScreenshot("grid-category-menu-open", rule.onAllNodes(isRoot()).onLast())
@@ -306,7 +311,7 @@ class ScreenSplitScreenshotTest {
                         toast = null,
                         onPrevious = {},
                         onNext = {},
-                        onToggleFavourite = {},
+                        onToggleCategory = {},
                         onViewportSizeChanged = {},
                         onOpenFavourites = {},
                         onChangeFolder = {},
@@ -329,7 +334,7 @@ class ScreenSplitScreenshotTest {
                         toast = null,
                         onPrevious = {},
                         onNext = {},
-                        onToggleFavourite = {},
+                        onToggleCategory = {},
                         onViewportSizeChanged = {},
                         onOpenFavourites = {},
                         onChangeFolder = {},
@@ -358,10 +363,10 @@ class ScreenSplitScreenshotTest {
                             favouriteCount = 1,
                             readOnly = false,
                         ),
-                        toast = FavouriteToastState(isFavourite = true),
+                        toast = CategoryToastState("Favourites", isFavourite = true, added = true),
                         onPrevious = {},
                         onNext = {},
-                        onToggleFavourite = {},
+                        onToggleCategory = {},
                         onViewportSizeChanged = {},
                         onOpenFavourites = {},
                         onChangeFolder = {},
@@ -372,5 +377,61 @@ class ScreenSplitScreenshotTest {
         }
         rule.waitForIdle()
         rule.dumpScreenshot("browser-with-toast")
+    }
+
+    // --- BrowserCategoryHud ---
+    // The HUD auto-hides inside the live browser (reveal on key/mouse), so its appearance
+    // is captured by rendering the organism directly over a photo-like dark backdrop.
+
+    @Test
+    fun browser_categoryHud() {
+        val maybesId = CategoryId("maybes")
+        val hudCategories = listOf(
+            Category.favourites(),
+            Category(selectsId, "Selects", builtIn = false),
+            Category(maybesId, "Maybes", builtIn = false),
+        )
+        rule.setContent {
+            AppTheme {
+                Box(
+                    Modifier.size(800.dp, 160.dp).background(Color.Black),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BrowserCategoryHud(
+                        categories = hudCategories,
+                        currentMemberships = setOf(Category.FAVOURITES_ID, selectsId),
+                        onToggle = {},
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("Favourites").assertIsDisplayed()
+        rule.onNodeWithText("Selects").assertIsDisplayed()
+        rule.onNodeWithText("Maybes").assertIsDisplayed()
+        rule.dumpScreenshot("browser-category-hud")
+    }
+
+    @Test
+    fun browser_categoryHudEmpty() {
+        rule.setContent {
+            AppTheme {
+                Box(
+                    Modifier.size(800.dp, 160.dp).background(Color.Black),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BrowserCategoryHud(
+                        categories = listOf(Category.favourites()),
+                        currentMemberships = emptySet(),
+                        onToggle = {},
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("Favourites").assertIsDisplayed()
+        rule.dumpScreenshot("browser-category-hud-empty")
     }
 }
