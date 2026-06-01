@@ -32,6 +32,20 @@ object PillToastDefaults {
         container = AppTheme.colors.favouriteToastBackground,
         content = AppTheme.colors.favouriteToastContent,
     )
+
+    /** A membership was added — a positive accent, shared across all categories. */
+    @Composable
+    fun addedColors() = PillToastColors(
+        container = AppTheme.colors.toastAddedBackground,
+        content = AppTheme.colors.toastAddedContent,
+    )
+
+    /** A membership was removed — a muted accent, shared across all categories. */
+    @Composable
+    fun removedColors() = PillToastColors(
+        container = AppTheme.colors.toastRemovedBackground,
+        content = AppTheme.colors.toastRemovedContent,
+    )
 }
 
 /**

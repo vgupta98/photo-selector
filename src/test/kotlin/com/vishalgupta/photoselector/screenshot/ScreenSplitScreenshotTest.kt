@@ -379,6 +379,39 @@ class ScreenSplitScreenshotTest {
         rule.dumpScreenshot("browser-with-toast")
     }
 
+    @Test
+    fun browser_withRemoveToast() {
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    BrowserScreen(
+                        state = BrowserUiState(
+                            photos = testPhotos,
+                            currentIndex = 0,
+                            currentPhoto = testPhotos[0],
+                            currentBitmap = ImageBitmap(200, 150),
+                            isLoadingBitmap = false,
+                            isCurrentFavourite = false,
+                            favouriteCount = 0,
+                            readOnly = false,
+                            categories = categories,
+                        ),
+                        toast = CategoryToastState("Selects", isFavourite = false, added = false),
+                        onPrevious = {},
+                        onNext = {},
+                        onToggleCategory = {},
+                        onViewportSizeChanged = {},
+                        onOpenFavourites = {},
+                        onChangeFolder = {},
+                        onBackToGrid = {},
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("browser-with-remove-toast")
+    }
+
     // --- BrowserCategoryHud ---
     // The HUD auto-hides inside the live browser (reveal on key/mouse), so its appearance
     // is captured by rendering the organism directly over a photo-like dark backdrop.

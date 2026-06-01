@@ -295,10 +295,12 @@ fun BrowserScreen(
                     } else {
                         null
                     },
-                    colors = if (dt.isFavourite) {
-                        PillToastDefaults.favouriteColors()
+                    // Colour encodes the action (added vs removed), not which category — a fast
+                    // peripheral cue when flipping through a cull. Favourites keeps its star too.
+                    colors = if (dt.added) {
+                        PillToastDefaults.addedColors()
                     } else {
-                        PillToastDefaults.neutralColors()
+                        PillToastDefaults.removedColors()
                     },
                 )
             }

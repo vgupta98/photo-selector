@@ -27,6 +27,14 @@ data class AppColors(
     val favouriteToastBackground: Color,
     /** Favourited pill-toast foreground. */
     val favouriteToastContent: Color,
+    /** Added-to-a-category pill-toast background (positive cue, shared across categories). */
+    val toastAddedBackground: Color,
+    /** Added-to-a-category pill-toast foreground. */
+    val toastAddedContent: Color,
+    /** Removed-from-a-category pill-toast background (muted cue, shared across categories). */
+    val toastRemovedBackground: Color,
+    /** Removed-from-a-category pill-toast foreground. */
+    val toastRemovedContent: Color,
     /** Translucent scrim over the photo behind the browser top bar. */
     val topBarScrim: Color,
     /** Vertical scrollbar, idle. */
@@ -43,6 +51,10 @@ val DarkAppColors = AppColors(
     toastContent = Color(0xFFE6E6E6),
     favouriteToastBackground = Color(0xFFE9A93C),
     favouriteToastContent = Color(0xFF1A1A1A),
+    toastAddedBackground = Color(0xFF2E7D46),
+    toastAddedContent = Color(0xFFEAF6EC),
+    toastRemovedBackground = Color(0xFF3A3030),
+    toastRemovedContent = Color(0xFFEDDADA),
     topBarScrim = Color.Black.copy(alpha = 0.55f),
     scrollbarIdle = Color.White.copy(alpha = 0.3f),
     scrollbarHover = Color.White.copy(alpha = 0.6f),
