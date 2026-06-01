@@ -1,23 +1,27 @@
 package com.vishalgupta.photoselector.presentation.grid
 
 import com.vishalgupta.photoselector.data.image.ImageLoader
+import com.vishalgupta.photoselector.domain.model.Category
+import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
+import com.vishalgupta.photoselector.domain.repository.CategoriesRepository
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
 import com.vishalgupta.photoselector.domain.repository.CopyReport
-import com.vishalgupta.photoselector.domain.usecase.CopyFavouritesToFolderUseCase
-import com.vishalgupta.photoselector.domain.usecase.ExportFavouritesTxtUseCase
-import com.vishalgupta.photoselector.domain.usecase.ObserveFavouritesUseCase
-import com.vishalgupta.photoselector.domain.usecase.ToggleFavouriteUseCase
+import com.vishalgupta.photoselector.domain.usecase.CopyPhotosToFolderUseCase
+import com.vishalgupta.photoselector.domain.usecase.ExportPhotosTxtUseCase
 import com.vishalgupta.photoselector.presentation.StateHolder
-import com.vishalgupta.photoselector.presentation.navigation.BrowseScope
+import com.vishalgupta.photoselector.presentation.common.customCategories
+import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
+import com.vishalgupta.photoselector.presentation.navigation.activeCategoryId
 import com.vishalgupta.photoselector.presentation.navigation.slice
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
@@ -26,43 +30,50 @@ import java.nio.file.Path
 
 data class GridUiState(
     val photos: List<Photo> = emptyList(),
-    val scope: BrowseScope = BrowseScope.AllPhotos,
-    val favouriteIds: Set<PhotoId> = emptySet(),
+    val scope: CategoryScope = CategoryScope.AllPhotos,
+    val categories: List<Category> = emptyList(),
+    val memberships: Map<CategoryId, Set<PhotoId>> = emptyMap(),
     val lastViewedPhotoId: PhotoId? = null,
     val focusedIndex: Int = -1,
     val isBusy: Boolean = false,
     val progressLabel: String? = null,
     val toast: String? = null,
-)
+) {
+    /** Photos in the built-in Favourites — what the tile star indicates, in any scope. */
+    val markedIds: Set<PhotoId> get() = memberships[Category.FAVOURITES_ID].orEmpty()
+}
 
 class GridViewModel(
     private val root: RootFolder,
     private val allPhotos: List<Photo>,
-    private val browseScope: BrowseScope,
+    private val categoryScope: CategoryScope,
     lastViewedPhotoId: PhotoId? = null,
-    private val observeFavourites: ObserveFavouritesUseCase,
-    private val toggleFavourite: ToggleFavouriteUseCase,
-    private val exportTxt: ExportFavouritesTxtUseCase,
-    private val copyToFolder: CopyFavouritesToFolderUseCase,
+    private val categories: CategoriesRepository,
+    private val exportTxt: ExportPhotosTxtUseCase,
+    private val copyToFolder: CopyPhotosToFolderUseCase,
     val imageLoader: ImageLoader,
     parentJob: Job? = null,
     private val onScrollIndexChanged: ((Int) -> Unit)? = null,
 ) : StateHolder(parentJob) {
 
-    private val _state = MutableStateFlow(GridUiState(scope = browseScope, lastViewedPhotoId = lastViewedPhotoId))
+    private val _state = MutableStateFlow(GridUiState(scope = categoryScope, lastViewedPhotoId = lastViewedPhotoId))
     val state: StateFlow<GridUiState> = _state.asStateFlow()
 
     private var scrollSaveJob: Job? = null
     private var lastKnownIndex: Int? = null
 
     init {
-        observeFavourites(root)
-            .onEach { favIds ->
-                val photos = browseScope.slice(allPhotos, favIds)
+        combine(
+            categories.observeCategories(root),
+            categories.observeMemberships(root),
+        ) { cats, members -> cats to members }
+            .onEach { (cats, members) ->
+                val photos = categoryScope.slice(allPhotos, members[categoryScope.activeCategoryId].orEmpty())
                 _state.update {
                     it.copy(
                         photos = photos,
-                        favouriteIds = favIds,
+                        categories = cats,
+                        memberships = members,
                         focusedIndex = it.focusedIndex.coerceIn(-1, (photos.size - 1).coerceAtLeast(-1)),
                     )
                 }
@@ -71,7 +82,7 @@ class GridViewModel(
     }
 
     fun onFirstVisibleItemChanged(index: Int) {
-        if (browseScope != BrowseScope.AllPhotos) return
+        if (categoryScope != CategoryScope.AllPhotos) return
         lastKnownIndex = index
         onScrollIndexChanged?.let { save ->
             scrollSaveJob?.cancel()
@@ -95,22 +106,44 @@ class GridViewModel(
         _state.update { it.copy(focusedIndex = index.coerceIn(-1, (it.photos.size - 1).coerceAtLeast(-1))) }
     }
 
-    fun toggleFavouriteAtFocus() {
+    /** Toggles the focused photo's Favourites membership (F / Space, in any scope). */
+    fun toggleMembershipAtFocus() {
         val photo = _state.value.photos.getOrNull(_state.value.focusedIndex) ?: return
-        scope.launch { toggleFavourite(root, photo.id) }
+        scope.launch { categories.toggleMembership(root, Category.FAVOURITES_ID, photo.id) }
+    }
+
+    /** Toggles the focused photo in the Nth custom category (bare digit 1..9), if one exists. */
+    fun toggleCustomCategoryAtFocus(slot: Int) {
+        val photo = _state.value.photos.getOrNull(_state.value.focusedIndex) ?: return
+        val category = _state.value.categories.customCategories().getOrNull(slot) ?: return
+        scope.launch { categories.toggleMembership(root, category.id, photo.id) }
+    }
+
+    fun createCategory(name: String) {
+        if (name.isBlank()) return
+        scope.launch { categories.create(root, name) }
+    }
+
+    fun renameCategory(id: CategoryId, newName: String) {
+        if (newName.isBlank()) return
+        scope.launch { categories.rename(root, id, newName) }
+    }
+
+    fun deleteCategory(id: CategoryId) {
+        scope.launch { categories.delete(root, id) }
     }
 
     fun exportTxt(destination: Path) {
         scope.launch {
             _state.update { it.copy(isBusy = true, progressLabel = "Writing list…") }
             try {
-                val favourites = currentFavouritePhotos()
-                exportTxt.invoke(root, favourites, destination)
+                val photos = _state.value.photos
+                exportTxt.invoke(root, photos, destination)
                 _state.update {
                     it.copy(
                         isBusy = false,
                         progressLabel = null,
-                        toast = "Saved ${favourites.size} entries to ${destination.fileName}",
+                        toast = "Saved ${photos.size} entries to ${destination.fileName}",
                     )
                 }
             } catch (t: Throwable) {
@@ -123,12 +156,12 @@ class GridViewModel(
 
     fun copyTo(destination: Path, policy: ConflictPolicy) {
         scope.launch {
-            val favourites = currentFavouritePhotos()
-            _state.update { it.copy(isBusy = true, progressLabel = "0 / ${favourites.size}") }
+            val photos = _state.value.photos
+            _state.update { it.copy(isBusy = true, progressLabel = "0 / ${photos.size}") }
             try {
                 val report: CopyReport = copyToFolder.invoke(
                     root = root,
-                    favourites = favourites,
+                    photos = photos,
                     destDir = destination,
                     policy = policy,
                 ) { done, total ->
@@ -148,9 +181,6 @@ class GridViewModel(
     fun dismissToast() {
         _state.update { it.copy(toast = null) }
     }
-
-    private fun currentFavouritePhotos(): List<Photo> =
-        BrowseScope.FavouritesOnly.slice(allPhotos, _state.value.favouriteIds)
 
     private fun buildReportToast(report: CopyReport): String {
         val parts = mutableListOf("Copied ${report.copied}")

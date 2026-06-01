@@ -28,15 +28,16 @@ import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 private const val THUMBNAIL_VIEWPORT_PX = 320
 
 /**
- * A square photo tile: decoded image (cropped to fill), an optional favourite
- * star, a focus border, and a "last viewed" underline. Decodes lazily through
- * [loader], keyed on the photo id.
+ * A square photo tile: decoded image (cropped to fill), an optional star marking
+ * Favourites membership (in any scope, including a custom-category grid), a focus
+ * border, and a "last viewed" underline. Decodes lazily through [loader], keyed on the
+ * photo id.
  */
 @Composable
 fun PhotoThumbnail(
     photo: Photo,
     loader: ImageLoader,
-    isFavourite: Boolean,
+    isMarked: Boolean,
     isFocused: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -73,11 +74,11 @@ fun PhotoThumbnail(
         } else {
             LoadingIndicator()
         }
-        if (isFavourite) {
+        if (isMarked) {
             FavouriteStar(
                 filled = true,
                 tint = AppTheme.colors.favourite,
-                contentDescription = "Favourite",
+                contentDescription = "Favourited",
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(AppTheme.spacing.xs)

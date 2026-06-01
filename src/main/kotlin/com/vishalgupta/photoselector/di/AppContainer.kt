@@ -4,7 +4,7 @@ import com.vishalgupta.photoselector.data.browse.JsonBrowsePositionRepository
 import com.vishalgupta.photoselector.data.export.CompositePhotoExporter
 import com.vishalgupta.photoselector.data.export.CopyPhotoExporter
 import com.vishalgupta.photoselector.data.export.TxtPhotoExporter
-import com.vishalgupta.photoselector.data.favourites.JsonFavouritesRepository
+import com.vishalgupta.photoselector.data.categories.JsonCategoriesRepository
 import com.vishalgupta.photoselector.data.filesystem.FileSystemPhotoRepository
 import com.vishalgupta.photoselector.data.format.DefaultPhotoFormatRegistry
 import com.vishalgupta.photoselector.data.format.JpegDecoder
@@ -17,18 +17,17 @@ import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.BrowsePosition
-import com.vishalgupta.photoselector.domain.repository.FavouritesRepository
+import com.vishalgupta.photoselector.domain.repository.CategoriesRepository
 import com.vishalgupta.photoselector.domain.repository.BrowsePositionRepository
 import com.vishalgupta.photoselector.domain.repository.PhotoExporter
 import com.vishalgupta.photoselector.domain.repository.PhotoRepository
-import com.vishalgupta.photoselector.domain.usecase.CopyFavouritesToFolderUseCase
-import com.vishalgupta.photoselector.domain.usecase.ExportFavouritesTxtUseCase
-import com.vishalgupta.photoselector.domain.usecase.ObserveFavouritesUseCase
+import com.vishalgupta.photoselector.domain.usecase.CopyPhotosToFolderUseCase
+import com.vishalgupta.photoselector.domain.usecase.ExportPhotosTxtUseCase
 import com.vishalgupta.photoselector.domain.usecase.ScanRootFolderUseCase
-import com.vishalgupta.photoselector.domain.usecase.ToggleFavouriteUseCase
 import com.vishalgupta.photoselector.presentation.browser.BrowserViewModel
 import com.vishalgupta.photoselector.presentation.grid.GridViewModel
-import com.vishalgupta.photoselector.presentation.navigation.BrowseScope
+import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
+import com.vishalgupta.photoselector.presentation.navigation.activeCategoryId
 import com.vishalgupta.photoselector.presentation.navigation.slice
 import com.vishalgupta.photoselector.presentation.common.MacSystemActions
 import com.vishalgupta.photoselector.presentation.common.SystemActions
@@ -75,16 +74,14 @@ class AppContainer {
     )
 
     private val photoRepository: PhotoRepository = FileSystemPhotoRepository(formatRegistry)
-    private val favouritesRepository: FavouritesRepository =
-        JsonFavouritesRepository(json) { root -> photosFor(root) }
+    private val categoriesRepository: CategoriesRepository =
+        JsonCategoriesRepository(json, scannedPhotos = { root -> photosFor(root) })
     private val browsePositionRepository: BrowsePositionRepository = JsonBrowsePositionRepository(json)
     private val exporter: PhotoExporter = CompositePhotoExporter(TxtPhotoExporter(), CopyPhotoExporter())
 
     private val scanUseCase = ScanRootFolderUseCase(photoRepository)
-    private val observeFavouritesUseCase = ObserveFavouritesUseCase(favouritesRepository)
-    private val toggleFavouriteUseCase = ToggleFavouriteUseCase(favouritesRepository)
-    private val exportTxtUseCase = ExportFavouritesTxtUseCase(exporter)
-    private val copyFavouritesUseCase = CopyFavouritesToFolderUseCase(exporter)
+    private val exportTxtUseCase = ExportPhotosTxtUseCase(exporter)
+    private val copyPhotosUseCase = CopyPhotosToFolderUseCase(exporter)
 
     val systemActions: SystemActions = MacSystemActions()
 
@@ -124,42 +121,44 @@ class AppContainer {
     fun browserViewModel(
         root: RootFolder,
         initialIndex: Int,
-        scope: BrowseScope,
+        scope: CategoryScope,
     ): BrowserViewModel = BrowserViewModel(
         root = root,
         photos = photosForScope(root, scope),
         initialIndex = initialIndex,
-        observeFavourites = observeFavouritesUseCase,
-        toggleFavourite = toggleFavouriteUseCase,
+        categories = categoriesRepository,
         imageLoader = imageLoader,
-        isReadOnly = favouritesRepository.isReadOnly(root),
+        isReadOnly = categoriesRepository.isReadOnly(root),
         parentJob = folderJob,
+        // Only All Photos owns the per-root scroll index; a category view (its own
+        // pushed instance) just records the last photo so a re-open lands near it.
         onPositionChanged = when (scope) {
-            BrowseScope.AllPhotos -> { position ->
+            CategoryScope.AllPhotos -> { position ->
                 appScope.launch { browsePositionRepository.save(root, position) }
             }
-            BrowseScope.FavouritesOnly -> { position ->
+            is CategoryScope.Category -> { position ->
                 appScope.launch { browsePositionRepository.saveLastPhotoId(root, position.lastPhotoId) }
             }
         },
     )
 
-    private fun photosForScope(root: RootFolder, scope: BrowseScope): List<Photo> =
-        scope.slice(photosFor(root), favouritesRepository.observe(root).value)
+    private fun photosForScope(root: RootFolder, scope: CategoryScope): List<Photo> {
+        val members = categoriesRepository.observeMemberships(root).value[scope.activeCategoryId].orEmpty()
+        return scope.slice(photosFor(root), members)
+    }
 
     fun gridViewModel(
         root: RootFolder,
-        scope: BrowseScope,
+        scope: CategoryScope,
         lastViewedPhotoId: PhotoId? = null,
     ): GridViewModel = GridViewModel(
         root = root,
         allPhotos = photosFor(root),
-        browseScope = scope,
+        categoryScope = scope,
         lastViewedPhotoId = lastViewedPhotoId,
-        observeFavourites = observeFavouritesUseCase,
-        toggleFavourite = toggleFavouriteUseCase,
+        categories = categoriesRepository,
         exportTxt = exportTxtUseCase,
-        copyToFolder = copyFavouritesUseCase,
+        copyToFolder = copyPhotosUseCase,
         imageLoader = imageLoader,
         parentJob = folderJob,
         onScrollIndexChanged = { index ->
@@ -170,7 +169,7 @@ class AppContainer {
     suspend fun resetForNewRoot() {
         _folderJob.cancel()
         _folderJob = SupervisorJob(appScope.coroutineContext[Job])
-        favouritesRepository.clearContext()
+        categoriesRepository.clearContext()
         imageLoader.evictAll()
         scannedRoot = null
         scannedPhotos = emptyList()

@@ -2,12 +2,13 @@ package com.vishalgupta.photoselector.presentation.browser
 
 import androidx.compose.ui.graphics.ImageBitmap
 import com.vishalgupta.photoselector.data.image.ImageLoader
+import com.vishalgupta.photoselector.domain.model.Category
+import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.BrowsePosition
-import com.vishalgupta.photoselector.domain.usecase.ObserveFavouritesUseCase
-import com.vishalgupta.photoselector.domain.usecase.ToggleFavouriteUseCase
+import com.vishalgupta.photoselector.domain.repository.CategoriesRepository
 import com.vishalgupta.photoselector.presentation.StateHolder
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -32,6 +33,10 @@ data class BrowserUiState(
     val isCurrentFavourite: Boolean,
     val favouriteCount: Int,
     val readOnly: Boolean,
+    /** All categories for this root, Favourites first — the HUD legend. */
+    val categories: List<Category> = emptyList(),
+    /** Which categories the current photo belongs to — which HUD chips are lit. */
+    val currentMemberships: Set<CategoryId> = emptySet(),
 ) {
     companion object {
         fun initial(photos: List<Photo>) = BrowserUiState(
@@ -47,36 +52,52 @@ data class BrowserUiState(
     }
 }
 
+/** A membership toggle that just happened, surfaced as a one-shot toast. */
+data class CategoryToggle(val categoryName: String, val isFavourite: Boolean, val added: Boolean)
+
 class BrowserViewModel(
     private val root: RootFolder,
     private val photos: List<Photo>,
     private val initialIndex: Int,
-    private val observeFavourites: ObserveFavouritesUseCase,
-    private val toggleFavourite: ToggleFavouriteUseCase,
+    private val categories: CategoriesRepository,
     private val imageLoader: ImageLoader,
     private val isReadOnly: StateFlow<Boolean>,
     parentJob: Job? = null,
     private val onPositionChanged: ((BrowsePosition) -> Unit)? = null,
 ) : StateHolder(parentJob) {
 
-    private val favouritesFlow: StateFlow<Set<PhotoId>> = observeFavourites(root)
+    // The HUD shows every category and toggles any of them; F still maps to the built-in
+    // Favourites regardless of which category grid the user paged in from.
+    private val categoriesFlow: StateFlow<List<Category>> = categories.observeCategories(root)
+    private val membershipsFlow: StateFlow<Map<CategoryId, Set<PhotoId>>> = categories.observeMemberships(root)
+
+    private fun favourites(): Set<PhotoId> = membershipsFlow.value[Category.FAVOURITES_ID].orEmpty()
+
+    /** The categories the given photo currently belongs to, for lighting the HUD chips. */
+    private fun membershipsOf(photo: Photo?): Set<CategoryId> {
+        if (photo == null) return emptySet()
+        return membershipsFlow.value.filterValues { photo.id in it }.keys
+    }
 
     private val _state = MutableStateFlow(
         run {
             val safeIndex = initialIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0))
             val firstPhoto = photos.getOrNull(safeIndex)
+            val favs = favourites()
             BrowserUiState.initial(photos).copy(
                 currentIndex = safeIndex,
                 currentPhoto = firstPhoto,
-                isCurrentFavourite = firstPhoto != null && firstPhoto.id in favouritesFlow.value,
-                favouriteCount = favouritesFlow.value.size,
+                isCurrentFavourite = firstPhoto != null && firstPhoto.id in favs,
+                favouriteCount = favs.size,
+                categories = categoriesFlow.value,
+                currentMemberships = membershipsOf(firstPhoto),
             )
         },
     )
     val state: StateFlow<BrowserUiState> = _state.asStateFlow()
 
-    private val _toggleEvents = Channel<Boolean>(Channel.BUFFERED)
-    val toggleEvents: Flow<Boolean> = _toggleEvents.receiveAsFlow()
+    private val _toggleEvents = Channel<CategoryToggle>(Channel.BUFFERED)
+    val toggleEvents: Flow<CategoryToggle> = _toggleEvents.receiveAsFlow()
 
     private var loadJob: Job? = null
     private var positionSaveJob: Job? = null
@@ -84,13 +105,20 @@ class BrowserViewModel(
     private var viewportLongEdgePx: Int = 1600
 
     init {
-        combine(favouritesFlow, isReadOnly) { favs, readOnly -> favs to readOnly }
-            .onEach { (favs, readOnly) ->
+        combine(categoriesFlow, membershipsFlow, isReadOnly) { cats, members, readOnly ->
+            Triple(cats, members, readOnly)
+        }
+            .onEach { (cats, members, readOnly) ->
+                val favs = members[Category.FAVOURITES_ID].orEmpty()
                 _state.update {
+                    val photo = it.currentPhoto
                     it.copy(
-                        isCurrentFavourite = it.currentPhoto != null && it.currentPhoto.id in favs,
+                        isCurrentFavourite = photo != null && photo.id in favs,
                         favouriteCount = favs.size,
                         readOnly = readOnly,
+                        categories = cats,
+                        currentMemberships = if (photo == null) emptySet()
+                        else members.filterValues { ids -> photo.id in ids }.keys,
                     )
                 }
             }
@@ -119,7 +147,8 @@ class BrowserViewModel(
                 currentPhoto = photo,
                 currentBitmap = null,
                 isLoadingBitmap = true,
-                isCurrentFavourite = photo.id in favouritesFlow.value,
+                isCurrentFavourite = photo.id in favourites(),
+                currentMemberships = membershipsOf(photo),
             )
         }
         scheduleSavePosition()
@@ -150,11 +179,19 @@ class BrowserViewModel(
         super.onClear()
     }
 
-    fun toggleFavourite() {
+    /** Toggle the current photo in [categoryId] (F = Favourites, a digit = a custom category). */
+    fun toggleCategory(categoryId: CategoryId) {
         val photo = _state.value.currentPhoto ?: return
+        val name = categoriesFlow.value.firstOrNull { it.id == categoryId }?.name ?: return
         scope.launch {
-            val nowFavourite = toggleFavourite(root, photo.id)
-            _toggleEvents.trySend(nowFavourite)
+            val added = categories.toggleMembership(root, categoryId, photo.id)
+            _toggleEvents.trySend(
+                CategoryToggle(
+                    categoryName = name,
+                    isFavourite = categoryId == Category.FAVOURITES_ID,
+                    added = added,
+                ),
+            )
         }
     }
 
