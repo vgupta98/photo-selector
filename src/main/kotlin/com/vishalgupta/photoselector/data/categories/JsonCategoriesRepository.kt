@@ -20,16 +20,16 @@ import java.nio.file.StandardCopyOption
 import java.util.UUID
 
 /**
- * Persists flat photo categories to `<root>/.photo-selector-categories.json` (v3).
+ * Persists flat photo categories to `<root>/.photo-selector-categories.json` (v2).
  *
  * On bind, persisted entries are resolved against the current scan (via [scannedPhotos])
  * so memberships re-attach after a folder rename or move — see [MembershipResolver]. The
  * in-memory model is metadata ([categoriesFlow]) plus a single membership map
- * ([membershipsFlow]) of *current* [PhotoId]s; writes re-serialise the v3 descriptor form.
+ * ([membershipsFlow]) of *current* [PhotoId]s; writes re-serialise the v2 descriptor form.
  *
  * Migration: the first time a root with only the legacy `.photo-selector-favourites.json`
  * is bound (against a populated scan), its entries are transcoded verbatim into the
- * built-in Favourites category, written as v3, and the old file is renamed to `.bak`.
+ * built-in Favourites category, written as v2, and the old file is renamed to `.bak`.
  */
 class JsonCategoriesRepository(
     private val json: Json,
@@ -149,7 +149,7 @@ class JsonCategoriesRepository(
     private fun shouldMigrate(root: RootFolder): Boolean =
         !Files.exists(root.categoriesFile) && Files.exists(root.favouritesFile)
 
-    /** Transcodes the just-loaded categories to v3 verbatim and retires the legacy file. */
+    /** Transcodes the just-loaded categories to v2 verbatim and retires the legacy file. */
     private fun migrateLegacyFavourites(root: RootFolder, loaded: List<CategoryDto>) {
         runCatching {
             AtomicJsonWriter.write(root.categoriesFile, CategoriesFile.encode(json, loaded))
@@ -157,7 +157,7 @@ class JsonCategoriesRepository(
         }.onFailure { readOnly.value = true }
     }
 
-    /** Reads the categories file (v3), migrates a legacy favourites file, or starts fresh —
+    /** Reads the categories file (v2), migrates a legacy favourites file, or starts fresh —
      *  always returning a normalised list with the built-in Favourites first. Returns null
      *  when a file *exists* but fails to decode, so [bind] can refuse to bind rather than
      *  expose an empty model that a later write would persist over the unreadable file. */

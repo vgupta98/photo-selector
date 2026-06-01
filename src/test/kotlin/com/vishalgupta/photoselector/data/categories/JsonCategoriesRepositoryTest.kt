@@ -73,22 +73,9 @@ class JsonCategoriesRepositoryTest {
         writeFavouritesFile(root, """{"favourites":["a.jpg"]}""")
 
         assertEquals(setOf(PhotoId("a.jpg")), favouriteIds(repo, root))
-        assertTrue("v3 categories file written", Files.exists(root.categoriesFile))
+        assertTrue("v2 categories file written", Files.exists(root.categoriesFile))
         assertFalse("legacy favourites file retired", Files.exists(root.favouritesFile))
         assertTrue("legacy favourites file kept as .bak", Files.exists(root.favouritesBackupFile))
-    }
-
-    @Test
-    fun v2FavouritesFile_migratesAndSurvivesFolderRename() {
-        // Stored under the old folder name; the scan now sees the renamed folder.
-        val (repo, root) = repo(listOf(photo("01-Ceremony/a.jpg", 100, 1700)))
-        writeFavouritesFile(
-            root,
-            """{"version":2,"favourites":[{"path":"Ceremony/a.jpg","size":100,"mtimeMs":1700}]}""",
-        )
-
-        assertEquals(setOf(PhotoId("01-Ceremony/a.jpg")), favouriteIds(repo, root))
-        assertTrue(Files.exists(root.categoriesFile))
     }
 
     @Test
@@ -143,14 +130,14 @@ class JsonCategoriesRepositoryTest {
 
     @Test
     fun customCategoryMembership_survivesFolderRename() = runTest {
-        // v3 file stores a custom category whose photo is under the old folder name; the
+        // v2 file stores a custom category whose photo is under the old folder name; the
         // scan now sees the renamed folder, so it must re-attach via (size, mtime).
         val (repo, root) = repo(listOf(photo("01-Ceremony/a.jpg", 100, 1700)))
         writeCategoriesFile(
             root,
             """
             {
-              "version": 3,
+              "version": 2,
               "categories": [
                 { "id": "favourites", "name": "Favourites", "builtIn": true, "photos": [] },
                 { "id": "cat-x", "name": "Selects", "builtIn": false,
@@ -167,13 +154,13 @@ class JsonCategoriesRepositoryTest {
     }
 
     @Test
-    fun toggle_writesV3DescriptorWithSizeAndMtime() = runTest {
+    fun toggle_writesV2DescriptorWithSizeAndMtime() = runTest {
         val (repo, root) = repo(listOf(photo("a.jpg", 4823901, 1730812401000)))
 
         repo.toggleMembership(root, Category.FAVOURITES_ID, PhotoId("a.jpg"))
 
         val written = Files.readString(root.categoriesFile)
-        assertTrue("expected v3 version field, got: $written", written.contains("\"version\": 3"))
+        assertTrue("expected v2 version field, got: $written", written.contains("\"version\": 2"))
         assertTrue("expected size hint, got: $written", written.contains("\"size\": 4823901"))
         assertTrue("expected mtime hint, got: $written", written.contains("\"mtimeMs\": 1730812401000"))
     }
@@ -187,7 +174,7 @@ class JsonCategoriesRepositoryTest {
         val repo = JsonCategoriesRepository(json, scannedPhotos = { scanned })
         writeCategoriesFile(
             root,
-            """{"version":3,"categories":[{"id":"favourites","name":"Favourites","builtIn":true,"photos":[{"path":"a.jpg","size":100,"mtimeMs":5}]}]}""",
+            """{"version":2,"categories":[{"id":"favourites","name":"Favourites","builtIn":true,"photos":[{"path":"a.jpg","size":100,"mtimeMs":5}]}]}""",
         )
 
         assertEquals(emptySet<PhotoId>(), favouriteIds(repo, root))

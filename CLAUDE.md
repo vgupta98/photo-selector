@@ -31,7 +31,7 @@ Clean architecture, single Gradle module, package
   renamed or deleted). Each category is pushed as its own `Screen.Grid`
   instance from the All Photos categories dropdown, not toggled in place,
   so each view has its own scroll state. Memberships persist to
-  `<root>/.photo-selector-categories.json` (v3); a legacy
+  `<root>/.photo-selector-categories.json` (v2); a legacy
   `.photo-selector-favourites.json` migrates into the built-in category
   on first read and is renamed `.bak`. `CategoriesRepository` exposes
   membership as one `observeMemberships` map flow (a future smart category

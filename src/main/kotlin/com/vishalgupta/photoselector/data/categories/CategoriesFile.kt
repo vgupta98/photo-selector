@@ -12,8 +12,9 @@ import kotlinx.serialization.json.jsonPrimitive
  * [size]/[mtimeMs] is a sentinel for "path-only" (a legacy v1 favourites entry, or a
  * photo not present in the last scan) — such entries match by exact path only.
  *
- * This is the shared descriptor across the favourites v2 schema and the categories v3
- * schema, so a category membership survives renames exactly like a favourite does.
+ * This is the entry format of the categories v2 file. The (size, mtime) hints are what
+ * let a membership re-attach after a folder rename or move, where a path-only legacy
+ * favourite (which never carried them) could not.
  */
 @Serializable
 data class PhotoEntryDto(
@@ -22,7 +23,7 @@ data class PhotoEntryDto(
     val mtimeMs: Long = -1,
 )
 
-/** A category as persisted in the v3 file: metadata plus its photo descriptors. */
+/** A category as persisted in the v2 file: metadata plus its photo descriptors. */
 @Serializable
 data class CategoryDto(
     val id: String,
@@ -32,55 +33,48 @@ data class CategoryDto(
 )
 
 /**
- * v3 schema: N flat categories, each wrapping descriptor objects (NOT bare path
+ * v2 schema: N flat categories, each wrapping descriptor objects (NOT bare path
  * strings — bare strings would re-orphan memberships on every folder rename and undo
- * the stable-id work).
+ * the stable-id work). This is the second on-disk generation of the persisted
+ * selection: v1 was the shipped single-bucket favourites file (see [LegacyFavouritesFile]);
+ * the intermediate descriptor-favourites format never shipped, so it has no number here.
  */
 @Serializable
-private data class CategoriesV3Dto(
-    val version: Int = 3,
+private data class CategoriesV2Dto(
+    val version: Int = 2,
     val categories: List<CategoryDto> = emptyList(),
 )
 
 /**
  * Decode/encode the categories file. Reads peek the `version` field and dispatch to
- * the matching concrete DTO; writes always emit v3.
+ * the matching concrete DTO; writes always emit v2.
  */
 object CategoriesFile {
     fun decode(json: Json, text: String): List<CategoryDto> {
-        // version is peeked for forward-compatibility; v3 is the only shape today.
+        // version is peeked for forward-compatibility; v2 is the only shape today.
         val version = json.parseToJsonElement(text)
-            .jsonObject["version"]?.jsonPrimitive?.intOrNull ?: 3
+            .jsonObject["version"]?.jsonPrimitive?.intOrNull ?: 2
         return when (version) {
-            else -> json.decodeFromString(CategoriesV3Dto.serializer(), text).categories
+            else -> json.decodeFromString(CategoriesV2Dto.serializer(), text).categories
         }
     }
 
     fun encode(json: Json, categories: List<CategoryDto>): ByteArray {
-        val dto = CategoriesV3Dto(categories = categories)
-        return json.encodeToString(CategoriesV3Dto.serializer(), dto).toByteArray(Charsets.UTF_8)
+        val dto = CategoriesV2Dto(categories = categories)
+        return json.encodeToString(CategoriesV2Dto.serializer(), dto).toByteArray(Charsets.UTF_8)
     }
 }
 
 /**
- * Legacy single-bucket favourites file, read once to migrate into the built-in
- * Favourites category. Handles the original fieldless `{ "favourites": [...] }` and
- * `{ "version": 1, ... }` (bare path strings) plus v2 (`{ "version": 2, favourites:
- * [descriptor] }`). A v1 file yields path-only descriptors (size/mtime = -1).
+ * The legacy single-bucket favourites file, read once to migrate into the built-in
+ * Favourites category. Only one favourites format ever shipped (v1.2.0 and earlier):
+ * bare path strings, as either fieldless `{ "favourites": [...] }` or `{ "version": 1,
+ * ... }`. Entries become path-only descriptors (size/mtime = -1), matched by exact path.
  */
 object LegacyFavouritesFile {
     @Serializable
     private data class V1(val version: Int = 1, val favourites: List<String> = emptyList())
 
-    @Serializable
-    private data class V2(val version: Int = 2, val favourites: List<PhotoEntryDto> = emptyList())
-
-    fun decode(json: Json, text: String): List<PhotoEntryDto> {
-        val version = json.parseToJsonElement(text)
-            .jsonObject["version"]?.jsonPrimitive?.intOrNull ?: 1
-        return when (version) {
-            1 -> json.decodeFromString(V1.serializer(), text).favourites.map { PhotoEntryDto(path = it) }
-            else -> json.decodeFromString(V2.serializer(), text).favourites
-        }
-    }
+    fun decode(json: Json, text: String): List<PhotoEntryDto> =
+        json.decodeFromString(V1.serializer(), text).favourites.map { PhotoEntryDto(path = it) }
 }

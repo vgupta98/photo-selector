@@ -15,7 +15,10 @@ import java.nio.file.Files
 
 @Serializable
 private data class BrowsePositionDto(
-    val version: Int = 2,
+    // Written for forward-compat but never read (decode ignores it). lastPhotoId was
+    // added since v1 as an optional field, which is backward-compatible — old files
+    // decode fine — so no version bump was warranted; the stamp stays 1.
+    val version: Int = 1,
     val lastIndex: Int = 0,
     val lastPhotoId: String? = null,
 )
