@@ -49,7 +49,7 @@ fun PhotoThumbnail(
     val borderMod = if (isFocused) {
         Modifier.border(
             AppTheme.dimens.focusBorderWidth,
-            MaterialTheme.colorScheme.primary,
+            AppTheme.colors.focusRing,
             MaterialTheme.shapes.small,
         )
     } else {
@@ -91,7 +91,7 @@ fun PhotoThumbnail(
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .height(AppTheme.dimens.lastViewedIndicatorHeight)
-                    .background(MaterialTheme.colorScheme.primary),
+                    .background(AppTheme.colors.lastViewedIndicator),
             )
         }
     }
