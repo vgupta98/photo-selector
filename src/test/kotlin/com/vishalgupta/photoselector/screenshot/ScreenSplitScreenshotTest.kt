@@ -25,6 +25,7 @@ import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.presentation.browser.BrowserScreen
 import com.vishalgupta.photoselector.presentation.browser.BrowserUiState
 import com.vishalgupta.photoselector.presentation.browser.CategoryToastState
+import com.vishalgupta.photoselector.presentation.common.CategoryToggle
 import com.vishalgupta.photoselector.presentation.designsystem.organism.BrowserCategoryHud
 import com.vishalgupta.photoselector.presentation.grid.GridScreen
 import com.vishalgupta.photoselector.presentation.grid.GridUiState
@@ -73,7 +74,11 @@ class ScreenSplitScreenshotTest {
     }
 
     @androidx.compose.runtime.Composable
-    private fun Grid(state: GridUiState, onBack: (() -> Unit)?) {
+    private fun Grid(
+        state: GridUiState,
+        onBack: (() -> Unit)?,
+        categoryToast: CategoryToggle? = null,
+    ) {
         GridScreen(
             state = state,
             initialScrollIndex = 0,
@@ -91,6 +96,7 @@ class ScreenSplitScreenshotTest {
             onCopyToFolder = {},
             onDismissToast = {},
             imageLoader = noOpImageLoader,
+            categoryToast = categoryToast,
         )
     }
 
@@ -176,6 +182,39 @@ class ScreenSplitScreenshotTest {
         }
         rule.waitForIdle()
         rule.dumpScreenshot("grid-all-photos")
+    }
+
+    @Test
+    fun grid_tileFeedback() {
+        // Photo "a" is favourited (star) AND filed in the custom "Selects" category (badge "1",
+        // its 1-key slot); the pill names the action that just landed. Exercises both the
+        // persistent on-tile cues and the transient confirmation together.
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    Grid(
+                        state = GridUiState(
+                            photos = testPhotos,
+                            scope = CategoryScope.AllPhotos,
+                            categories = categories,
+                            memberships = mapOf(
+                                Category.FAVOURITES_ID to setOf(PhotoId("a")),
+                                selectsId to setOf(PhotoId("a")),
+                            ),
+                            focusedIndex = 0,
+                        ),
+                        onBack = null,
+                        categoryToast = CategoryToggle(
+                            categoryName = "Selects",
+                            isFavourite = false,
+                            added = true,
+                        ),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("grid-tile-feedback")
     }
 
     @Test

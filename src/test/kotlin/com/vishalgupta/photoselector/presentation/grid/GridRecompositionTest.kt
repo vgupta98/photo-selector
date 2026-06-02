@@ -16,6 +16,8 @@ import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.presentation.RecompositionTracker
 import com.vishalgupta.photoselector.presentation.designsystem.organism.PhotoThumbnail
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.CoroutineScope
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -96,6 +98,39 @@ class GridRecompositionTest {
     }
 
     @Test
+    fun filingOnePhotoIntoACategory_recomposesOnlyThatTile() {
+        val tracker = RecompositionTracker()
+        // Slot lists per photo, as GridScreen computes them; only "b" gains a badge.
+        val badges = mutableStateOf(photos.associate { it.id.value to persistentListOf<Int>() })
+
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    GridWithBadges(
+                        photos = photos,
+                        badges = badges.value,
+                        loader = noOpImageLoader,
+                        tracker = tracker,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        val before = photos.associate { it.id.value to tracker[it.id.value] }
+
+        rule.runOnIdle {
+            badges.value = badges.value.toMutableMap().apply { this["b"] = persistentListOf(1) }
+        }
+        rule.waitForIdle()
+
+        assertEquals("b should recompose (gained a category badge)", before["b"]!! + 1, tracker["b"])
+        assertEquals("a should skip", before["a"], tracker["a"])
+        assertEquals("c should skip", before["c"], tracker["c"])
+        assertEquals("d should skip", before["d"], tracker["d"])
+    }
+
+    @Test
     fun movingFocus_recomposesOnlyTheTilesGainingAndLosingFocus() {
         val tracker = RecompositionTracker()
         val focusedIndex = mutableStateOf(0)
@@ -151,6 +186,30 @@ private fun Grid(
     }
 }
 
+/** As [Grid], but varying each tile's category badges — the new skippable input. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun GridWithBadges(
+    photos: List<Photo>,
+    badges: Map<String, ImmutableList<Int>>,
+    loader: ImageLoader,
+    tracker: RecompositionTracker,
+) {
+    FlowRow {
+        photos.forEach { photo ->
+            CountedThumbnail(
+                tracker = tracker,
+                tag = photo.id.value,
+                photo = photo,
+                loader = loader,
+                isFavourite = false,
+                isFocused = false,
+                categoryBadges = badges[photo.id.value] ?: persistentListOf(),
+            )
+        }
+    }
+}
+
 /**
  * Records one recomposition then renders the real [PhotoThumbnail] with the same
  * params. [record] sits in this scope's body (not behind a content lambda), so it
@@ -165,6 +224,7 @@ private fun CountedThumbnail(
     loader: ImageLoader,
     isFavourite: Boolean,
     isFocused: Boolean,
+    categoryBadges: ImmutableList<Int> = persistentListOf(),
 ) {
     tracker.record(tag)
     PhotoThumbnail(
@@ -174,5 +234,6 @@ private fun CountedThumbnail(
         isFocused = isFocused,
         onClick = {},
         modifier = Modifier.size(AppTheme.dimens.thumbnailMinCell),
+        categoryBadges = categoryBadges,
     )
 }

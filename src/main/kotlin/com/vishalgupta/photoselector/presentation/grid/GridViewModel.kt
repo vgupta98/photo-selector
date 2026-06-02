@@ -12,18 +12,22 @@ import com.vishalgupta.photoselector.domain.repository.CopyReport
 import com.vishalgupta.photoselector.domain.usecase.CopyPhotosToFolderUseCase
 import com.vishalgupta.photoselector.domain.usecase.ExportPhotosTxtUseCase
 import com.vishalgupta.photoselector.presentation.StateHolder
+import com.vishalgupta.photoselector.presentation.common.CategoryToggle
 import com.vishalgupta.photoselector.presentation.common.customCategories
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.navigation.activeCategoryId
 import com.vishalgupta.photoselector.presentation.navigation.slice
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.nio.file.Path
@@ -58,6 +62,11 @@ class GridViewModel(
 
     private val _state = MutableStateFlow(GridUiState(scope = categoryScope, lastViewedPhotoId = lastViewedPhotoId))
     val state: StateFlow<GridUiState> = _state.asStateFlow()
+
+    // One-shot confirmation that a keyboard toggle landed — the persistent star/badge on the
+    // tile shows the resulting state, this names the action. Same event the browser emits.
+    private val _toggleEvents = Channel<CategoryToggle>(Channel.BUFFERED)
+    val toggleEvents: Flow<CategoryToggle> = _toggleEvents.receiveAsFlow()
 
     private var scrollSaveJob: Job? = null
     private var lastKnownIndex: Int? = null
@@ -109,14 +118,20 @@ class GridViewModel(
     /** Toggles the focused photo's Favourites membership (F / Space, in any scope). */
     fun toggleMembershipAtFocus() {
         val photo = _state.value.photos.getOrNull(_state.value.focusedIndex) ?: return
-        scope.launch { categories.toggleMembership(root, Category.FAVOURITES_ID, photo.id) }
+        scope.launch {
+            val added = categories.toggleMembership(root, Category.FAVOURITES_ID, photo.id)
+            _toggleEvents.send(CategoryToggle(Category.FAVOURITES_NAME, isFavourite = true, added = added))
+        }
     }
 
     /** Toggles the focused photo in the Nth custom category (bare digit 1..9), if one exists. */
     fun toggleCustomCategoryAtFocus(slot: Int) {
         val photo = _state.value.photos.getOrNull(_state.value.focusedIndex) ?: return
         val category = _state.value.categories.customCategories().getOrNull(slot) ?: return
-        scope.launch { categories.toggleMembership(root, category.id, photo.id) }
+        scope.launch {
+            val added = categories.toggleMembership(root, category.id, photo.id)
+            _toggleEvents.send(CategoryToggle(category.name, isFavourite = false, added = added))
+        }
     }
 
     fun createCategory(name: String) {
