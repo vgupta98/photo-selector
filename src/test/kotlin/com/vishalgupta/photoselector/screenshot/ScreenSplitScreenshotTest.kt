@@ -65,6 +65,19 @@ class ScreenSplitScreenshotTest {
         ),
     )
 
+    // A fuller library so a density screenshot actually shows the column count and gutters,
+    // not just two tiles in a corner.
+    private val manyPhotos = (0 until 18).map { i ->
+        Photo(
+            id = PhotoId("p$i"),
+            absolutePath = Path.of("/photos/img$i.jpg"),
+            relativePath = "img$i.jpg",
+            fileName = "img$i.jpg",
+            sizeBytes = 1024,
+            lastModifiedEpochMs = 0,
+        )
+    }
+
     private val noOpImageLoader = object : ImageLoader {
         override suspend fun load(photo: Photo, viewportLongEdgePx: Int): ImageBitmap? = null
         override fun prefetch(photos: List<Photo>, viewportLongEdgePx: Int, scope: CoroutineScope) {}
@@ -182,6 +195,53 @@ class ScreenSplitScreenshotTest {
         }
         rule.waitForIdle()
         rule.dumpScreenshot("grid-all-photos")
+    }
+
+    @Test
+    fun grid_density() {
+        // A filled grid at two widths to verify the contact-sheet density (column count +
+        // tight gutters) reads well and isn't tuned to one test-window size.
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(1100.dp, 700.dp)) {
+                    Grid(
+                        state = GridUiState(
+                            photos = manyPhotos,
+                            scope = CategoryScope.AllPhotos,
+                            categories = categories,
+                            memberships = mapOf(
+                                Category.FAVOURITES_ID to setOf(PhotoId("p1"), PhotoId("p4")),
+                                selectsId to setOf(PhotoId("p2")),
+                            ),
+                        ),
+                        onBack = null,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("grid-density-wide")
+    }
+
+    @Test
+    fun grid_densityNarrow() {
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(640.dp, 600.dp)) {
+                    Grid(
+                        state = GridUiState(
+                            photos = manyPhotos,
+                            scope = CategoryScope.AllPhotos,
+                            categories = categories,
+                            memberships = mapOf(Category.FAVOURITES_ID to setOf(PhotoId("p1"))),
+                        ),
+                        onBack = null,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("grid-density-narrow")
     }
 
     @Test

@@ -296,14 +296,17 @@ fun GridScreen(
                 LazyVerticalGrid(
                     state = gridState,
                     columns = GridCells.Adaptive(AppTheme.dimens.thumbnailMinCell),
+                    // Tight contact-sheet gutters. `end` stays wider than the others to leave a
+                    // lane for the overlaid scrollbar (xs pad + thickness ~= 12dp) without the
+                    // last column running under it.
                     contentPadding = PaddingValues(
-                        start = AppTheme.spacing.md,
-                        end = AppTheme.spacing.xl,
-                        top = AppTheme.spacing.md,
-                        bottom = AppTheme.spacing.md,
+                        start = AppTheme.spacing.sm,
+                        end = AppTheme.spacing.lg,
+                        top = AppTheme.spacing.sm,
+                        bottom = AppTheme.spacing.sm,
                     ),
-                    verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.sm),
-                    horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs),
+                    horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs),
                 ) {
                     itemsIndexed(
                         items = state.photos,

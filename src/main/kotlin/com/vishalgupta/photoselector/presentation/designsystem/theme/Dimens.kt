@@ -14,7 +14,10 @@ import androidx.compose.ui.unit.dp
 @Immutable
 data class Dimens(
     val topBarHeight: Dp = 56.dp,
-    val thumbnailMinCell: Dp = 160.dp,
+    // The adaptive grid's minimum tile width. Tuned down from 160 toward a contact-sheet
+    // density: more frames per row for a culler scanning fast, still large enough to judge a
+    // shot at a glance. The grid's gutters and content padding are tightened to match.
+    val thumbnailMinCell: Dp = 132.dp,
     val focusBorderWidth: Dp = 3.dp,
     val lastViewedIndicatorHeight: Dp = 3.dp,
     val iconSm: Dp = 18.dp,
