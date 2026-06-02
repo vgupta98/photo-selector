@@ -3,6 +3,7 @@ package com.vishalgupta.photoselector.presentation.designsystem.molecule
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -24,11 +25,15 @@ data class KeyHint(val keys: String, val label: String)
  * the whole point of a keyboard-first cull is undiscoverable if it's invisible. Renders
  * as quiet chrome (matches the top bar's surface) so it informs without competing with the
  * photos. Purely a legend: it surfaces existing shortcuts and handles no input itself.
+ *
+ * An optional [status] is shown right-aligned (status-bar style) — used to surface a quiet
+ * cull-progress tally without crowding the top bar.
  */
 @Composable
 fun GridKeyboardLegend(
     hints: List<KeyHint>,
     modifier: Modifier = Modifier,
+    status: String? = null,
 ) {
     Row(
         modifier
@@ -50,6 +55,14 @@ fun GridKeyboardLegend(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+        if (status != null) {
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = status,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

@@ -299,7 +299,15 @@ fun GridScreen(
         }
 
         if (state.photos.isNotEmpty()) {
-            GridKeyboardLegend(hints = rememberLegendHints(state.scope, currentCategory, onBack != null))
+            GridKeyboardLegend(
+                hints = rememberLegendHints(state.scope, currentCategory, onBack != null),
+                // Cull progress only makes sense over the whole library, not inside a finished bucket.
+                status = if (state.scope == CategoryScope.AllPhotos) {
+                    "${state.markedIds.size} favourited"
+                } else {
+                    null
+                },
+            )
         }
     }
 }
