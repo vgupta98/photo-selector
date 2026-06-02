@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -46,6 +47,8 @@ import com.vishalgupta.photoselector.presentation.common.NativeFileDialogs
 import com.vishalgupta.photoselector.presentation.common.digitSlot
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BusyBar
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ErrorPlaceholder
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.GridKeyboardLegend
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.KeyHint
 import com.vishalgupta.photoselector.presentation.designsystem.organism.GridTopBar
 import com.vishalgupta.photoselector.presentation.designsystem.organism.PhotoThumbnail
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
@@ -240,7 +243,7 @@ fun GridScreen(
             BusyBar(label = state.progressLabel ?: "Working…")
         }
 
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
             if (state.photos.isEmpty()) {
                 val msg = when (state.scope) {
                     CategoryScope.AllPhotos -> "No JPEG / PNG photos found in this folder."
@@ -294,7 +297,34 @@ fun GridScreen(
                 Snackbar(snackbarData = it)
             }
         }
+
+        if (state.photos.isNotEmpty()) {
+            GridKeyboardLegend(hints = rememberLegendHints(state.scope, currentCategory, onBack != null))
+        }
     }
+}
+
+/**
+ * The truthful set of grid shortcuts for the current [scope]. `F` toggles membership in the
+ * scope's active category (Favourites in All Photos, the viewed category otherwise), and the
+ * `1..9` filing keys only do anything from All Photos, so they're only advertised there.
+ */
+@Composable
+private fun rememberLegendHints(
+    scope: CategoryScope,
+    currentCategory: Category?,
+    canGoBack: Boolean,
+): List<KeyHint> = buildList {
+    add(KeyHint("← → ↑ ↓", "Move"))
+    add(KeyHint("↵", "Open"))
+    add(
+        KeyHint(
+            keys = "F",
+            label = if (scope == CategoryScope.AllPhotos) "Favourite" else "Toggle ${currentCategory?.name ?: "category"}",
+        ),
+    )
+    if (scope == CategoryScope.AllPhotos) add(KeyHint("1–9", "Categories"))
+    if (canGoBack) add(KeyHint("Esc", "Back"))
 }
 
 // Derives the column count from the rendered grid (count of leading visible items
