@@ -21,6 +21,11 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.outlined.Collections
+import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
@@ -55,9 +60,10 @@ import com.vishalgupta.photoselector.presentation.common.CategoryToggle
 import com.vishalgupta.photoselector.presentation.common.NativeFileDialogs
 import com.vishalgupta.photoselector.presentation.common.customCategories
 import com.vishalgupta.photoselector.presentation.common.digitSlot
+import com.vishalgupta.photoselector.presentation.designsystem.atom.AppOutlinedButton
 import com.vishalgupta.photoselector.presentation.designsystem.atom.FavouriteStar
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BusyBar
-import com.vishalgupta.photoselector.presentation.designsystem.molecule.ErrorPlaceholder
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.EmptyState
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.GridKeyboardLegend
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.KeyHint
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToast
@@ -279,13 +285,13 @@ fun GridScreen(
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (state.photos.isEmpty()) {
-                val msg = when (state.scope) {
-                    CategoryScope.AllPhotos -> "No JPEG / PNG photos found in this folder."
-                    is CategoryScope.Category ->
-                        "No photos in ${currentCategory?.name ?: "this category"} yet. " +
-                            "From All Photos, focus a photo and press F (Favourites) or 1..9 to add it."
-                }
-                ErrorPlaceholder(msg, Modifier.fillMaxSize())
+                GridEmptyState(
+                    scope = state.scope,
+                    currentCategory = currentCategory,
+                    customCategories = customCategories,
+                    onChangeFolder = onChangeFolder,
+                    modifier = Modifier.fillMaxSize(),
+                )
             } else {
                 LazyVerticalGrid(
                     state = gridState,
@@ -378,6 +384,60 @@ private fun rememberLegendHints(
     )
     if (scope == CategoryScope.AllPhotos) add(KeyHint("1–9", "Categories"))
     if (canGoBack) add(KeyHint("Esc", "Back"))
+}
+
+/**
+ * The empty-grid guidance, varying by [scope]. All Photos points at the only useful next step
+ * (change folder); a category teaches the exact key that files into it — `F` for Favourites,
+ * its `1..9` digit for a custom category — so the empty state reinforces the keyboard model
+ * rather than dead-ending.
+ */
+@Composable
+private fun GridEmptyState(
+    scope: CategoryScope,
+    currentCategory: Category?,
+    customCategories: List<Category>,
+    onChangeFolder: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    when (scope) {
+        CategoryScope.AllPhotos -> EmptyState(
+            title = "No photos here",
+            description = "This folder has no JPEG or PNG images.",
+            icon = Icons.Outlined.PhotoLibrary,
+            action = {
+                AppOutlinedButton(
+                    text = "Change folder",
+                    leadingIcon = Icons.Default.Folder,
+                    onClick = onChangeFolder,
+                )
+            },
+            modifier = modifier,
+        )
+        is CategoryScope.Category -> {
+            val isFavourites = currentCategory?.id == Category.FAVOURITES_ID
+            val slot = customCategories.indexOfFirst { it.id == currentCategory?.id }
+            val keyHint = when {
+                isFavourites -> "F"
+                slot in 0..8 -> "${slot + 1}"
+                else -> null
+            }
+            EmptyState(
+                title = if (isFavourites) {
+                    "No favourites yet"
+                } else {
+                    "Nothing in ${currentCategory?.name ?: "this category"} yet"
+                },
+                description = if (keyHint != null) {
+                    "In All Photos, focus a photo and press $keyHint to add it here."
+                } else {
+                    "In All Photos, focus a photo to add it here."
+                },
+                icon = if (isFavourites) Icons.Outlined.StarOutline else Icons.Outlined.Collections,
+                modifier = modifier,
+            )
+        }
+    }
 }
 
 /**

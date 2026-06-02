@@ -18,6 +18,7 @@ data class Dimens(
     val focusBorderWidth: Dp = 3.dp,
     val lastViewedIndicatorHeight: Dp = 3.dp,
     val iconSm: Dp = 18.dp,
+    val iconLg: Dp = 48.dp,
     val scrollbarThickness: Dp = 8.dp,
     val scrollbarMinHeight: Dp = 48.dp,
     val progressIndicatorLg: Dp = 48.dp,

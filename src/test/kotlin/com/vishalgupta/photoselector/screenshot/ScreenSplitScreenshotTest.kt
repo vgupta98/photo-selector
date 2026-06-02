@@ -318,6 +318,7 @@ class ScreenSplitScreenshotTest {
 
     @Test
     fun grid_empty() {
+        // All Photos with nothing in the folder: a fitting icon and a way forward, not an error.
         rule.setContent {
             AppTheme {
                 Surface(Modifier.size(800.dp, 600.dp)) {
@@ -327,6 +328,46 @@ class ScreenSplitScreenshotTest {
         }
         rule.waitForIdle()
         rule.dumpScreenshot("grid-empty")
+    }
+
+    @Test
+    fun grid_favouritesEmpty() {
+        // Empty Favourites teaches the F key that fills it.
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    Grid(
+                        state = GridUiState(
+                            scope = CategoryScope.Category(Category.FAVOURITES_ID),
+                            categories = categories,
+                        ),
+                        onBack = {},
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("grid-favourites-empty")
+    }
+
+    @Test
+    fun grid_customCategoryEmpty() {
+        // Empty custom category teaches its own digit key (Selects is the 1st custom slot -> "1").
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    Grid(
+                        state = GridUiState(
+                            scope = CategoryScope.Category(selectsId),
+                            categories = categories,
+                        ),
+                        onBack = {},
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("grid-custom-category-empty")
     }
 
     // --- BrowserScreen ---
