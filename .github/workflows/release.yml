@@ -12,8 +12,13 @@ permissions:
 jobs:
   release:
     name: Tag, build DMG, publish GitHub Release
+    # Same-repo guard: only publish for release branches that live in THIS
+    # repo. A fork can name a branch "release/..." too, so the branch-name
+    # convention alone is not a trust boundary — require the PR head to be
+    # this repository before tagging/building/publishing anything.
     if: >-
       github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
       startsWith(github.event.pull_request.head.ref, 'release/')
     runs-on: macos-latest
     outputs:
