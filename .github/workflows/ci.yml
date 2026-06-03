@@ -30,18 +30,31 @@ jobs:
     # assert on the semantics tree rather than golden pixels, so cross-platform font
     # rendering differences don't matter here. Only packageDmg needs macOS.
     runs-on: ubuntu-latest
+    # Bound the blast radius of an untrusted PR: this job runs attacker-controlled code
+    # (its tests, its build scripts), so cap wall-clock to deny a crypto-miner the default
+    # 6-hour ceiling. The honest suite finishes in ~2 min; 20 leaves slack for a cold cache.
+    timeout-minutes: 20
     steps:
+      # Third-party-action versions are pinned to a full commit SHA, not a moving tag, so a
+      # force-moved or compromised tag can't silently change what runs here. The `# vX.Y.Z`
+      # comment is the human-readable version; bump both together when upgrading.
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # Verify gradle-wrapper.jar against published Gradle checksums before ./gradlew ever
+      # executes it. A PR can ship a poisoned wrapper jar that a reviewer skimming the diff
+      # won't read; this catches that specific vector regardless of the sandbox.
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
 
       - name: Set up JDK 17 (Zulu)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
         with:
           distribution: zulu
           java-version: 17
 
       - name: Cache Gradle
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/.gradle/caches
@@ -57,7 +70,7 @@ jobs:
       # tab without having to reproduce it locally.
       - name: Upload test report and screenshots
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: test-report
           path: |
