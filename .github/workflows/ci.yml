@@ -1,0 +1,67 @@
+name: CI
+
+# The repo's only pass/fail gate. Release workflows run perf (release-perf.yml) and
+# package the DMG (release.yml) but never run the test suite, so this is what keeps a
+# red test out of `develop`. Because the release branch is `develop` plus a version-bump
+# commit that only edits build.gradle.kts, a green `develop` means a green release by
+# construction — so this gate lives here, as early as every change is observable.
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+
+# Read-only. This runs on untrusted PR code via `pull_request` (not `pull_request_target`),
+# so it never sees repo secrets and the token cannot write — safe to run on fork PRs, which
+# is the point: validate contributions before they land.
+permissions:
+  contents: read
+
+# One in-flight run per branch / PR; a fresh push cancels the stale run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Unit & screenshot tests
+    # ubuntu is the cheapest tier and fast to provision. The screenshot tests render
+    # headlessly via createComposeRule() (offscreen Skiko, no display server), and they
+    # assert on the semantics tree rather than golden pixels, so cross-platform font
+    # rendering differences don't matter here. Only packageDmg needs macOS.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17 (Zulu)
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: 17
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', 'gradle/libs.versions.toml') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Run tests
+        run: ./gradlew test
+
+      # The suite is screenshot-based (build/screenshots/*.png). On failure, surface the
+      # PNGs and the HTML report as an artifact so a red run is diagnosable from the Actions
+      # tab without having to reproduce it locally.
+      - name: Upload test report and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: |
+            build/reports/tests/test
+            build/screenshots
+          if-no-files-found: ignore
+          retention-days: 7
