@@ -1,5 +1,8 @@
 package com.vishalgupta.photoselector.presentation.grid
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.focusable
@@ -9,13 +12,20 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.outlined.Collections
+import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
@@ -25,8 +35,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,15 +53,30 @@ import androidx.compose.ui.input.key.type
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.CategoryId
+import com.vishalgupta.photoselector.domain.model.Photo
+import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
+import com.vishalgupta.photoselector.presentation.common.CategoryToggle
 import com.vishalgupta.photoselector.presentation.common.NativeFileDialogs
+import com.vishalgupta.photoselector.presentation.common.customCategories
 import com.vishalgupta.photoselector.presentation.common.digitSlot
+import com.vishalgupta.photoselector.presentation.designsystem.atom.AppOutlinedButton
+import com.vishalgupta.photoselector.presentation.designsystem.atom.FavouriteStar
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BusyBar
-import com.vishalgupta.photoselector.presentation.designsystem.molecule.ErrorPlaceholder
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.EmptyState
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.GridKeyboardLegend
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.KeyHint
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToast
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToastDefaults
 import com.vishalgupta.photoselector.presentation.designsystem.organism.GridTopBar
 import com.vishalgupta.photoselector.presentation.designsystem.organism.PhotoThumbnail
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 @Composable
@@ -65,9 +92,20 @@ fun GridScreen(
     val state by viewModel.state.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
+    // Surface the one-shot toggle confirmation as a transient pill (mirrors the browser).
+    var categoryToast by remember { mutableStateOf<CategoryToggle?>(null) }
+    LaunchedEffect(viewModel) {
+        viewModel.toggleEvents.collectLatest { event ->
+            categoryToast = event
+            delay(1200)
+            categoryToast = null
+        }
+    }
+
     GridScreen(
         state = state,
         initialScrollIndex = initialScrollIndex,
+        categoryToast = categoryToast,
         onTileClick = onTileClick,
         onChangeFolder = onChangeFolder,
         onSelectCategory = onSelectCategory,
@@ -119,6 +157,7 @@ fun GridScreen(
     onDismissToast: () -> Unit,
     onFirstVisibleItemChanged: (Int) -> Unit = {},
     imageLoader: ImageLoader,
+    categoryToast: CategoryToggle? = null,
     modifier: Modifier = Modifier,
 ) {
     val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = initialScrollIndex)
@@ -128,6 +167,10 @@ fun GridScreen(
     val currentCategory: Category? = (state.scope as? CategoryScope.Category)
         ?.let { sc -> state.categories.firstOrNull { it.id == sc.id } }
     val categoryEntries = state.categories.map { it to (state.memberships[it.id]?.size ?: 0) }
+
+    // Custom categories in slot order — drives both the per-tile numbered badges and the
+    // 1..9 digit mapping, so a tile's "2" chip always matches the key that toggled it.
+    val customCategories = state.categories.customCategories()
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -240,27 +283,30 @@ fun GridScreen(
             BusyBar(label = state.progressLabel ?: "Working…")
         }
 
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
             if (state.photos.isEmpty()) {
-                val msg = when (state.scope) {
-                    CategoryScope.AllPhotos -> "No JPEG / PNG photos found in this folder."
-                    is CategoryScope.Category ->
-                        "No photos in ${currentCategory?.name ?: "this category"} yet. " +
-                            "From All Photos, focus a photo and press F (Favourites) or 1..9 to add it."
-                }
-                ErrorPlaceholder(msg, Modifier.fillMaxSize())
+                GridEmptyState(
+                    scope = state.scope,
+                    currentCategory = currentCategory,
+                    customCategories = customCategories,
+                    onChangeFolder = onChangeFolder,
+                    modifier = Modifier.fillMaxSize(),
+                )
             } else {
                 LazyVerticalGrid(
                     state = gridState,
                     columns = GridCells.Adaptive(AppTheme.dimens.thumbnailMinCell),
+                    // Tight contact-sheet gutters. `end` stays wider than the others to leave a
+                    // lane for the overlaid scrollbar (xs pad + thickness ~= 12dp) without the
+                    // last column running under it.
                     contentPadding = PaddingValues(
-                        start = AppTheme.spacing.md,
-                        end = AppTheme.spacing.xl,
-                        top = AppTheme.spacing.md,
-                        bottom = AppTheme.spacing.md,
+                        start = AppTheme.spacing.sm,
+                        end = AppTheme.spacing.lg,
+                        top = AppTheme.spacing.sm,
+                        bottom = AppTheme.spacing.sm,
                     ),
-                    verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.sm),
-                    horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs),
+                    horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs),
                 ) {
                     itemsIndexed(
                         items = state.photos,
@@ -273,6 +319,7 @@ fun GridScreen(
                             isFocused = index == state.focusedIndex,
                             isLastViewed = photo.id == state.lastViewedPhotoId,
                             onClick = { onTileClick(index) },
+                            categoryBadges = categoryBadgesFor(photo, customCategories, state.memberships),
                         )
                     }
                 }
@@ -293,8 +340,162 @@ fun GridScreen(
             SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter)) {
                 Snackbar(snackbarData = it)
             }
+
+            // Transient confirmation that the last F / 1..9 toggle landed and what it did. The
+            // tile's star/badge shows the resulting state; this names the action, the way the
+            // browser's pill does.
+            GridTogglePill(
+                toast = categoryToast,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = AppTheme.spacing.lg),
+            )
+        }
+
+        if (state.photos.isNotEmpty()) {
+            GridKeyboardLegend(
+                hints = rememberLegendHints(state.scope, currentCategory, onBack != null),
+                // Cull progress only makes sense over the whole library, not inside a finished bucket.
+                status = if (state.scope == CategoryScope.AllPhotos) {
+                    "${state.markedIds.size} favourited"
+                } else {
+                    null
+                },
+            )
         }
     }
+}
+
+/**
+ * The truthful set of grid shortcuts for the current [scope]. `F` toggles membership in the
+ * scope's active category (Favourites in All Photos, the viewed category otherwise), and the
+ * `1..9` filing keys only do anything from All Photos, so they're only advertised there.
+ */
+@Composable
+private fun rememberLegendHints(
+    scope: CategoryScope,
+    currentCategory: Category?,
+    canGoBack: Boolean,
+): List<KeyHint> = buildList {
+    add(KeyHint("← → ↑ ↓", "Move"))
+    add(KeyHint("↵", "Open"))
+    add(
+        KeyHint(
+            keys = "F",
+            label = if (scope == CategoryScope.AllPhotos) "Favourite" else "Toggle ${currentCategory?.name ?: "category"}",
+        ),
+    )
+    if (scope == CategoryScope.AllPhotos) add(KeyHint("1–9", "Categories"))
+    if (canGoBack) add(KeyHint("Esc", "Back"))
+}
+
+/**
+ * The empty-grid guidance, varying by [scope]. All Photos points at the only useful next step
+ * (change folder); a category teaches the exact key that files into it — `F` for Favourites,
+ * its `1..9` digit for a custom category — so the empty state reinforces the keyboard model
+ * rather than dead-ending.
+ */
+@Composable
+private fun GridEmptyState(
+    scope: CategoryScope,
+    currentCategory: Category?,
+    customCategories: List<Category>,
+    onChangeFolder: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    when (scope) {
+        CategoryScope.AllPhotos -> EmptyState(
+            title = "No photos here",
+            description = "This folder has no JPEG or PNG images.",
+            icon = Icons.Outlined.PhotoLibrary,
+            action = {
+                AppOutlinedButton(
+                    text = "Change folder",
+                    leadingIcon = Icons.Default.Folder,
+                    onClick = onChangeFolder,
+                )
+            },
+            modifier = modifier,
+        )
+        is CategoryScope.Category -> {
+            val isFavourites = currentCategory?.id == Category.FAVOURITES_ID
+            val slot = customCategories.indexOfFirst { it.id == currentCategory?.id }
+            val keyHint = when {
+                isFavourites -> "F"
+                slot in 0..8 -> "${slot + 1}"
+                else -> null
+            }
+            EmptyState(
+                title = if (isFavourites) {
+                    "No favourites yet"
+                } else {
+                    "Nothing in ${currentCategory?.name ?: "this category"} yet"
+                },
+                description = if (keyHint != null) {
+                    "In All Photos, focus a photo and press $keyHint to add it here."
+                } else {
+                    "In All Photos, focus a photo to add it here."
+                },
+                icon = if (isFavourites) Icons.Outlined.StarOutline else Icons.Outlined.Collections,
+                modifier = modifier,
+            )
+        }
+    }
+}
+
+/**
+ * The fading confirmation pill for a keyboard membership toggle. Lives in its own composable
+ * (not under the screen's Column/Row receiver) so the plain `AnimatedVisibility` overload
+ * resolves, and holds the last non-null [toast] so its text survives the exit fade. Colour
+ * encodes added vs removed; favourites also keep their star — matching the browser's pill.
+ */
+@Composable
+private fun GridTogglePill(toast: CategoryToggle?, modifier: Modifier = Modifier) {
+    var displayed by remember { mutableStateOf<CategoryToggle?>(null) }
+    if (toast != null) displayed = toast
+    AnimatedVisibility(
+        visible = toast != null,
+        enter = fadeIn(),
+        exit = fadeOut(),
+        modifier = modifier,
+    ) {
+        displayed?.let { dt ->
+            PillToast(
+                text = when {
+                    dt.isFavourite && dt.added -> "Favourited"
+                    dt.isFavourite -> "Unfavourited"
+                    dt.added -> "Added to ${dt.categoryName}"
+                    else -> "Removed from ${dt.categoryName}"
+                },
+                leadingIcon = if (dt.isFavourite) {
+                    { FavouriteStar(filled = dt.added, modifier = Modifier.size(AppTheme.dimens.iconSm)) }
+                } else {
+                    null
+                },
+                colors = if (dt.added) {
+                    PillToastDefaults.addedColors()
+                } else {
+                    PillToastDefaults.removedColors()
+                },
+            )
+        }
+    }
+}
+
+/**
+ * The digit slots (1..9) of the custom categories [photo] belongs to, for its tile badges.
+ * Slot `i+1` matches the key that toggles the i-th custom category. Returns an immutable list
+ * so an unchanged result compares equal and the tile stays skippable across membership churn.
+ */
+private fun categoryBadgesFor(
+    photo: Photo,
+    customCategories: List<Category>,
+    memberships: Map<CategoryId, Set<PhotoId>>,
+): ImmutableList<Int> {
+    if (customCategories.isEmpty()) return persistentListOf()
+    return customCategories.mapIndexedNotNull { i, cat ->
+        if (photo.id in memberships[cat.id].orEmpty()) i + 1 else null
+    }.toImmutableList()
 }
 
 // Derives the column count from the rendered grid (count of leading visible items

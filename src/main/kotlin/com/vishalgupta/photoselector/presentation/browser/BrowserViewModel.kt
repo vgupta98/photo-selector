@@ -10,6 +10,7 @@ import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.BrowsePosition
 import com.vishalgupta.photoselector.domain.repository.CategoriesRepository
 import com.vishalgupta.photoselector.presentation.StateHolder
+import com.vishalgupta.photoselector.presentation.common.CategoryToggle
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -51,9 +52,6 @@ data class BrowserUiState(
         )
     }
 }
-
-/** A membership toggle that just happened, surfaced as a one-shot toast. */
-data class CategoryToggle(val categoryName: String, val isFavourite: Boolean, val added: Boolean)
 
 class BrowserViewModel(
     private val root: RootFolder,

@@ -25,6 +25,7 @@ import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.presentation.browser.BrowserScreen
 import com.vishalgupta.photoselector.presentation.browser.BrowserUiState
 import com.vishalgupta.photoselector.presentation.browser.CategoryToastState
+import com.vishalgupta.photoselector.presentation.common.CategoryToggle
 import com.vishalgupta.photoselector.presentation.designsystem.organism.BrowserCategoryHud
 import com.vishalgupta.photoselector.presentation.grid.GridScreen
 import com.vishalgupta.photoselector.presentation.grid.GridUiState
@@ -64,6 +65,19 @@ class ScreenSplitScreenshotTest {
         ),
     )
 
+    // A fuller library so a density screenshot actually shows the column count and gutters,
+    // not just two tiles in a corner.
+    private val manyPhotos = (0 until 18).map { i ->
+        Photo(
+            id = PhotoId("p$i"),
+            absolutePath = Path.of("/photos/img$i.jpg"),
+            relativePath = "img$i.jpg",
+            fileName = "img$i.jpg",
+            sizeBytes = 1024,
+            lastModifiedEpochMs = 0,
+        )
+    }
+
     private val noOpImageLoader = object : ImageLoader {
         override suspend fun load(photo: Photo, viewportLongEdgePx: Int): ImageBitmap? = null
         override fun prefetch(photos: List<Photo>, viewportLongEdgePx: Int, scope: CoroutineScope) {}
@@ -73,7 +87,11 @@ class ScreenSplitScreenshotTest {
     }
 
     @androidx.compose.runtime.Composable
-    private fun Grid(state: GridUiState, onBack: (() -> Unit)?) {
+    private fun Grid(
+        state: GridUiState,
+        onBack: (() -> Unit)?,
+        categoryToast: CategoryToggle? = null,
+    ) {
         GridScreen(
             state = state,
             initialScrollIndex = 0,
@@ -91,6 +109,7 @@ class ScreenSplitScreenshotTest {
             onCopyToFolder = {},
             onDismissToast = {},
             imageLoader = noOpImageLoader,
+            categoryToast = categoryToast,
         )
     }
 
@@ -176,6 +195,86 @@ class ScreenSplitScreenshotTest {
         }
         rule.waitForIdle()
         rule.dumpScreenshot("grid-all-photos")
+    }
+
+    @Test
+    fun grid_density() {
+        // A filled grid at two widths to verify the contact-sheet density (column count +
+        // tight gutters) reads well and isn't tuned to one test-window size.
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(1100.dp, 700.dp)) {
+                    Grid(
+                        state = GridUiState(
+                            photos = manyPhotos,
+                            scope = CategoryScope.AllPhotos,
+                            categories = categories,
+                            memberships = mapOf(
+                                Category.FAVOURITES_ID to setOf(PhotoId("p1"), PhotoId("p4")),
+                                selectsId to setOf(PhotoId("p2")),
+                            ),
+                        ),
+                        onBack = null,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("grid-density-wide")
+    }
+
+    @Test
+    fun grid_densityNarrow() {
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(640.dp, 600.dp)) {
+                    Grid(
+                        state = GridUiState(
+                            photos = manyPhotos,
+                            scope = CategoryScope.AllPhotos,
+                            categories = categories,
+                            memberships = mapOf(Category.FAVOURITES_ID to setOf(PhotoId("p1"))),
+                        ),
+                        onBack = null,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("grid-density-narrow")
+    }
+
+    @Test
+    fun grid_tileFeedback() {
+        // Photo "a" is favourited (star) AND filed in the custom "Selects" category (badge "1",
+        // its 1-key slot); the pill names the action that just landed. Exercises both the
+        // persistent on-tile cues and the transient confirmation together.
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    Grid(
+                        state = GridUiState(
+                            photos = testPhotos,
+                            scope = CategoryScope.AllPhotos,
+                            categories = categories,
+                            memberships = mapOf(
+                                Category.FAVOURITES_ID to setOf(PhotoId("a")),
+                                selectsId to setOf(PhotoId("a")),
+                            ),
+                            focusedIndex = 0,
+                        ),
+                        onBack = null,
+                        categoryToast = CategoryToggle(
+                            categoryName = "Selects",
+                            isFavourite = false,
+                            added = true,
+                        ),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("grid-tile-feedback")
     }
 
     @Test
@@ -279,6 +378,7 @@ class ScreenSplitScreenshotTest {
 
     @Test
     fun grid_empty() {
+        // All Photos with nothing in the folder: a fitting icon and a way forward, not an error.
         rule.setContent {
             AppTheme {
                 Surface(Modifier.size(800.dp, 600.dp)) {
@@ -288,6 +388,46 @@ class ScreenSplitScreenshotTest {
         }
         rule.waitForIdle()
         rule.dumpScreenshot("grid-empty")
+    }
+
+    @Test
+    fun grid_favouritesEmpty() {
+        // Empty Favourites teaches the F key that fills it.
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    Grid(
+                        state = GridUiState(
+                            scope = CategoryScope.Category(Category.FAVOURITES_ID),
+                            categories = categories,
+                        ),
+                        onBack = {},
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("grid-favourites-empty")
+    }
+
+    @Test
+    fun grid_customCategoryEmpty() {
+        // Empty custom category teaches its own digit key (Selects is the 1st custom slot -> "1").
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    Grid(
+                        state = GridUiState(
+                            scope = CategoryScope.Category(selectsId),
+                            categories = categories,
+                        ),
+                        onBack = {},
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("grid-custom-category-empty")
     }
 
     // --- BrowserScreen ---

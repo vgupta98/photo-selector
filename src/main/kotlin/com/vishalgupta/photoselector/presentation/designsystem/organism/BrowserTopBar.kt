@@ -57,6 +57,8 @@ fun BrowserTopBar(
             text = "Change folder",
             leadingIcon = Icons.Default.Folder,
             onClick = onChangeFolder,
+            // Muted white so it recedes behind Favourites — the bar's real action — on the scrim.
+            contentColor = Color.White.copy(alpha = 0.7f),
         )
     }
 }

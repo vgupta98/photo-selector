@@ -7,6 +7,11 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -16,6 +21,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.presentation.common.NativeFileDialogs
 import com.vishalgupta.photoselector.presentation.designsystem.atom.AppButton
 import com.vishalgupta.photoselector.presentation.designsystem.atom.AppOutlinedButton
@@ -56,30 +63,57 @@ fun RootFolderPickerScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.lg),
         ) {
-            Text("Photo Selector", style = MaterialTheme.typography.headlineLarge)
-            Text(
-                "Pick a root folder. Subfolders are scanned recursively.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            // A fixed brand anchor across every phase — the body below it swaps, the header
+            // doesn't, so the screen never jolts as the scan starts, finishes or fails.
+            Icon(
+                Icons.Outlined.PhotoLibrary,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(AppTheme.dimens.iconLg),
             )
+            Text("Photo Selector", style = MaterialTheme.typography.headlineLarge)
 
             when (state.phase) {
                 RootPickerUiState.Phase.Idle, RootPickerUiState.Phase.Done -> {
-                    AppButton(text = "Choose photo folder…", onClick = onPickFolder)
+                    SupportingText("Pick a folder of photos to start culling. Subfolders are included.")
+                    AppButton(
+                        text = "Choose folder…",
+                        leadingIcon = Icons.Default.Folder,
+                        onClick = onPickFolder,
+                    )
                 }
                 RootPickerUiState.Phase.Scanning -> {
                     LoadingIndicator(Modifier.size(AppTheme.dimens.progressIndicatorLg))
-                    Text("Scanning…  ${state.found} photos found  (${state.scanned} files seen)")
+                    Text("Scanning…", style = MaterialTheme.typography.titleMedium)
+                    SupportingText("${state.found} photos · ${state.scanned} files seen")
                     AppOutlinedButton(text = "Cancel", onClick = onCancelScan)
                 }
                 RootPickerUiState.Phase.Failed -> {
                     Text(
-                        "Scan failed: ${state.errorMessage ?: "Unknown error"}",
+                        "Couldn't scan that folder",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        state.errorMessage ?: "Unknown error",
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center,
                     )
                     AppButton(text = "Try again", onClick = onPickFolder)
                 }
             }
         }
     }
+}
+
+/** A centered, width-capped muted line — the screen's supporting copy and counts. */
+@Composable
+private fun SupportingText(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.widthIn(max = 360.dp),
+    )
 }

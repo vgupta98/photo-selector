@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -69,8 +68,8 @@ fun BrowserCategoryHud(
                     keyLabel = if (slot < 9) "${slot + 1}" else null,
                     label = category.name,
                     active = active,
-                    containerColor = if (active) MaterialTheme.colorScheme.primary else inactiveContainer,
-                    contentColor = if (active) MaterialTheme.colorScheme.onPrimary else Color.White,
+                    containerColor = if (active) AppTheme.colors.categoryMemberContainer else inactiveContainer,
+                    contentColor = if (active) AppTheme.colors.categoryMemberContent else Color.White,
                     onClick = { onToggle(category.id) },
                 )
             }
