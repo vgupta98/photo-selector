@@ -298,14 +298,43 @@ class ScreenSplitScreenshotTest {
             }
         }
         rule.waitForIdle()
-        rule.onNodeWithText("Categories (2)").performClick()
+        // Favourites is its own top-bar button now; the dropdown counts custom categories only.
+        rule.onNodeWithText("Favourites (1)").assertIsDisplayed()
+        rule.onNodeWithText("Categories (1)").performClick()
         rule.waitForIdle()
-        // Favourites carries the "F" hotkey; custom categories get bare digits 1..9.
-        rule.onNodeWithText("F  Favourites  (1)").assertIsDisplayed()
+        // Custom categories get bare digits 1..9; Favourites no longer appears in the menu.
         rule.onNodeWithText("1  Selects  (1)").assertIsDisplayed()
         rule.onNodeWithText("New category…").assertIsDisplayed()
         // The menu renders in its own popup root; capture that, not the base screen.
         rule.dumpScreenshot("grid-category-menu-open", rule.onAllNodes(isRoot()).onLast())
+    }
+
+    @Test
+    fun grid_changeFolderConfirm() {
+        // Clicking "Change folder" must not tear the session down on a stray click — it opens
+        // a confirm dialog first. Capture the dialog so the guard's copy stays honest (it
+        // promises favourites/categories are saved, which they are).
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    Grid(
+                        state = GridUiState(
+                            photos = testPhotos,
+                            scope = CategoryScope.AllPhotos,
+                            categories = categories,
+                            memberships = mapOf(Category.FAVOURITES_ID to setOf(PhotoId("a"))),
+                        ),
+                        onBack = null,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("Change folder").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("Change folder?").assertIsDisplayed()
+        // The dialog renders in its own popup root; capture that, not the base screen.
+        rule.dumpScreenshot("grid-change-folder-confirm", rule.onAllNodes(isRoot()).onLast())
     }
 
     @Test
@@ -550,6 +579,43 @@ class ScreenSplitScreenshotTest {
         }
         rule.waitForIdle()
         rule.dumpScreenshot("browser-with-remove-toast")
+    }
+
+    @Test
+    fun browser_changeFolderConfirm() {
+        // The browser's "Change folder" runs the same session-teardown as the grid's, so it
+        // gets the same confirm guard — captured here over the photo scrim.
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    BrowserScreen(
+                        state = BrowserUiState(
+                            photos = testPhotos,
+                            currentIndex = 0,
+                            currentPhoto = testPhotos[0],
+                            currentBitmap = ImageBitmap(200, 150),
+                            isLoadingBitmap = false,
+                            isCurrentFavourite = true,
+                            favouriteCount = 1,
+                            readOnly = false,
+                        ),
+                        toast = null,
+                        onPrevious = {},
+                        onNext = {},
+                        onToggleCategory = {},
+                        onViewportSizeChanged = {},
+                        onOpenFavourites = {},
+                        onChangeFolder = {},
+                        onBackToGrid = {},
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("Change folder").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("Change folder?").assertIsDisplayed()
+        rule.dumpScreenshot("browser-change-folder-confirm", rule.onAllNodes(isRoot()).onLast())
     }
 
     // --- BrowserCategoryHud ---
