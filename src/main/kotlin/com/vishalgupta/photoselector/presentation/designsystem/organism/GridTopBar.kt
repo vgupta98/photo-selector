@@ -21,13 +21,18 @@ import com.vishalgupta.photoselector.presentation.designsystem.atom.AppTextButto
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.CategoryActionsMenu
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.CategoryMenu
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.CategoryNameDialog
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.ConfirmDialog
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ConflictPolicyButton
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.FavouritesButton
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 
 /**
- * Top bar for the photo grid. In [CategoryScope.AllPhotos] it shows a photo count and the
- * categories dropdown; in a [CategoryScope.Category] it adds a back button, the export /
- * copy actions, and — for non-built-in categories — a "⋯" Rename / Delete menu.
+ * Top bar for the photo grid. In [CategoryScope.AllPhotos] it shows a photo count, a
+ * first-class **Favourites** button (the keeper bucket, promoted out of the dropdown to
+ * match the browser bar), and the custom-categories dropdown; in a [CategoryScope.Category]
+ * it adds a back button, the export / copy actions, and — for non-built-in categories — a
+ * "⋯" Rename / Delete menu. "Change folder" is guarded by a confirm dialog because it tears
+ * the current session down and re-scans.
  */
 @Composable
 fun GridTopBar(
@@ -48,6 +53,7 @@ fun GridTopBar(
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
+    var showChangeFolderConfirm by remember { mutableStateOf(false) }
     val hasPhotos = photoCount > 0 && !isBusy
 
     TopBarScaffold(modifier) {
@@ -70,6 +76,10 @@ fun GridTopBar(
         )
 
         if (scope == CategoryScope.AllPhotos) {
+            FavouritesButton(
+                count = categoryEntries.firstOrNull { it.first.builtIn }?.second ?: 0,
+                onClick = { onSelectCategory(Category.FAVOURITES_ID) },
+            )
             CategoryMenu(
                 entries = categoryEntries,
                 onSelect = onSelectCategory,
@@ -100,7 +110,7 @@ fun GridTopBar(
         AppTextButton(
             text = "Change folder",
             leadingIcon = Icons.Default.Folder,
-            onClick = onChangeFolder,
+            onClick = { showChangeFolderConfirm = true },
             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -127,6 +137,20 @@ fun GridTopBar(
                 onRenameCategory(currentCategory.id, it)
             },
             onDismiss = { showRenameDialog = false },
+        )
+    }
+
+    if (showChangeFolderConfirm) {
+        ConfirmDialog(
+            title = "Change folder?",
+            message = "You'll leave this folder and pick a new one to open. " +
+                "Your favourites and categories are saved.",
+            confirmLabel = "Change folder",
+            onConfirm = {
+                showChangeFolderConfirm = false
+                onChangeFolder()
+            },
+            onDismiss = { showChangeFolderConfirm = false },
         )
     }
 }
