@@ -376,7 +376,7 @@ private fun rememberLegendHints(
     scope: CategoryScope,
     currentCategory: Category?,
     canGoBack: Boolean,
-): List<KeyHint> = buildList {
+): ImmutableList<KeyHint> = buildList {
     add(KeyHint("← → ↑ ↓", "Move"))
     add(KeyHint("↵", "Open"))
     add(
@@ -387,7 +387,7 @@ private fun rememberLegendHints(
     )
     if (scope == CategoryScope.AllPhotos) add(KeyHint("1–9", "Categories"))
     if (canGoBack) add(KeyHint("Esc", "Back"))
-}
+}.toImmutableList()
 
 /**
  * The empty-grid guidance, varying by [scope]. All Photos points at the only useful next step

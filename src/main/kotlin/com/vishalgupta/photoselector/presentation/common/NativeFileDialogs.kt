@@ -8,7 +8,11 @@ import java.awt.Frame
 import java.io.File
 import java.nio.file.Path
 
-/** Native macOS Finder pickers via java.awt.FileDialog. */
+/**
+ * Native OS file pickers via java.awt.FileDialog. The directory-selection toggle below
+ * (`apple.awt.fileDialogForDirectories`) is macOS-specific; a Windows build will need its own
+ * directory-picker path here.
+ */
 object NativeFileDialogs {
 
     suspend fun pickDirectory(title: String, parent: Frame? = null): Path? = withContext(Dispatchers.Swing) {

@@ -1,7 +1,9 @@
 package com.vishalgupta.photoselector.screenshot
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Surface
@@ -26,6 +28,7 @@ import com.vishalgupta.photoselector.presentation.browser.BrowserScreen
 import com.vishalgupta.photoselector.presentation.browser.BrowserUiState
 import com.vishalgupta.photoselector.presentation.browser.CategoryToastState
 import com.vishalgupta.photoselector.presentation.common.CategoryToggle
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.BrowserKeyboardLegend
 import com.vishalgupta.photoselector.presentation.designsystem.organism.BrowserCategoryHud
 import com.vishalgupta.photoselector.presentation.grid.GridScreen
 import com.vishalgupta.photoselector.presentation.grid.GridUiState
@@ -672,5 +675,97 @@ class ScreenSplitScreenshotTest {
         rule.waitForIdle()
         rule.onNodeWithText("Favourites").assertIsDisplayed()
         rule.dumpScreenshot("browser-category-hud-empty")
+    }
+
+    // --- BrowserKeyboardLegend ---
+    // Like the HUD, the legend folds into the browser's auto-hiding bottom stack, so its
+    // appearance is captured by rendering it directly over a photo-like dark backdrop.
+
+    @Test
+    fun browser_keyboardLegend() {
+        // Rendered at the browser's full-bleed window width (it defaults to 1280dp) so the full
+        // hint set reads as one non-wrapping strip, the way it does over a real photo.
+        rule.setContent {
+            AppTheme {
+                Box(
+                    Modifier.size(1100.dp, 120.dp).background(Color.Black),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BrowserKeyboardLegend(
+                        hasCustomCategories = true,
+                        readOnly = false,
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        // Neutral verbs (no "Finder"/"Quick Look") plus the filing keys when categories exist.
+        rule.onNodeWithText("Favourite").assertIsDisplayed()
+        rule.onNodeWithText("Categories").assertIsDisplayed()
+        rule.onNodeWithText("Preview").assertIsDisplayed()
+        rule.onNodeWithText("Reveal").assertIsDisplayed()
+        rule.dumpScreenshot("browser-keyboard-legend")
+    }
+
+    @Test
+    fun browser_keyboardLegendReadOnly() {
+        // A read-only folder can't file: the F / 1-9 filing hints drop out, leaving navigation
+        // and the (still-valid) system actions.
+        rule.setContent {
+            AppTheme {
+                Box(
+                    Modifier.size(800.dp, 120.dp).background(Color.Black),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BrowserKeyboardLegend(
+                        hasCustomCategories = true,
+                        readOnly = true,
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("Move").assertIsDisplayed()
+        rule.onNodeWithText("Preview").assertIsDisplayed()
+        rule.dumpScreenshot("browser-keyboard-legend-read-only")
+    }
+
+    @Test
+    fun browser_bottomStack() {
+        // The HUD chips and the legend share the browser's auto-hiding bottom-center stack
+        // (a Column, as BrowserScreen arranges them). Capture them together to confirm they
+        // read as one chrome surface and don't fight each other.
+        val maybesId = CategoryId("maybes")
+        val hudCategories = listOf(
+            Category.favourites(),
+            Category(selectsId, "Selects", builtIn = false),
+            Category(maybesId, "Maybes", builtIn = false),
+        )
+        rule.setContent {
+            AppTheme {
+                Box(
+                    Modifier.size(1100.dp, 200.dp).background(Color.Black),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.sm),
+                    ) {
+                        BrowserCategoryHud(
+                            categories = hudCategories,
+                            currentMemberships = setOf(Category.FAVOURITES_ID, selectsId),
+                            onToggle = {},
+                        )
+                        BrowserKeyboardLegend(hasCustomCategories = true, readOnly = false)
+                    }
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("Maybes").assertIsDisplayed()
+        rule.onNodeWithText("Categories").assertIsDisplayed()
+        rule.dumpScreenshot("browser-bottom-stack")
     }
 }
