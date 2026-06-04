@@ -2,7 +2,7 @@ package com.vishalgupta.photoselector.presentation.designsystem.molecule
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import com.vishalgupta.photoselector.presentation.designsystem.theme.PillShape
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
@@ -29,10 +29,10 @@ fun BrowserKeyboardLegend(
         hints = browserHints(hasCustomCategories = hasCustomCategories, readOnly = readOnly),
         modifier = modifier,
         shape = PillShape,
-        containerColor = Color.Black.copy(alpha = 0.6f),
-        contentColor = Color.White,
-        keyCapContainerColor = Color.White.copy(alpha = 0.16f),
-        keyCapContentColor = Color.White,
+        containerColor = AppTheme.colors.overlayChromeBackground,
+        contentColor = AppTheme.colors.onOverlayChrome,
+        keyCapContainerColor = AppTheme.colors.overlayChromeInactiveFill,
+        keyCapContentColor = AppTheme.colors.onOverlayChrome,
     )
 }
 

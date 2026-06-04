@@ -54,6 +54,12 @@ data class AppColors(
     val toastRemovedContent: Color,
     /** Translucent scrim over the photo behind the browser top bar. */
     val topBarScrim: Color,
+    /** Translucent dark pill behind the browser's overlaid chrome (category HUD, keyboard legend). */
+    val overlayChromeBackground: Color,
+    /** Neutral fill for an inactive control on [overlayChromeBackground] (HUD chip, key cap). */
+    val overlayChromeInactiveFill: Color,
+    /** Foreground on [overlayChromeBackground] — bright for legibility over the photo. */
+    val onOverlayChrome: Color,
     /** Vertical scrollbar, idle. */
     val scrollbarIdle: Color,
     /** Vertical scrollbar, hovered. */
@@ -77,6 +83,9 @@ val DarkAppColors = AppColors(
     toastRemovedBackground = Color(0xFF3A3030),
     toastRemovedContent = Color(0xFFEDDADA),
     topBarScrim = Color.Black.copy(alpha = 0.55f),
+    overlayChromeBackground = Color.Black.copy(alpha = 0.6f),
+    overlayChromeInactiveFill = Color.White.copy(alpha = 0.16f),
+    onOverlayChrome = Color.White,
     scrollbarIdle = Color.White.copy(alpha = 0.3f),
     scrollbarHover = Color.White.copy(alpha = 0.6f),
 )

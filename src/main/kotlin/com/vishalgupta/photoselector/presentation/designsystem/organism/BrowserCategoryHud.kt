@@ -9,7 +9,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.CategoryHudChip
@@ -36,11 +35,12 @@ fun BrowserCategoryHud(
     if (categories.isEmpty()) return
     val favourites = categories.firstOrNull { it.id == Category.FAVOURITES_ID }
     val customs = categories.filter { !it.builtIn }
-    val inactiveContainer = Color.White.copy(alpha = 0.16f)
+    val inactiveContainer = AppTheme.colors.overlayChromeInactiveFill
+    val inactiveContent = AppTheme.colors.onOverlayChrome
 
     Surface(
         shape = PillShape,
-        color = Color.Black.copy(alpha = 0.6f),
+        color = AppTheme.colors.overlayChromeBackground,
         modifier = modifier,
     ) {
         Row(
@@ -58,7 +58,7 @@ fun BrowserCategoryHud(
                     active = active,
                     star = true,
                     containerColor = if (active) AppTheme.colors.favourite else inactiveContainer,
-                    contentColor = if (active) AppTheme.colors.favouriteToastContent else Color.White,
+                    contentColor = if (active) AppTheme.colors.favouriteToastContent else inactiveContent,
                     onClick = { onToggle(Category.FAVOURITES_ID) },
                 )
             }
@@ -69,7 +69,7 @@ fun BrowserCategoryHud(
                     label = category.name,
                     active = active,
                     containerColor = if (active) AppTheme.colors.categoryMemberContainer else inactiveContainer,
-                    contentColor = if (active) AppTheme.colors.categoryMemberContent else Color.White,
+                    contentColor = if (active) AppTheme.colors.categoryMemberContent else inactiveContent,
                     onClick = { onToggle(category.id) },
                 )
             }
