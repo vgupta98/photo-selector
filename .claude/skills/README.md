@@ -2,9 +2,10 @@
 
 This directory contains Compose and Kotlin agent skills vendored from
 [chrisbanes/skills](https://github.com/chrisbanes/skills) (Apache 2.0 —
-see [`LICENSE`](LICENSE)). Each skill is a single `SKILL.md` and
-auto-triggers when its description matches the task at hand; no manual
-invocation is needed.
+see [`LICENSE`](LICENSE)). Each skill is a single `SKILL.md`. They are
+model-invoked — Claude consults the matching one when a task fits its
+description — and can also be invoked manually as `/<skill-name>`. No
+deterministic auto-trigger fires them.
 
 ## Skills included
 
