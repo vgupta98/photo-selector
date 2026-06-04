@@ -2,9 +2,10 @@
 
 This directory contains Compose and Kotlin agent skills vendored from
 [chrisbanes/skills](https://github.com/chrisbanes/skills) (Apache 2.0 —
-see [`LICENSE`](LICENSE)). Each skill is a single `SKILL.md` and
-auto-triggers when its description matches the task at hand; no manual
-invocation is needed.
+see [`LICENSE`](LICENSE)). Each skill is a single `SKILL.md`. They are
+model-invoked — Claude consults the matching one when a task fits its
+description — and can also be invoked manually as `/<skill-name>`. No
+deterministic auto-trigger fires them.
 
 ## Skills included
 
@@ -40,10 +41,22 @@ invocation is needed.
 - `kotlin-multiplatform-expect-actual` — this project is pure JVM Compose
   Desktop, not Kotlin Multiplatform.
 
+## Local modifications
+
+- `kotlin-coroutines-structured-concurrency` carries a local addition not
+  in upstream: a "§8 Raw `Thread`/`Executor` in coroutine-capable code"
+  section (plus its trigger bullet). A naive re-fetch will clobber it —
+  re-apply the section after re-vendoring this skill.
+
 ## Updating from upstream
 
-These files are vendored copies, not a git submodule. To pick up upstream
-changes, re-fetch each `SKILL.md` from
+These files are vendored copies, not a git submodule.
+
+`VENDORED-FROM: chrisbanes/skills@e3cc449d0185fbce8d5587e8d90caf58cd0555e7`
+
+To pick up upstream changes, re-fetch each `SKILL.md` from
 `chrisbanes/skills:skills/<name>/SKILL.md` on the desired ref and update
-this directory in a single PR. Re-vendor the `LICENSE` alongside if it
-has changed.
+this directory in a single PR. Bump the `VENDORED-FROM` line above to the
+new ref so the next update is a clean diff, and preserve the local
+modifications noted above. Re-vendor the `LICENSE` alongside if it has
+changed.

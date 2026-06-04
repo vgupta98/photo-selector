@@ -225,6 +225,10 @@ workflow's fail-fast "branch already exists" check is intentional.
 
 Compose and Kotlin agent skills are vendored under `.claude/skills/`
 from [chrisbanes/skills](https://github.com/chrisbanes/skills) (Apache
-2.0). They auto-trigger from their descriptions — don't invoke them
-manually. See `.claude/skills/README.md` for the list and for how to
-re-vendor from upstream.
+2.0). They are **model-invoked**, not hook-triggered: before writing or
+reviewing Compose UI or non-trivial Kotlin (state, side effects,
+recomposition, flows, value classes), check whether one matches and
+invoke it via the Skill tool. They can also be invoked manually as
+`/<skill-name>` (e.g. `/compose-recomposition-performance`) when a task
+clearly calls for one. See `.claude/skills/README.md` for the list and
+for how to re-vendor from upstream.
