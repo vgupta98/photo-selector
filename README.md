@@ -10,6 +10,7 @@ Built with Kotlin + Compose Multiplatform Desktop, following Clean Architecture.
 - **Keyboard-first navigation** — `←` / `→` to move, `F` (or `Space`) to toggle Favourites, `1`…`9` to toggle the other categories.
 - **Categories** — sort photos into as many flat lists as you like (Selects, Maybes, For Album X…). **Favourites** is the built-in one; create, rename and delete the rest from the top bar. A photo can be in several at once.
 - **Persistent** — categories are stored as a single `.photo-selector-categories.json` file inside your photo folder. Switch folders and each retains its own lists.
+- **Compare** — press `C` in the browser to put two photos side by side with synchronized pan/zoom for choosing between near-identical frames. `Tab` switches the active pane, `← →` swap one candidate, and `F` / `1`…`9` file the active pane.
 - **Category grids** with thumbnails; click any thumbnail to jump back to that photo in the browser.
 - **Toast feedback** on every Favourites toggle so you can never silently lose a selection.
 - **Export TXT** — write a category's photos as relative paths, one per line, UTF-8.
@@ -46,6 +47,9 @@ For developers:
 | `→` | Next photo |
 | `F` or `Space` | Toggle Favourites for current photo |
 | `1` … `9` | Toggle the current photo in the Nth custom category (grid + browser) |
+| `C` | Open the current photo + its neighbour side by side (Compare) |
+
+In **Compare**, `Tab` switches which pane is active, `← →` substitute the active pane's photo, `F` / `1`…`9` file the active pane, `+` / `−` / `0` zoom both panes, and `Esc` returns to the browser.
 
 ### Categories and exporting
 
@@ -83,6 +87,7 @@ src/main/kotlin/com/vishalgupta/photoselector/
 └── presentation/                    # Compose screens + view models
     ├── rootpicker/
     ├── browser/
+    ├── compare/
     ├── grid/
     ├── navigation/
     ├── common/                      # file dialogs, system actions, hover
