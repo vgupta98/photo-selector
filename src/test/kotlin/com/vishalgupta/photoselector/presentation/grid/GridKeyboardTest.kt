@@ -4,12 +4,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.withKeyDown
 import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.model.Photo
@@ -18,6 +20,7 @@ import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import kotlinx.coroutines.CoroutineScope
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import java.nio.file.Path
@@ -135,5 +138,122 @@ class GridKeyboardTest {
         rule.waitForIdle()
 
         assertEquals(listOf(1), slots)
+    }
+
+    // --- Multi-select keyboard routing -----------------------------------------------------
+
+    /** Renders the grid with selection callbacks captured; unrelated handlers are no-ops. */
+    @Composable
+    private fun SelectionGrid(
+        state: GridUiState,
+        onBack: (() -> Unit)? = null,
+        onSelectAll: () -> Unit = {},
+        onClearSelection: () -> Unit = {},
+        onFileSelectionIntoFavourites: () -> Unit = {},
+        onFileSelectionIntoCustom: (Int) -> Unit = {},
+    ) {
+        GridScreen(
+            state = state,
+            initialScrollIndex = 0,
+            onTileClick = {},
+            onChangeFolder = {},
+            onSelectCategory = { _, _ -> },
+            onCreateCategory = {},
+            onRenameCategory = { _, _ -> },
+            onDeleteCategory = {},
+            onBack = onBack,
+            onSetFocusedIndex = {},
+            onToggleMembershipAtFocus = {},
+            onToggleCustomCategoryAtFocus = {},
+            onExportTxt = {},
+            onCopyToFolder = {},
+            onDismissToast = {},
+            imageLoader = noOpImageLoader,
+            onSelectAll = onSelectAll,
+            onClearSelection = onClearSelection,
+            onFileSelectionIntoFavourites = onFileSelectionIntoFavourites,
+            onFileSelectionIntoCustom = onFileSelectionIntoCustom,
+        )
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun cmdA_armsSelectAll() {
+        var selectAllCalls = 0
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    SelectionGrid(
+                        state = GridUiState(photos = testPhotos, scope = CategoryScope.AllPhotos),
+                        onSelectAll = { selectAllCalls++ },
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        rule.onRoot().performKeyInput { withKeyDown(Key.MetaLeft) { pressKey(Key.A) } }
+        rule.waitForIdle()
+
+        assertEquals(1, selectAllCalls)
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun escWithSelection_clearsSelectionInsteadOfPoppingScreen() {
+        var cleared = 0
+        var backs = 0
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    SelectionGrid(
+                        state = GridUiState(
+                            photos = testPhotos,
+                            scope = CategoryScope.AllPhotos,
+                            selection = setOf(testPhotos[0].id),
+                        ),
+                        onBack = { backs++ },
+                        onClearSelection = { cleared++ },
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        rule.onRoot().performKeyInput { pressKey(Key.Escape) }
+        rule.waitForIdle()
+
+        assertEquals(1, cleared)
+        assertEquals(0, backs)
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun fAndDigit_withSelection_fileTheWholeSelection() {
+        var favouriteFiles = 0
+        val customSlots = mutableListOf<Int>()
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    SelectionGrid(
+                        state = GridUiState(
+                            photos = testPhotos,
+                            scope = CategoryScope.AllPhotos,
+                            selection = setOf(testPhotos[0].id, testPhotos[1].id),
+                        ),
+                        onFileSelectionIntoFavourites = { favouriteFiles++ },
+                        onFileSelectionIntoCustom = { customSlots += it },
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        rule.onRoot().performKeyInput { pressKey(Key.F) }
+        rule.onRoot().performKeyInput { pressKey(Key.One) }
+        rule.waitForIdle()
+
+        assertEquals(1, favouriteFiles)
+        assertTrue("digit files the selection into slot 0", customSlots == listOf(0))
     }
 }
