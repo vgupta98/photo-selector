@@ -9,6 +9,7 @@ Built with Kotlin + Compose Multiplatform Desktop, following Clean Architecture.
 - **Browse** an entire folder tree of JPEG / PNG photos full-screen.
 - **Keyboard-first navigation** — `←` / `→` to move, `F` (or `Space`) to toggle Favourites, `1`…`9` to toggle the other categories.
 - **Categories** — sort photos into as many flat lists as you like (Selects, Maybes, For Album X…). **Favourites** is the built-in one; create, rename and delete the rest from the top bar. A photo can be in several at once.
+- **Multi-select & bulk filing** — in the grid, `Cmd`-click to pick out photos, `Shift`-click to extend a run, or `Cmd+A` to select everything in view; then file the whole selection into Favourites (`F`) or a category (`1`…`9`), or copy just the selection to a folder. `Esc` clears it.
 - **Persistent** — categories are stored as a single `.photo-selector-categories.json` file inside your photo folder. Switch folders and each retains its own lists.
 - **Compare** — press `C` in the browser to put two photos side by side with synchronized pan/zoom for choosing between near-identical frames. `Tab` switches the active pane, `← →` swap one candidate, and `F` / `1`…`9` file the active pane.
 - **Category grids** with thumbnails; click any thumbnail to jump back to that photo in the browser.
@@ -48,8 +49,11 @@ For developers:
 | `F` or `Space` | Toggle Favourites for current photo |
 | `1` … `9` | Toggle the current photo in the Nth custom category (grid + browser) |
 | `C` | Open the current photo + its neighbour side by side (Compare) |
+| `Cmd`+`A` | Select every photo in the current grid |
 
 In **Compare**, `Tab` switches which pane is active, `← →` substitute the active pane's photo, `F` / `1`…`9` file the active pane, `+` / `−` / `0` zoom both panes, and `Esc` returns to the browser.
+
+In the **grid**, `Cmd`-click or `Shift`-click tiles (or `Cmd+A`) to multi-select, then `F` / `1`…`9` file the whole selection into a category, **Copy photos to folder…** copies just the selection, and `Esc` clears it.
 
 ### Categories and exporting
 
