@@ -20,4 +20,17 @@ sealed interface Screen {
         // Photos, restores the All-Photos scroll position (PR #32 review Q#2).
         val returnScrollIndex: Int? = null,
     ) : Screen
+    /**
+     * Two-up side-by-side compare. [leftIndex] / [rightIndex] index into the scoped photo
+     * list (same list the browser pages through), so exiting back to the browser lands on the
+     * active pane's photo. [returnScrollIndex] is carried through from the source browser so the
+     * All-Photos scroll position survives the round trip, exactly as [Browser] does.
+     */
+    data class Compare(
+        val root: RootFolder,
+        val scope: CategoryScope = CategoryScope.AllPhotos,
+        val leftIndex: Int,
+        val rightIndex: Int,
+        val returnScrollIndex: Int? = null,
+    ) : Screen
 }

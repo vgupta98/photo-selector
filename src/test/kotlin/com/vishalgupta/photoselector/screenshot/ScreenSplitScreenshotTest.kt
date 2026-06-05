@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Surface
@@ -27,6 +28,10 @@ import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.presentation.browser.BrowserScreen
 import com.vishalgupta.photoselector.presentation.browser.BrowserUiState
 import com.vishalgupta.photoselector.presentation.browser.CategoryToastState
+import com.vishalgupta.photoselector.presentation.compare.ComparePane
+import com.vishalgupta.photoselector.presentation.compare.ComparePaneSide
+import com.vishalgupta.photoselector.presentation.compare.CompareScreen
+import com.vishalgupta.photoselector.presentation.compare.CompareUiState
 import com.vishalgupta.photoselector.presentation.common.CategoryToggle
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BrowserKeyboardLegend
 import com.vishalgupta.photoselector.presentation.designsystem.organism.BrowserCategoryHud
@@ -619,6 +624,124 @@ class ScreenSplitScreenshotTest {
         rule.waitForIdle()
         rule.onNodeWithText("Change folder?").assertIsDisplayed()
         rule.dumpScreenshot("browser-change-folder-confirm", rule.onAllNodes(isRoot()).onLast())
+    }
+
+    // --- CompareScreen ---
+
+    private fun comparePane(
+        index: Int,
+        photo: Photo,
+        loaded: Boolean = true,
+        isFavourite: Boolean = false,
+        memberships: Set<CategoryId> = emptySet(),
+    ) = ComparePane(
+        index = index,
+        photo = photo,
+        bitmap = if (loaded) ImageBitmap(200, 150) else null,
+        isLoading = !loaded,
+        isFavourite = isFavourite,
+        memberships = memberships,
+    )
+
+    @androidx.compose.runtime.Composable
+    private fun Compare(state: CompareUiState) {
+        CompareScreen(
+            state = state,
+            onSetActive = {},
+            onToggleActive = {},
+            onAdvanceActive = {},
+            onToggleCategory = {},
+            onViewportSizeChanged = {},
+            onExit = {},
+        )
+    }
+
+    @Test
+    fun compare_twoUp() {
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.fillMaxSize()) {
+                    Compare(
+                        CompareUiState(
+                            left = comparePane(0, testPhotos[0], isFavourite = true, memberships = setOf(Category.FAVOURITES_ID)),
+                            right = comparePane(1, testPhotos[1]),
+                            activeSide = ComparePaneSide.LEFT,
+                            totalInScope = testPhotos.size,
+                            readOnly = false,
+                            categories = categories,
+                        ),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("compare-two-up")
+    }
+
+    @Test
+    fun compare_rightActive() {
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.fillMaxSize()) {
+                    Compare(
+                        CompareUiState(
+                            left = comparePane(0, testPhotos[0]),
+                            right = comparePane(1, testPhotos[1], memberships = setOf(selectsId)),
+                            activeSide = ComparePaneSide.RIGHT,
+                            totalInScope = testPhotos.size,
+                            readOnly = false,
+                            categories = categories,
+                        ),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("compare-right-active")
+    }
+
+    @Test
+    fun compare_loadingPane() {
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.fillMaxSize()) {
+                    Compare(
+                        CompareUiState(
+                            left = comparePane(0, testPhotos[0], isFavourite = true, memberships = setOf(Category.FAVOURITES_ID)),
+                            right = comparePane(1, testPhotos[1], loaded = false),
+                            activeSide = ComparePaneSide.LEFT,
+                            totalInScope = testPhotos.size,
+                            readOnly = false,
+                            categories = categories,
+                        ),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("compare-loading-pane")
+    }
+
+    @Test
+    fun compare_readOnly() {
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.fillMaxSize()) {
+                    Compare(
+                        CompareUiState(
+                            left = comparePane(0, testPhotos[0]),
+                            right = comparePane(1, testPhotos[1]),
+                            activeSide = ComparePaneSide.LEFT,
+                            totalInScope = testPhotos.size,
+                            readOnly = true,
+                            categories = categories,
+                        ),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("compare-read-only")
     }
 
     // --- BrowserCategoryHud ---

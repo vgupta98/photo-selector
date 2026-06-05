@@ -25,6 +25,7 @@ import com.vishalgupta.photoselector.domain.usecase.CopyPhotosToFolderUseCase
 import com.vishalgupta.photoselector.domain.usecase.ExportPhotosTxtUseCase
 import com.vishalgupta.photoselector.domain.usecase.ScanRootFolderUseCase
 import com.vishalgupta.photoselector.presentation.browser.BrowserViewModel
+import com.vishalgupta.photoselector.presentation.compare.CompareViewModel
 import com.vishalgupta.photoselector.presentation.grid.GridViewModel
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.navigation.activeCategoryId
@@ -140,6 +141,22 @@ class AppContainer {
                 appScope.launch { browsePositionRepository.saveLastPhotoId(root, position.lastPhotoId) }
             }
         },
+    )
+
+    fun compareViewModel(
+        root: RootFolder,
+        scope: CategoryScope,
+        leftIndex: Int,
+        rightIndex: Int,
+    ): CompareViewModel = CompareViewModel(
+        root = root,
+        photos = photosForScope(root, scope),
+        leftIndex = leftIndex,
+        rightIndex = rightIndex,
+        categories = categoriesRepository,
+        imageLoader = imageLoader,
+        isReadOnly = categoriesRepository.isReadOnly(root),
+        parentJob = folderJob,
     )
 
     private fun photosForScope(root: RootFolder, scope: CategoryScope): List<Photo> {
