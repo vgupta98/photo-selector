@@ -15,7 +15,7 @@ Clean architecture, single Gradle module, package
   `image/` (decoding), `format/`, `export/`, plus `io/` (the shared
   `AtomicJsonWriter`).
 - `presentation/` — Compose UI + view models, organised by screen
-  (`rootpicker/`, `grid/`, `browser/`), plus `navigation/` and
+  (`rootpicker/`, `grid/`, `browser/`, `compare/`), plus `navigation/` and
   `common/` (non-UI plumbing: file dialogs, system actions, hover).
 - `presentation/designsystem/` — the Atomic Design system. `theme/`
   (tokens: `AppColors`/`Spacing`/`Dimens` read via `AppTheme.*`, plus
@@ -25,8 +25,11 @@ Clean architecture, single Gradle module, package
 - `di/AppContainer.kt` — manual DI container. **No DI framework.** Add new
   wiring here.
 - Navigation is a sealed `Screen` interface (`RootPicker | Grid |
-  Browser`). `Screen.Grid` carries a `CategoryScope` (`AllPhotos |
-  Category(id)`). Photos live in N flat per-root categories;
+  Browser | Compare`). `Screen.Grid` carries a `CategoryScope` (`AllPhotos |
+  Category(id)`). `Screen.Compare` is the two-up side-by-side view: it carries
+  two indices into the scoped photo list (its two panes), is reached from the
+  browser with `C` (current + next), and shares one `ZoomState` across both
+  panes so pan/zoom stay synchronized. Photos live in N flat per-root categories;
   **Favourites** is the built-in one (fixed id `favourites`, cannot be
   renamed or deleted). Each category is pushed as its own `Screen.Grid`
   instance from the All Photos categories dropdown, not toggled in place,

@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import com.vishalgupta.photoselector.di.AppContainer
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.presentation.browser.BrowserScreen
+import com.vishalgupta.photoselector.presentation.compare.CompareScreen
 import com.vishalgupta.photoselector.presentation.grid.GridScreen
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.navigation.Screen
@@ -119,6 +120,39 @@ fun App(container: AppContainer) {
                                     s.scope,
                                     initialScrollIndex = idx,
                                     lastViewedPhotoId = photoId,
+                                    returnScrollIndex = s.returnScrollIndex,
+                                ),
+                            )
+                        },
+                        onCompare = {
+                            val st = vm.state.value
+                            if (st.photos.size >= 2) {
+                                container.goTo(
+                                    Screen.Compare(
+                                        root = s.root,
+                                        scope = s.scope,
+                                        leftIndex = st.currentIndex,
+                                        rightIndex = (st.currentIndex + 1) % st.photos.size,
+                                        returnScrollIndex = s.returnScrollIndex,
+                                    ),
+                                )
+                            }
+                        },
+                    )
+                }
+                is Screen.Compare -> {
+                    val vm = remember(s.root.path, s.leftIndex, s.rightIndex, s.scope) {
+                        container.compareViewModel(s.root, s.scope, s.leftIndex, s.rightIndex)
+                    }
+                    CompareScreen(
+                        viewModel = vm,
+                        systemActions = container.systemActions,
+                        onExit = {
+                            container.goTo(
+                                Screen.Browser(
+                                    root = s.root,
+                                    initialIndex = vm.exitIndex(),
+                                    scope = s.scope,
                                     returnScrollIndex = s.returnScrollIndex,
                                 ),
                             )

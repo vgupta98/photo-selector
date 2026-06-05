@@ -70,6 +70,7 @@ fun BrowserScreen(
     onOpenFavourites: () -> Unit,
     onChangeFolder: () -> Unit,
     onBack: () -> Unit,
+    onCompare: () -> Unit,
 ) {
     DisposableEffect(viewModel) { onDispose { viewModel.onClear() } }
     val state by viewModel.state.collectAsState()
@@ -102,6 +103,7 @@ fun BrowserScreen(
         onOpenFavourites = onOpenFavourites,
         onChangeFolder = onChangeFolder,
         onBackToGrid = onBack,
+        onCompare = onCompare,
     )
 }
 
@@ -118,6 +120,7 @@ fun BrowserScreen(
     onOpenFavourites: () -> Unit,
     onChangeFolder: () -> Unit,
     onBackToGrid: () -> Unit,
+    onCompare: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -184,6 +187,7 @@ fun BrowserScreen(
                         true
                     }
                     Key.G -> if (meta) false else { onBackToGrid(); true }
+                    Key.C -> if (meta) false else { onCompare(); true }
                     Key.Escape -> { onBackToGrid(); true }
                     Key.Equals, Key.Plus -> { zoom.zoomIn(); true }
                     Key.Minus -> { zoom.zoomOut(); true }
