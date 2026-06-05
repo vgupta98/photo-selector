@@ -3,7 +3,6 @@ package com.vishalgupta.photoselector.presentation.designsystem.organism
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -21,7 +20,7 @@ import com.vishalgupta.photoselector.presentation.designsystem.atom.AppTextButto
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.CategoryActionsMenu
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.CategoryMenu
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.CategoryNameDialog
-import com.vishalgupta.photoselector.presentation.designsystem.molecule.ConfirmDialog
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.ChangeFolderButton
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ConflictPolicyButton
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.FavouritesButton
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
@@ -53,7 +52,6 @@ fun GridTopBar(
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
-    var showChangeFolderConfirm by remember { mutableStateOf(false) }
     val hasPhotos = photoCount > 0 && !isBusy
 
     TopBarScaffold(modifier) {
@@ -107,10 +105,8 @@ fun GridTopBar(
             }
         }
 
-        AppTextButton(
-            text = "Change folder",
-            leadingIcon = Icons.Default.Folder,
-            onClick = { showChangeFolderConfirm = true },
+        ChangeFolderButton(
+            onChangeFolder = onChangeFolder,
             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -137,20 +133,6 @@ fun GridTopBar(
                 onRenameCategory(currentCategory.id, it)
             },
             onDismiss = { showRenameDialog = false },
-        )
-    }
-
-    if (showChangeFolderConfirm) {
-        ConfirmDialog(
-            title = "Change folder?",
-            message = "You'll leave this folder and pick a new one to open. " +
-                "Your favourites and categories are saved.",
-            confirmLabel = "Change folder",
-            onConfirm = {
-                showChangeFolderConfirm = false
-                onChangeFolder()
-            },
-            onDismiss = { showChangeFolderConfirm = false },
         )
     }
 }
