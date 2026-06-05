@@ -22,6 +22,9 @@ data class Dimens(
     val lastViewedIndicatorHeight: Dp = 3.dp,
     val iconSm: Dp = 18.dp,
     val iconLg: Dp = 48.dp,
+    // Bottom inset for the browser's confirmation toast. Lifts it clear of the bottom-center
+    // HUD + keyboard-legend stack so a membership toast and the revealed HUD don't collide.
+    val browserToastBottomInset: Dp = 128.dp,
     val scrollbarThickness: Dp = 8.dp,
     val scrollbarMinHeight: Dp = 48.dp,
     val progressIndicatorLg: Dp = 48.dp,
