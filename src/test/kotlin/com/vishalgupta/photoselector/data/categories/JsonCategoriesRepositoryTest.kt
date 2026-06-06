@@ -96,6 +96,43 @@ class JsonCategoriesRepositoryTest {
     }
 
     @Test
+    fun addMemberships_filesOnlyNewPhotosAndReportsCount() = runTest {
+        val (repo, root) = repo(listOf(photo("a.jpg", 1, 1), photo("b.jpg", 2, 2), photo("c.jpg", 3, 3)))
+        val selects = repo.create(root, "Selects")
+        repo.toggleMembership(root, selects, PhotoId("a.jpg"))
+
+        // a.jpg is already filed; only b and c are new, so the count reflects two additions.
+        val added = repo.addMemberships(
+            root,
+            selects,
+            listOf(PhotoId("a.jpg"), PhotoId("b.jpg"), PhotoId("c.jpg")),
+        )
+
+        assertEquals(2, added)
+        assertEquals(
+            setOf(PhotoId("a.jpg"), PhotoId("b.jpg"), PhotoId("c.jpg")),
+            repo.observeMemberships(root).value[selects],
+        )
+    }
+
+    @Test
+    fun addMemberships_isAdditiveAndPersists() = runTest {
+        val (repo, root) = repo(listOf(photo("a.jpg", 1, 1), photo("b.jpg", 2, 2)))
+        val selects = repo.create(root, "Selects")
+
+        repo.addMemberships(root, selects, listOf(PhotoId("a.jpg"), PhotoId("b.jpg")))
+        // Re-filing the same set adds nothing and never removes existing members.
+        val again = repo.addMemberships(root, selects, listOf(PhotoId("a.jpg")))
+        assertEquals(0, again)
+
+        val (reopened, _) = repo(listOf(photo("a.jpg", 1, 1), photo("b.jpg", 2, 2)))
+        assertEquals(
+            setOf(PhotoId("a.jpg"), PhotoId("b.jpg")),
+            reopened.observeMemberships(root).value[selects],
+        )
+    }
+
+    @Test
     fun photoCanBelongToMultipleCategories() = runTest {
         val (repo, root) = repo(listOf(photo("a.jpg", 100, 5)))
 

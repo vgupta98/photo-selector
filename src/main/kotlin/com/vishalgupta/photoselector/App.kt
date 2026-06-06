@@ -13,10 +13,12 @@ import androidx.compose.ui.Modifier
 import com.vishalgupta.photoselector.di.AppContainer
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.presentation.browser.BrowserScreen
+import com.vishalgupta.photoselector.presentation.compare.CompareScreen
 import com.vishalgupta.photoselector.presentation.grid.GridScreen
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.navigation.Screen
 import com.vishalgupta.photoselector.presentation.rootpicker.RootFolderPickerScreen
+import com.vishalgupta.photoselector.presentation.survey.SurveyScreen
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import kotlinx.coroutines.launch
 
@@ -64,6 +66,29 @@ fun App(container: AppContainer) {
                                     returnScrollIndex = currentScrollIndex,
                                 ),
                             )
+                        },
+                        onCompareSelection = { indices, returnScrollIndex ->
+                            val scope = vm.state.value.scope
+                            when {
+                                indices.size == 2 -> container.goTo(
+                                    Screen.Compare(
+                                        root = s.root,
+                                        scope = scope,
+                                        leftIndex = indices[0],
+                                        rightIndex = indices[1],
+                                        returnScrollIndex = returnScrollIndex,
+                                        returnToGrid = true,
+                                    ),
+                                )
+                                indices.size >= 3 -> container.goTo(
+                                    Screen.Survey(
+                                        root = s.root,
+                                        scope = scope,
+                                        indices = indices,
+                                        returnScrollIndex = returnScrollIndex,
+                                    ),
+                                )
+                            }
                         },
                         onBack = when (s.scope) {
                             CategoryScope.AllPhotos -> null
@@ -120,6 +145,67 @@ fun App(container: AppContainer) {
                                     initialScrollIndex = idx,
                                     lastViewedPhotoId = photoId,
                                     returnScrollIndex = s.returnScrollIndex,
+                                ),
+                            )
+                        },
+                        onCompare = {
+                            val st = vm.state.value
+                            if (st.photos.size >= 2) {
+                                container.goTo(
+                                    Screen.Compare(
+                                        root = s.root,
+                                        scope = s.scope,
+                                        leftIndex = st.currentIndex,
+                                        rightIndex = (st.currentIndex + 1) % st.photos.size,
+                                        returnScrollIndex = s.returnScrollIndex,
+                                    ),
+                                )
+                            }
+                        },
+                    )
+                }
+                is Screen.Compare -> {
+                    val vm = remember(s.root.path, s.leftIndex, s.rightIndex, s.scope) {
+                        container.compareViewModel(s.root, s.scope, s.leftIndex, s.rightIndex)
+                    }
+                    CompareScreen(
+                        viewModel = vm,
+                        systemActions = container.systemActions,
+                        onExit = {
+                            // A grid-originated compare returns to the grid it came from; a
+                            // browser-originated one drops back into the full-screen browser.
+                            if (s.returnToGrid) {
+                                container.goTo(
+                                    Screen.Grid(
+                                        root = s.root,
+                                        scope = s.scope,
+                                        initialScrollIndex = s.returnScrollIndex ?: 0,
+                                    ),
+                                )
+                            } else {
+                                container.goTo(
+                                    Screen.Browser(
+                                        root = s.root,
+                                        initialIndex = vm.exitIndex(),
+                                        scope = s.scope,
+                                        returnScrollIndex = s.returnScrollIndex,
+                                    ),
+                                )
+                            }
+                        },
+                    )
+                }
+                is Screen.Survey -> key(s) {
+                    val vm = remember { container.surveyViewModel(s.root, s.scope, s.indices) }
+                    SurveyScreen(
+                        viewModel = vm,
+                        systemActions = container.systemActions,
+                        onExit = {
+                            container.goTo(
+                                Screen.Grid(
+                                    root = s.root,
+                                    scope = s.scope,
+                                    initialScrollIndex = s.returnScrollIndex ?: 0,
                                 ),
                             )
                         },

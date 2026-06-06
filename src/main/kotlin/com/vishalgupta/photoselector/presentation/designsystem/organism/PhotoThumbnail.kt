@@ -1,29 +1,45 @@
 package com.vishalgupta.photoselector.presentation.designsystem.organism
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.input.pointer.isMetaPressed
+import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.presentation.designsystem.atom.FavouriteStar
 import com.vishalgupta.photoselector.presentation.designsystem.atom.LoadingIndicator
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 
 private const val THUMBNAIL_VIEWPORT_PX = 320
 
@@ -32,6 +48,16 @@ private const val THUMBNAIL_VIEWPORT_PX = 320
  * Favourites membership (in any scope, including a custom-category grid), a focus
  * border, and a "last viewed" underline. Decodes lazily through [loader], keyed on the
  * photo id.
+ *
+ * [categoryBadges] are the digit slots (1..9) of the custom categories this photo belongs
+ * to — shown as small numbered chips so filing a photo with a number key leaves a visible,
+ * inspectable mark (favourites stays the star). The list type is immutable so the tile stays
+ * skippable: a membership change elsewhere doesn't churn this tile.
+ *
+ * [isSelected] marks the tile as part of a multi-select (accent ring + scale-down + a check
+ * badge). When [onToggleSelect] (Cmd+Click) / [onRangeSelect] (Shift+Click) are supplied, a
+ * modified click drives selection while a plain click still falls through to [onClick] — so the
+ * established "click a tile to open it" gesture is untouched.
  */
 @Composable
 fun PhotoThumbnail(
@@ -42,25 +68,47 @@ fun PhotoThumbnail(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     isLastViewed: Boolean = false,
+    isSelected: Boolean = false,
+    onToggleSelect: (() -> Unit)? = null,
+    onRangeSelect: (() -> Unit)? = null,
+    categoryBadges: ImmutableList<Int> = persistentListOf(),
 ) {
     val bitmap by produceState<ImageBitmap?>(null, photo.id) {
         value = loader.load(photo, viewportLongEdgePx = THUMBNAIL_VIEWPORT_PX)
     }
-    val borderMod = if (isFocused) {
-        Modifier.border(
-            AppTheme.dimens.focusBorderWidth,
-            MaterialTheme.colorScheme.primary,
-            MaterialTheme.shapes.small,
-        )
+    // Selection's accent ring takes precedence over the focus cursor on the rare tile that is both.
+    val ringColor = when {
+        isSelected -> AppTheme.colors.selectionRing
+        isFocused -> AppTheme.colors.focusRing
+        else -> null
+    }
+    val borderMod = if (ringColor != null) {
+        Modifier.border(AppTheme.dimens.focusBorderWidth, ringColor, MaterialTheme.shapes.small)
     } else {
         Modifier
     }
+    // Selected tiles ease down a touch so the picked-out set reads at a glance.
+    val tileScale by animateFloatAsState(if (isSelected) 0.95f else 1f, label = "tileSelectScale")
+    // One plain clickable carries every click; the held modifier is read from window state at
+    // click time (NOT during composition, so it never costs the tile a recomposition) and routes
+    // it — Cmd toggles selection, Shift ranges, unmodified opens. This keeps the single proven
+    // open path and its click semantics, instead of layering a modifier-matching pointer node
+    // that races the clickable and lets one swallow the other.
+    val windowInfo = LocalWindowInfo.current
     Box(
         modifier
             .aspectRatio(1f)
+            .scale(tileScale)
             .then(borderMod)
             .background(AppTheme.colors.tileBackground)
-            .clickable(onClick = onClick),
+            .clickable {
+                val mods = windowInfo.keyboardModifiers
+                when {
+                    onToggleSelect != null && mods.isMetaPressed && !mods.isShiftPressed -> onToggleSelect()
+                    onRangeSelect != null && mods.isShiftPressed -> onRangeSelect()
+                    else -> onClick()
+                }
+            },
         contentAlignment = Alignment.Center,
     ) {
         val bmp = bitmap
@@ -85,14 +133,75 @@ fun PhotoThumbnail(
                     .size(AppTheme.dimens.iconSm),
             )
         }
+        if (categoryBadges.isNotEmpty()) {
+            CategoryBadges(
+                badges = categoryBadges,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(AppTheme.spacing.xs),
+            )
+        }
         if (isLastViewed) {
             Box(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .height(AppTheme.dimens.lastViewedIndicatorHeight)
-                    .background(MaterialTheme.colorScheme.primary),
+                    .background(AppTheme.colors.lastViewedIndicator),
             )
         }
+        if (isSelected) {
+            // Bottom-end keeps the check clear of the star (top-end) and category badges (top-start).
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(AppTheme.spacing.xs)
+                    .size(AppTheme.dimens.iconSm)
+                    .background(MaterialTheme.colorScheme.primary, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = "Selected",
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.fillMaxSize().padding(3.dp),
+                )
+            }
+        }
+    }
+}
+
+/** Max chips drawn before collapsing the tail into a "+N" overflow chip. */
+private const val MAX_VISIBLE_BADGES = 4
+
+/**
+ * The custom-category slots a photo is filed in, as small numbered chips. The number is the
+ * `1..9` key that toggles that category, so the badge doubles as a reminder of the hotkey.
+ * Capped so a heavily-filed photo can't blow out the tile.
+ */
+@Composable
+private fun CategoryBadges(badges: ImmutableList<Int>, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs),
+    ) {
+        badges.take(MAX_VISIBLE_BADGES).forEach { slot -> CategoryBadge(slot.toString()) }
+        val overflow = badges.size - MAX_VISIBLE_BADGES
+        if (overflow > 0) CategoryBadge("+$overflow")
+    }
+}
+
+@Composable
+private fun CategoryBadge(label: String) {
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = AppTheme.colors.categoryMemberContainer,
+        contentColor = AppTheme.colors.categoryMemberContent,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+        )
     }
 }

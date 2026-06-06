@@ -3,7 +3,6 @@ package com.vishalgupta.photoselector.presentation.designsystem.organism
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -17,18 +16,22 @@ import androidx.compose.ui.Modifier
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
-import com.vishalgupta.photoselector.presentation.designsystem.atom.AppOutlinedButton
 import com.vishalgupta.photoselector.presentation.designsystem.atom.AppTextButton
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.CategoryActionsMenu
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.CategoryMenu
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.CategoryNameDialog
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.ChangeFolderButton
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ConflictPolicyButton
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.FavouritesButton
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 
 /**
- * Top bar for the photo grid. In [CategoryScope.AllPhotos] it shows a photo count and the
- * categories dropdown; in a [CategoryScope.Category] it adds a back button, the export /
- * copy actions, and — for non-built-in categories — a "⋯" Rename / Delete menu.
+ * Top bar for the photo grid. In [CategoryScope.AllPhotos] it shows a photo count, a
+ * first-class **Favourites** button (the keeper bucket, promoted out of the dropdown to
+ * match the browser bar), and the custom-categories dropdown; in a [CategoryScope.Category]
+ * it adds a back button, the export / copy actions, and — for non-built-in categories — a
+ * "⋯" Rename / Delete menu. "Change folder" is guarded by a confirm dialog because it tears
+ * the current session down and re-scans.
  */
 @Composable
 fun GridTopBar(
@@ -58,13 +61,23 @@ fun GridTopBar(
             }
         }
 
-        val title = when (scope) {
-            CategoryScope.AllPhotos -> "$photoCount photos"
-            is CategoryScope.Category -> "${currentCategory?.name ?: "Category"} ($photoCount)"
+        val scopeName = when (scope) {
+            CategoryScope.AllPhotos -> "All Photos"
+            is CategoryScope.Category -> currentCategory?.name ?: "Category"
         }
-        Text(title, style = MaterialTheme.typography.titleLarge)
+        // Identity leads; the count is reference info, so it rides alongside as a muted caption.
+        Text(scopeName, style = MaterialTheme.typography.titleLarge)
+        Text(
+            text = "$photoCount photo${if (photoCount == 1) "" else "s"}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         if (scope == CategoryScope.AllPhotos) {
+            FavouritesButton(
+                count = categoryEntries.firstOrNull { it.first.builtIn }?.second ?: 0,
+                onClick = { onSelectCategory(Category.FAVOURITES_ID) },
+            )
             CategoryMenu(
                 entries = categoryEntries,
                 onSelect = onSelectCategory,
@@ -75,7 +88,12 @@ fun GridTopBar(
         Spacer(Modifier.weight(1f))
 
         if (scope is CategoryScope.Category) {
-            AppOutlinedButton(text = "Export list (.txt)", enabled = hasPhotos, onClick = onExportTxt)
+            AppTextButton(
+                text = "Export list (.txt)",
+                enabled = hasPhotos,
+                onClick = onExportTxt,
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             ConflictPolicyButton(enabled = hasPhotos, onSelect = onCopyToFolder)
             val current = currentCategory
             if (current != null && !current.builtIn) {
@@ -87,10 +105,9 @@ fun GridTopBar(
             }
         }
 
-        AppTextButton(
-            text = "Change folder",
-            leadingIcon = Icons.Default.Folder,
-            onClick = onChangeFolder,
+        ChangeFolderButton(
+            onChangeFolder = onChangeFolder,
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 

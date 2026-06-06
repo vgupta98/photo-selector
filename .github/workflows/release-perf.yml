@@ -17,7 +17,12 @@ jobs:
   perf:
     name: JMH perf vs main
     # Only fire for the release/vX.Y.Z branches that draft-release.yml opens.
-    if: startsWith(github.event.pull_request.head.ref, 'release/')
+    # Same-repo guard: this checks out and runs Gradle on the PR's own code, so
+    # restrict it to branches in THIS repo. A fork could otherwise name a branch
+    # "release/..." and get its unreviewed build scripts executed in CI.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'release/')
     runs-on: ubuntu-latest
     steps:
       - name: Check out release branch

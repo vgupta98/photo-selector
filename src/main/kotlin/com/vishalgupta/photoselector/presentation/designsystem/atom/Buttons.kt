@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 
 /**
@@ -45,6 +46,11 @@ fun AppOutlinedButton(
     }
 }
 
+/**
+ * Text button. Pass [contentColor] to render it *quiet* (e.g. a muted
+ * `onSurfaceVariant`) for low-frequency utility actions that should recede
+ * beside the bar's one filled primary; omit it for the default action accent.
+ */
 @Composable
 fun AppTextButton(
     text: String,
@@ -52,8 +58,18 @@ fun AppTextButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     leadingIcon: ImageVector? = null,
+    contentColor: Color? = null,
 ) {
-    TextButton(onClick = onClick, modifier = modifier, enabled = enabled) {
+    TextButton(
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        colors = if (contentColor != null) {
+            ButtonDefaults.textButtonColors(contentColor = contentColor)
+        } else {
+            ButtonDefaults.textButtonColors()
+        },
+    ) {
         ButtonContent(text, leadingIcon)
     }
 }

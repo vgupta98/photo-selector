@@ -11,6 +11,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.vishalgupta.photoselector.di.AppContainer
+import com.vishalgupta.photoselector.presentation.common.PlatformLabels
 
 fun main() = application {
     val container = remember { AppContainer() }
@@ -25,19 +26,19 @@ fun main() = application {
         MenuBar {
             Menu("File") {
                 Item(
-                    "Reveal in Finder",
+                    PlatformLabels.revealInFileManager,
                     enabled = photoPath != null,
                     shortcut = KeyShortcut(Key.R, meta = true),
                     onClick = { photoPath?.let { actions.revealInFileManager(it) } },
                 )
                 Item(
-                    "Open with Default App",
+                    PlatformLabels.OPEN_WITH_DEFAULT_APP,
                     enabled = photoPath != null,
                     shortcut = KeyShortcut(Key.O, meta = true),
                     onClick = { photoPath?.let { actions.openWithDefaultApp(it) } },
                 )
                 Item(
-                    "Quick Look",
+                    PlatformLabels.preview,
                     enabled = photoPath != null,
                     shortcut = KeyShortcut(Key.Y, meta = true),
                     onClick = { photoPath?.let { actions.preview(it) } },

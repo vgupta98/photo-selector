@@ -2,7 +2,6 @@ package com.vishalgupta.photoselector.presentation.designsystem.organism
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -10,7 +9,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import com.vishalgupta.photoselector.presentation.designsystem.atom.AppTextButton
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.ChangeFolderButton
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.FavouritesButton
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 
@@ -53,10 +52,10 @@ fun BrowserTopBar(
             )
         }
         FavouritesButton(count = favouriteCount, onClick = onOpenFavourites)
-        AppTextButton(
-            text = "Change folder",
-            leadingIcon = Icons.Default.Folder,
-            onClick = onChangeFolder,
+        // Muted white so it recedes behind Favourites — the bar's real action — on the scrim.
+        ChangeFolderButton(
+            onChangeFolder = onChangeFolder,
+            contentColor = Color.White.copy(alpha = 0.7f),
         )
     }
 }

@@ -104,6 +104,20 @@ class JsonCategoriesRepository(
         }
     }
 
+    override suspend fun addMemberships(root: RootFolder, id: CategoryId, photos: Collection<PhotoId>): Int {
+        if (boundRoot?.path != root.path) bind(root)
+        if (photos.isEmpty()) return 0
+        return mutex.withLock {
+            val current = membershipsFlow.value[id].orEmpty()
+            val added = photos.filterTo(mutableSetOf()) { it !in current }
+            if (added.isEmpty()) return@withLock 0
+            membershipsFlow.value = membershipsFlow.value + (id to (current + added))
+            // One disk write for the whole batch — filing 100 tiles touches the file once.
+            writeToDisk(root)
+            added.size
+        }
+    }
+
     override suspend fun clearContext() {
         mutex.withLock {
             boundRoot = null

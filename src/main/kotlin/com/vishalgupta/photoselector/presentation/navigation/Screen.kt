@@ -20,4 +20,40 @@ sealed interface Screen {
         // Photos, restores the All-Photos scroll position (PR #32 review Q#2).
         val returnScrollIndex: Int? = null,
     ) : Screen
+    /**
+     * Two-up side-by-side compare. [leftIndex] / [rightIndex] index into the scoped photo
+     * list (same list the browser pages through), so exiting lands on the active pane's photo.
+     * [returnScrollIndex] is carried through from the source so the scroll position survives the
+     * round trip, exactly as [Browser] does. [returnToGrid] flags a grid-originated compare (the
+     * `C` shortcut over a 2-tile selection): it exits back to the grid at [returnScrollIndex]
+     * rather than into the full-screen browser, since that's where the user came from.
+     */
+    data class Compare(
+        val root: RootFolder,
+        val scope: CategoryScope = CategoryScope.AllPhotos,
+        val leftIndex: Int,
+        val rightIndex: Int,
+        val returnScrollIndex: Int? = null,
+        val returnToGrid: Boolean = false,
+    ) : Screen
+    /**
+     * Survey: an overview-pick grid of the [indices] (3+ tiles) selected in the grid and opened
+     * with `C`. Each index points into the scoped photo list (same as [Compare]). One tile is
+     * "active"; arrows/Tab move it and `F`/`1`-`9` file it, mirroring compare's active-pane model
+     * but with no zoom. [returnScrollIndex] restores the grid's scroll on exit.
+     */
+    data class Survey(
+        val root: RootFolder,
+        val scope: CategoryScope = CategoryScope.AllPhotos,
+        val indices: List<Int>,
+        val returnScrollIndex: Int? = null,
+    ) : Screen
 }
+
+/**
+ * Upper bound on how many photos `C` can open side by side at once (Compare is always 2; Survey
+ * takes 3 up to this). Past it the grid declines and toasts instead of opening: the survey grid is
+ * non-lazy and pins every tile's decode, and beyond a dozen the tiles are too small to pick between
+ * anyway — so a stray `Cmd+A` then `C` can't freeze the app or blow the image cache.
+ */
+const val MAX_SURVEY_PHOTOS = 12

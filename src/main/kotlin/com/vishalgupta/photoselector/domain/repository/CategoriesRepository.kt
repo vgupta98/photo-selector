@@ -39,6 +39,13 @@ interface CategoriesRepository {
     /** Toggles [photo]'s membership in [id]; returns true if it is now a member. */
     suspend fun toggleMembership(root: RootFolder, id: CategoryId, photo: PhotoId): Boolean
 
+    /**
+     * Files every photo in [photos] into [id] in a single write, leaving existing members
+     * untouched. Additive (never removes) so a mixed selection ends up uniformly filed rather
+     * than flip-flopped per tile. Returns how many were *newly* added.
+     */
+    suspend fun addMemberships(root: RootFolder, id: CategoryId, photos: Collection<PhotoId>): Int
+
     suspend fun clearContext()
 
     /** True when the categories file cannot be written (e.g. read-only volume). */

@@ -6,7 +6,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -40,7 +42,6 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.presentation.common.HoverOverlay
@@ -49,6 +50,7 @@ import com.vishalgupta.photoselector.presentation.common.customCategories
 import com.vishalgupta.photoselector.presentation.common.digitSlot
 import com.vishalgupta.photoselector.presentation.designsystem.atom.FavouriteStar
 import com.vishalgupta.photoselector.presentation.designsystem.atom.LoadingIndicator
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.BrowserKeyboardLegend
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ErrorPlaceholder
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToast
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToastDefaults
@@ -68,6 +70,7 @@ fun BrowserScreen(
     onOpenFavourites: () -> Unit,
     onChangeFolder: () -> Unit,
     onBack: () -> Unit,
+    onCompare: () -> Unit,
 ) {
     DisposableEffect(viewModel) { onDispose { viewModel.onClear() } }
     val state by viewModel.state.collectAsState()
@@ -100,6 +103,7 @@ fun BrowserScreen(
         onOpenFavourites = onOpenFavourites,
         onChangeFolder = onChangeFolder,
         onBackToGrid = onBack,
+        onCompare = onCompare,
     )
 }
 
@@ -116,6 +120,7 @@ fun BrowserScreen(
     onOpenFavourites: () -> Unit,
     onChangeFolder: () -> Unit,
     onBackToGrid: () -> Unit,
+    onCompare: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -182,6 +187,7 @@ fun BrowserScreen(
                         true
                     }
                     Key.G -> if (meta) false else { onBackToGrid(); true }
+                    Key.C -> if (meta) false else { onCompare(); true }
                     Key.Escape -> { onBackToGrid(); true }
                     Key.Equals, Key.Plus -> { zoom.zoomIn(); true }
                     Key.Minus -> { zoom.zoomOut(); true }
@@ -264,11 +270,22 @@ fun BrowserScreen(
                         .align(Alignment.BottomCenter)
                         .padding(bottom = AppTheme.spacing.xl),
                 ) {
-                    BrowserCategoryHud(
-                        categories = state.categories,
-                        currentMemberships = state.currentMemberships,
-                        onToggle = onToggleCategory,
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.sm),
+                    ) {
+                        BrowserCategoryHud(
+                            categories = state.categories,
+                            currentMemberships = state.currentMemberships,
+                            onToggle = onToggleCategory,
+                        )
+                        // Always-on discoverability, folded into the HUD's reveal/auto-hide so the
+                        // photo stays unobstructed when idle. Truthful to the key handler above.
+                        BrowserKeyboardLegend(
+                            hasCustomCategories = state.categories.customCategories().isNotEmpty(),
+                            readOnly = state.readOnly,
+                        )
+                    }
                 }
             }
         }
@@ -279,7 +296,7 @@ fun BrowserScreen(
             exit = fadeOut(),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 96.dp),
+                .padding(bottom = AppTheme.dimens.browserToastBottomInset),
         ) {
             val dt = displayedToast
             if (dt != null) {
