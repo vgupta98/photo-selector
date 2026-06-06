@@ -131,6 +131,38 @@ class GridRecompositionTest {
     }
 
     @Test
+    fun togglingOneSelection_recomposesOnlyThatTile() {
+        val tracker = RecompositionTracker()
+        val selection = mutableStateOf(emptySet<PhotoId>())
+
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    Grid(
+                        photos = photos,
+                        favourites = emptySet(),
+                        focusedIndex = -1,
+                        loader = noOpImageLoader,
+                        tracker = tracker,
+                        selection = selection.value,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        val before = photos.associate { it.id.value to tracker[it.id.value] }
+
+        rule.runOnIdle { selection.value = setOf(PhotoId("b")) }
+        rule.waitForIdle()
+
+        assertEquals("b should recompose (it was selected)", before["b"]!! + 1, tracker["b"])
+        assertEquals("a should skip", before["a"], tracker["a"])
+        assertEquals("c should skip", before["c"], tracker["c"])
+        assertEquals("d should skip", before["d"], tracker["d"])
+    }
+
+    @Test
     fun movingFocus_recomposesOnlyTheTilesGainingAndLosingFocus() {
         val tracker = RecompositionTracker()
         val focusedIndex = mutableStateOf(0)
@@ -171,6 +203,7 @@ private fun Grid(
     focusedIndex: Int,
     loader: ImageLoader,
     tracker: RecompositionTracker,
+    selection: Set<PhotoId> = emptySet(),
 ) {
     FlowRow {
         photos.forEachIndexed { index, photo ->
@@ -181,6 +214,7 @@ private fun Grid(
                 loader = loader,
                 isFavourite = photo.id in favourites,
                 isFocused = index == focusedIndex,
+                isSelected = photo.id in selection,
             )
         }
     }
@@ -224,6 +258,7 @@ private fun CountedThumbnail(
     loader: ImageLoader,
     isFavourite: Boolean,
     isFocused: Boolean,
+    isSelected: Boolean = false,
     categoryBadges: ImmutableList<Int> = persistentListOf(),
 ) {
     tracker.record(tag)
@@ -232,7 +267,10 @@ private fun CountedThumbnail(
         loader = loader,
         isMarked = isFavourite,
         isFocused = isFocused,
+        isSelected = isSelected,
         onClick = {},
+        onToggleSelect = {},
+        onRangeSelect = {},
         modifier = Modifier.size(AppTheme.dimens.thumbnailMinCell),
         categoryBadges = categoryBadges,
     )

@@ -232,6 +232,34 @@ class ScreenSplitScreenshotTest {
     }
 
     @Test
+    fun grid_multiSelect() {
+        // A live multi-select: three tiles picked out (accent ring + check + scale-down), one of
+        // them also favourited, with the selection top bar swapped in over the normal chrome.
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(1100.dp, 700.dp)) {
+                    Grid(
+                        state = GridUiState(
+                            photos = manyPhotos,
+                            scope = CategoryScope.AllPhotos,
+                            categories = categories,
+                            memberships = mapOf(
+                                Category.FAVOURITES_ID to setOf(PhotoId("p2")),
+                                selectsId to setOf(PhotoId("p7")),
+                            ),
+                            selection = setOf(PhotoId("p2"), PhotoId("p3"), PhotoId("p6")),
+                            anchorIndex = 6,
+                        ),
+                        onBack = null,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("grid-multi-select")
+    }
+
+    @Test
     fun grid_densityNarrow() {
         rule.setContent {
             AppTheme {

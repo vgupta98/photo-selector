@@ -32,6 +32,12 @@ data class AppColors(
     val categoryMemberContent: Color,
     /** Bright neutral ring marking the keyboard-focused tile (the cursor). */
     val focusRing: Color,
+    /**
+     * Warm accent ring marking a multi-selected tile. Selection is a deliberate, in-progress
+     * action (it arms a bulk operation), so it earns the accent — distinct from the hueless
+     * [focusRing] cursor it can coexist with.
+     */
+    val selectionRing: Color,
     /** Dim neutral marker for the last-viewed tile (weaker than [focusRing], by both brightness and shape). */
     val lastViewedIndicator: Color,
     /** Backdrop behind a photo thumbnail while it decodes. */
@@ -72,6 +78,7 @@ val DarkAppColors = AppColors(
     categoryMemberContainer = Color(0xFFE6E6E6),
     categoryMemberContent = Color(0xFF1A1A1A),
     focusRing = Color(0xFFF5F5F5),
+    selectionRing = Accent,
     lastViewedIndicator = Color.White.copy(alpha = 0.5f),
     tileBackground = Color(0xFF1E1E1E),
     toastBackground = Color(0xFF2A2A2A),

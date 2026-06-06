@@ -1,5 +1,6 @@
 package com.vishalgupta.photoselector.presentation.designsystem.organism
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -13,6 +14,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -21,8 +26,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.input.pointer.isMetaPressed
+import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.model.Photo
@@ -44,6 +53,11 @@ private const val THUMBNAIL_VIEWPORT_PX = 320
  * to — shown as small numbered chips so filing a photo with a number key leaves a visible,
  * inspectable mark (favourites stays the star). The list type is immutable so the tile stays
  * skippable: a membership change elsewhere doesn't churn this tile.
+ *
+ * [isSelected] marks the tile as part of a multi-select (accent ring + scale-down + a check
+ * badge). When [onToggleSelect] (Cmd+Click) / [onRangeSelect] (Shift+Click) are supplied, a
+ * modified click drives selection while a plain click still falls through to [onClick] — so the
+ * established "click a tile to open it" gesture is untouched.
  */
 @Composable
 fun PhotoThumbnail(
@@ -54,26 +68,47 @@ fun PhotoThumbnail(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     isLastViewed: Boolean = false,
+    isSelected: Boolean = false,
+    onToggleSelect: (() -> Unit)? = null,
+    onRangeSelect: (() -> Unit)? = null,
     categoryBadges: ImmutableList<Int> = persistentListOf(),
 ) {
     val bitmap by produceState<ImageBitmap?>(null, photo.id) {
         value = loader.load(photo, viewportLongEdgePx = THUMBNAIL_VIEWPORT_PX)
     }
-    val borderMod = if (isFocused) {
-        Modifier.border(
-            AppTheme.dimens.focusBorderWidth,
-            AppTheme.colors.focusRing,
-            MaterialTheme.shapes.small,
-        )
+    // Selection's accent ring takes precedence over the focus cursor on the rare tile that is both.
+    val ringColor = when {
+        isSelected -> AppTheme.colors.selectionRing
+        isFocused -> AppTheme.colors.focusRing
+        else -> null
+    }
+    val borderMod = if (ringColor != null) {
+        Modifier.border(AppTheme.dimens.focusBorderWidth, ringColor, MaterialTheme.shapes.small)
     } else {
         Modifier
     }
+    // Selected tiles ease down a touch so the picked-out set reads at a glance.
+    val tileScale by animateFloatAsState(if (isSelected) 0.95f else 1f, label = "tileSelectScale")
+    // One plain clickable carries every click; the held modifier is read from window state at
+    // click time (NOT during composition, so it never costs the tile a recomposition) and routes
+    // it — Cmd toggles selection, Shift ranges, unmodified opens. This keeps the single proven
+    // open path and its click semantics, instead of layering a modifier-matching pointer node
+    // that races the clickable and lets one swallow the other.
+    val windowInfo = LocalWindowInfo.current
     Box(
         modifier
             .aspectRatio(1f)
+            .scale(tileScale)
             .then(borderMod)
             .background(AppTheme.colors.tileBackground)
-            .clickable(onClick = onClick),
+            .clickable {
+                val mods = windowInfo.keyboardModifiers
+                when {
+                    onToggleSelect != null && mods.isMetaPressed && !mods.isShiftPressed -> onToggleSelect()
+                    onRangeSelect != null && mods.isShiftPressed -> onRangeSelect()
+                    else -> onClick()
+                }
+            },
         contentAlignment = Alignment.Center,
     ) {
         val bmp = bitmap
@@ -114,6 +149,24 @@ fun PhotoThumbnail(
                     .height(AppTheme.dimens.lastViewedIndicatorHeight)
                     .background(AppTheme.colors.lastViewedIndicator),
             )
+        }
+        if (isSelected) {
+            // Bottom-end keeps the check clear of the star (top-end) and category badges (top-start).
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(AppTheme.spacing.xs)
+                    .size(AppTheme.dimens.iconSm)
+                    .background(MaterialTheme.colorScheme.primary, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = "Selected",
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.fillMaxSize().padding(3.dp),
+                )
+            }
         }
     }
 }

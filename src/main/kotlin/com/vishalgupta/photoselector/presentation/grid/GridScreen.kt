@@ -68,6 +68,7 @@ import com.vishalgupta.photoselector.presentation.designsystem.molecule.GridKeyb
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.KeyHint
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToast
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToastDefaults
+import com.vishalgupta.photoselector.presentation.designsystem.organism.GridSelectionTopBar
 import com.vishalgupta.photoselector.presentation.designsystem.organism.GridTopBar
 import com.vishalgupta.photoselector.presentation.designsystem.organism.PhotoThumbnail
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
@@ -135,6 +136,19 @@ fun GridScreen(
         onDismissToast = viewModel::dismissToast,
         onFirstVisibleItemChanged = viewModel::onFirstVisibleItemChanged,
         imageLoader = viewModel.imageLoader,
+        onToggleSelection = viewModel::toggleSelection,
+        onSelectRange = viewModel::selectRange,
+        onSelectAll = viewModel::selectAll,
+        onClearSelection = viewModel::clearSelection,
+        onFileSelectionIntoFavourites = viewModel::fileSelectionIntoFavourites,
+        onFileSelectionIntoCustom = viewModel::fileSelectionIntoCustom,
+        onCopySelection = { policy ->
+            coroutineScope.launch {
+                val dir = NativeFileDialogs.pickDirectory("Copy selected photos to…")
+                    ?: return@launch
+                viewModel.copySelectionTo(dir, policy)
+            }
+        },
     )
 }
 
@@ -158,6 +172,15 @@ fun GridScreen(
     onFirstVisibleItemChanged: (Int) -> Unit = {},
     imageLoader: ImageLoader,
     categoryToast: CategoryToggle? = null,
+    // Multi-select plumbing. Defaulted so the stateless screen can be hosted (tests, previews)
+    // without wiring selection — a grid with no selection handlers simply never selects.
+    onToggleSelection: (Int) -> Unit = {},
+    onSelectRange: (Int) -> Unit = {},
+    onSelectAll: () -> Unit = {},
+    onClearSelection: () -> Unit = {},
+    onFileSelectionIntoFavourites: () -> Unit = {},
+    onFileSelectionIntoCustom: (slot: Int) -> Unit = {},
+    onCopySelection: (ConflictPolicy) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = initialScrollIndex)
@@ -209,19 +232,30 @@ fun GridScreen(
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 val meta = event.isMetaPressed
+                val hasSelection = state.hasSelection
                 val cols = computeColumnCount(gridState)
                 val maxIndex = state.photos.size - 1
+                // Cmd+A arms a multi-select over the whole scope.
+                if (meta && event.key == Key.A) {
+                    if (maxIndex >= 0) onSelectAll()
+                    return@onPreviewKeyEvent true
+                }
                 val isArrow = event.key == Key.DirectionLeft || event.key == Key.DirectionRight ||
                     event.key == Key.DirectionUp || event.key == Key.DirectionDown
                 if (isArrow && state.focusedIndex < 0 && maxIndex >= 0) {
                     onSetFocusedIndex(gridState.firstVisibleItemIndex.coerceIn(0, maxIndex))
                     return@onPreviewKeyEvent true
                 }
-                // Bare 1..9 toggles the focused photo in the Nth custom category — the keyboard
-                // path for filing into a category without leaving All Photos.
+                // Bare 1..9 files into the Nth custom category: the whole selection when one is
+                // armed, otherwise just the focused tile (the keyboard path for filing from All
+                // Photos without leaving it).
                 val slot = if (meta) null else digitSlot(event.key)
                 if (slot != null) {
-                    if (state.focusedIndex in 0..maxIndex) onToggleCustomCategoryAtFocus(slot)
+                    if (hasSelection) {
+                        onFileSelectionIntoCustom(slot)
+                    } else if (state.focusedIndex in 0..maxIndex) {
+                        onToggleCustomCategoryAtFocus(slot)
+                    }
                     return@onPreviewKeyEvent true
                 }
                 when (event.key) {
@@ -248,36 +282,55 @@ fun GridScreen(
                         true
                     }
                     Key.F -> if (meta) false else {
-                        onToggleMembershipAtFocus()
+                        if (hasSelection) onFileSelectionIntoFavourites() else onToggleMembershipAtFocus()
                         true
                     }
                     Key.Spacebar -> if (meta) false else {
-                        onToggleMembershipAtFocus()
+                        if (hasSelection) onFileSelectionIntoFavourites() else onToggleMembershipAtFocus()
                         true
                     }
-                    Key.Escape -> if (onBack != null) {
-                        onBack()
-                        true
-                    } else false
+                    // Esc clears an active selection first; only an already-empty grid pops the screen.
+                    Key.Escape -> when {
+                        hasSelection -> {
+                            onClearSelection()
+                            true
+                        }
+                        onBack != null -> {
+                            onBack()
+                            true
+                        }
+                        else -> false
+                    }
                     else -> false
                 }
             },
     ) {
-        GridTopBar(
-            scope = state.scope,
-            currentCategory = currentCategory,
-            photoCount = state.photos.size,
-            categoryEntries = categoryEntries,
-            isBusy = state.isBusy,
-            onBack = onBack,
-            onSelectCategory = { id -> onSelectCategory(gridState.firstVisibleItemIndex, id) },
-            onCreateCategory = onCreateCategory,
-            onRenameCategory = onRenameCategory,
-            onDeleteCategory = onDeleteCategory,
-            onExportTxt = onExportTxt,
-            onCopyToFolder = onCopyToFolder,
-            onChangeFolder = onChangeFolder,
-        )
+        if (state.hasSelection) {
+            GridSelectionTopBar(
+                selectedCount = state.selection.size,
+                customCategories = customCategories,
+                onFileIntoFavourites = onFileSelectionIntoFavourites,
+                onFileIntoCustom = onFileSelectionIntoCustom,
+                onCopySelection = onCopySelection,
+                onClearSelection = onClearSelection,
+            )
+        } else {
+            GridTopBar(
+                scope = state.scope,
+                currentCategory = currentCategory,
+                photoCount = state.photos.size,
+                categoryEntries = categoryEntries,
+                isBusy = state.isBusy,
+                onBack = onBack,
+                onSelectCategory = { id -> onSelectCategory(gridState.firstVisibleItemIndex, id) },
+                onCreateCategory = onCreateCategory,
+                onRenameCategory = onRenameCategory,
+                onDeleteCategory = onDeleteCategory,
+                onExportTxt = onExportTxt,
+                onCopyToFolder = onCopyToFolder,
+                onChangeFolder = onChangeFolder,
+            )
+        }
 
         if (state.isBusy) {
             BusyBar(label = state.progressLabel ?: "Working…")
@@ -318,7 +371,10 @@ fun GridScreen(
                             isMarked = photo.id in state.markedIds,
                             isFocused = index == state.focusedIndex,
                             isLastViewed = photo.id == state.lastViewedPhotoId,
+                            isSelected = photo.id in state.selection,
                             onClick = { onTileClick(index) },
+                            onToggleSelect = { onToggleSelection(index) },
+                            onRangeSelect = { onSelectRange(index) },
                             categoryBadges = categoryBadgesFor(photo, customCategories, state.memberships),
                         )
                     }
