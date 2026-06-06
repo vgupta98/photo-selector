@@ -49,3 +49,11 @@ sealed interface Screen {
         val returnScrollIndex: Int? = null,
     ) : Screen
 }
+
+/**
+ * Upper bound on how many photos `C` can open side by side at once (Compare is always 2; Survey
+ * takes 3 up to this). Past it the grid declines and toasts instead of opening: the survey grid is
+ * non-lazy and pins every tile's decode, and beyond a dozen the tiles are too small to pick between
+ * anyway — so a stray `Cmd+A` then `C` can't freeze the app or blow the image cache.
+ */
+const val MAX_SURVEY_PHOTOS = 12

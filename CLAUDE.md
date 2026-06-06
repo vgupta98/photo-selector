@@ -34,7 +34,10 @@ Clean architecture, single Gradle module, package
   stay synchronized. A grid `C` over three-plus selected tiles instead opens
   `Screen.Survey` — an overview-pick grid (`presentation/survey/`) carrying the
   selected indices: one tile is active, arrows/`Tab` move it, `F`/`1`-`9` file
-  it, no zoom. Grid-originated Compare/Survey return to the grid on `Esc`
+  it, no zoom. The side-by-side action is capped at `MAX_SURVEY_PHOTOS` (the
+  survey grid is non-lazy and pins every tile's decode); a larger selection is
+  declined at the grid with a toast rather than opened. Grid-originated
+  Compare/Survey return to the grid on `Esc`
   (`Compare.returnToGrid`, `Survey.returnScrollIndex`); browser-originated
   Compare still returns to the browser. Photos live in N flat per-root categories;
   **Favourites** is the built-in one (fixed id `favourites`, cannot be

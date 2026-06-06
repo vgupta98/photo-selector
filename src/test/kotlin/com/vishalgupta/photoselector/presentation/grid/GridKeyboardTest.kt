@@ -152,6 +152,7 @@ class GridKeyboardTest {
         onFileSelectionIntoFavourites: () -> Unit = {},
         onFileSelectionIntoCustom: (Int) -> Unit = {},
         onCompareSelection: (List<Int>, Int) -> Unit = { _, _ -> },
+        onSelectionTooLargeToCompare: () -> Unit = {},
     ) {
         GridScreen(
             state = state,
@@ -175,6 +176,7 @@ class GridKeyboardTest {
             onFileSelectionIntoFavourites = onFileSelectionIntoFavourites,
             onFileSelectionIntoCustom = onFileSelectionIntoCustom,
             onCompareSelection = onCompareSelection,
+            onSelectionTooLargeToCompare = onSelectionTooLargeToCompare,
         )
     }
 
@@ -321,5 +323,44 @@ class GridKeyboardTest {
         rule.waitForIdle()
 
         assertEquals("C needs a 2+ selection to open compare/survey", 0, calls)
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun cAboveTheCap_declinesInsteadOfOpening() {
+        val thirteen = (0 until 13).map { i ->
+            Photo(
+                id = PhotoId("p$i"),
+                absolutePath = Path.of("/photos/img$i.jpg"),
+                relativePath = "img$i.jpg",
+                fileName = "img$i.jpg",
+                sizeBytes = 1,
+                lastModifiedEpochMs = 0,
+            )
+        }
+        var opens = 0
+        var declines = 0
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    SelectionGrid(
+                        state = GridUiState(
+                            photos = thirteen,
+                            scope = CategoryScope.AllPhotos,
+                            selection = thirteen.map { it.id }.toSet(), // 13 > cap of 12
+                        ),
+                        onCompareSelection = { _, _ -> opens++ },
+                        onSelectionTooLargeToCompare = { declines++ },
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        rule.onRoot().performKeyInput { pressKey(Key.C) }
+        rule.waitForIdle()
+
+        assertEquals("13 selected is over the cap, so nothing opens", 0, opens)
+        assertEquals("it declines with feedback instead", 1, declines)
     }
 }

@@ -15,6 +15,7 @@ import com.vishalgupta.photoselector.presentation.StateHolder
 import com.vishalgupta.photoselector.presentation.common.CategoryToggle
 import com.vishalgupta.photoselector.presentation.common.customCategories
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
+import com.vishalgupta.photoselector.presentation.navigation.MAX_SURVEY_PHOTOS
 import com.vishalgupta.photoselector.presentation.navigation.activeCategoryId
 import com.vishalgupta.photoselector.presentation.navigation.slice
 import kotlinx.coroutines.Job
@@ -204,6 +205,11 @@ class GridViewModel(
     fun copySelectionTo(destination: Path, policy: ConflictPolicy) {
         val ids = _state.value.selection
         copyPhotos(_state.value.photos.filter { it.id in ids }, destination, policy)
+    }
+
+    /** `C` over more than the side-by-side cap: decline and say why rather than open a useless wall of tiles. */
+    fun notifySurveyCapExceeded() {
+        _state.update { it.copy(toast = "Select up to $MAX_SURVEY_PHOTOS photos to compare side by side") }
     }
 
     private fun bulkFileToast(category: String, requested: Int, added: Int): String = when {

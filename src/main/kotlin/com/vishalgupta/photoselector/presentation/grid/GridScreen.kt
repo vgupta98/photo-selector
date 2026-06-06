@@ -73,6 +73,7 @@ import com.vishalgupta.photoselector.presentation.designsystem.organism.GridTopB
 import com.vishalgupta.photoselector.presentation.designsystem.organism.PhotoThumbnail
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
+import com.vishalgupta.photoselector.presentation.navigation.MAX_SURVEY_PHOTOS
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -112,6 +113,7 @@ fun GridScreen(
         onChangeFolder = onChangeFolder,
         onSelectCategory = onSelectCategory,
         onCompareSelection = onCompareSelection,
+        onSelectionTooLargeToCompare = viewModel::notifySurveyCapExceeded,
         onCreateCategory = viewModel::createCategory,
         onRenameCategory = viewModel::renameCategory,
         onDeleteCategory = viewModel::deleteCategory,
@@ -184,6 +186,7 @@ fun GridScreen(
     onFileSelectionIntoCustom: (slot: Int) -> Unit = {},
     onCopySelection: (ConflictPolicy) -> Unit = {},
     onCompareSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit = { _, _ -> },
+    onSelectionTooLargeToCompare: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = initialScrollIndex)
@@ -244,10 +247,15 @@ fun GridScreen(
                     return@onPreviewKeyEvent true
                 }
                 // C opens the multi-selection side by side: 2 tiles -> Compare, 3+ -> Survey. The
-                // indices are taken in scope (reading) order; only fires with a 2+ selection.
+                // indices are taken in scope (reading) order; only fires with a 2+ selection. Past
+                // the cap it declines with a toast instead of opening an unusable wall of tiles.
                 if (!meta && event.key == Key.C && state.selection.size >= 2) {
-                    val indices = state.photos.indices.filter { state.photos[it].id in state.selection }
-                    onCompareSelection(indices, gridState.firstVisibleItemIndex)
+                    if (state.selection.size <= MAX_SURVEY_PHOTOS) {
+                        val indices = state.photos.indices.filter { state.photos[it].id in state.selection }
+                        onCompareSelection(indices, gridState.firstVisibleItemIndex)
+                    } else {
+                        onSelectionTooLargeToCompare()
+                    }
                     return@onPreviewKeyEvent true
                 }
                 val isArrow = event.key == Key.DirectionLeft || event.key == Key.DirectionRight ||

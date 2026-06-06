@@ -9,10 +9,10 @@ Built with Kotlin + Compose Multiplatform Desktop, following Clean Architecture.
 - **Browse** an entire folder tree of JPEG / PNG photos full-screen.
 - **Keyboard-first navigation** — `←` / `→` to move, `F` (or `Space`) to toggle Favourites, `1`…`9` to toggle the other categories.
 - **Categories** — sort photos into as many flat lists as you like (Selects, Maybes, For Album X…). **Favourites** is the built-in one; create, rename and delete the rest from the top bar. A photo can be in several at once.
-- **Multi-select & bulk filing** — in the grid, `Cmd`-click to pick out photos, `Shift`-click to extend a run, or `Cmd+A` to select everything in view; then file the whole selection into Favourites (`F`) or a category (`1`…`9`), copy just the selection to a folder, or press `C` to open the selection side by side (two photos to Compare, three or more to Survey). `Esc` clears it.
+- **Multi-select & bulk filing** — in the grid, `Cmd`-click to pick out photos, `Shift`-click to extend a run, or `Cmd+A` to select everything in view; then file the whole selection into Favourites (`F`) or a category (`1`…`9`), copy just the selection to a folder, or press `C` to open the selection side by side (two photos to Compare, three to twelve to Survey). `Esc` clears it.
 - **Persistent** — categories are stored as a single `.photo-selector-categories.json` file inside your photo folder. Switch folders and each retains its own lists.
 - **Compare** — press `C` to put two photos side by side with synchronized pan/zoom for choosing between near-identical frames; reach it from the browser (current + next) or by selecting exactly two tiles in the grid. `Tab` switches the active pane, `← →` swap one candidate, and `F` / `1`…`9` file the active pane.
-- **Survey** — select three or more tiles in the grid and press `C` to lay them out together for an at-a-glance pick. Arrows or `Tab` move the highlighted tile; `F` / `1`…`9` file it; `Esc` returns to the grid.
+- **Survey** — select three to twelve tiles in the grid and press `C` to lay them out together for an at-a-glance pick. Arrows or `Tab` move the highlighted tile; `F` / `1`…`9` file it; `Esc` returns to the grid.
 - **Category grids** with thumbnails; click any thumbnail to jump back to that photo in the browser.
 - **Toast feedback** on every Favourites toggle so you can never silently lose a selection.
 - **Export TXT** — write a category's photos as relative paths, one per line, UTF-8.
@@ -49,7 +49,7 @@ For developers:
 | `→` | Next photo |
 | `F` or `Space` | Toggle Favourites for current photo |
 | `1` … `9` | Toggle the current photo in the Nth custom category (grid + browser) |
-| `C` | Compare the current photo with its neighbour (browser), or open the grid selection side by side — 2 photos to Compare, 3+ to Survey |
+| `C` | Compare the current photo with its neighbour (browser), or open the grid selection side by side — 2 photos to Compare, 3–12 to Survey |
 | `Cmd`+`A` | Select every photo in the current grid |
 
 In **Compare**, `Tab` switches which pane is active, `← →` substitute the active pane's photo, `F` / `1`…`9` file the active pane, `+` / `−` / `0` zoom both panes, and `Esc` returns to the source (the browser, or the grid when you came from a selection).
