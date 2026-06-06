@@ -37,6 +37,9 @@ import com.vishalgupta.photoselector.presentation.designsystem.molecule.BrowserK
 import com.vishalgupta.photoselector.presentation.designsystem.organism.BrowserCategoryHud
 import com.vishalgupta.photoselector.presentation.grid.GridScreen
 import com.vishalgupta.photoselector.presentation.grid.GridUiState
+import com.vishalgupta.photoselector.presentation.survey.SurveyScreen
+import com.vishalgupta.photoselector.presentation.survey.SurveyTile
+import com.vishalgupta.photoselector.presentation.survey.SurveyUiState
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.rootpicker.RootFolderPickerScreen
 import com.vishalgupta.photoselector.presentation.rootpicker.RootPickerUiState
@@ -311,6 +314,29 @@ class ScreenSplitScreenshotTest {
         }
         rule.waitForIdle()
         rule.dumpScreenshot("grid-tile-feedback")
+    }
+
+    @Test
+    fun grid_messagePill() {
+        // Bulk / library-level notices (export, copy, the survey cap) now render in the app's pill
+        // chrome instead of a stock Material snackbar. Captured with the survey cap message.
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    Grid(
+                        state = GridUiState(
+                            photos = manyPhotos,
+                            scope = CategoryScope.AllPhotos,
+                            categories = categories,
+                            toast = "Select up to 12 photos to compare side by side",
+                        ),
+                        onBack = null,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("grid-message-pill")
     }
 
     @Test
@@ -770,6 +796,116 @@ class ScreenSplitScreenshotTest {
         }
         rule.waitForIdle()
         rule.dumpScreenshot("compare-read-only")
+    }
+
+    // --- Survey (3+ tiles overview) ---
+
+    private fun surveyTile(
+        index: Int,
+        photo: Photo,
+        loaded: Boolean = true,
+        isFavourite: Boolean = false,
+        memberships: Set<CategoryId> = emptySet(),
+    ) = SurveyTile(
+        index = index,
+        photo = photo,
+        bitmap = if (loaded) ImageBitmap(200, 150) else null,
+        isLoading = !loaded,
+        isFavourite = isFavourite,
+        memberships = memberships,
+    )
+
+    @androidx.compose.runtime.Composable
+    private fun Survey(state: SurveyUiState) {
+        SurveyScreen(
+            state = state,
+            onSetActive = {},
+            onMoveActive = {},
+            onToggleCategory = {},
+            onViewportSizeChanged = {},
+            onExit = {},
+        )
+    }
+
+    @Test
+    fun survey_threeUp() {
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.fillMaxSize()) {
+                    Survey(
+                        SurveyUiState(
+                            tiles = listOf(
+                                surveyTile(0, manyPhotos[0], isFavourite = true, memberships = setOf(Category.FAVOURITES_ID)),
+                                surveyTile(1, manyPhotos[1]),
+                                surveyTile(2, manyPhotos[2], memberships = setOf(selectsId)),
+                            ),
+                            activeTile = 1,
+                            totalInScope = manyPhotos.size,
+                            readOnly = false,
+                            categories = categories,
+                        ),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("survey-three-up")
+    }
+
+    @Test
+    fun survey_fourUpWithLoadingTile() {
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.fillMaxSize()) {
+                    Survey(
+                        SurveyUiState(
+                            tiles = listOf(
+                                surveyTile(0, manyPhotos[0]),
+                                surveyTile(1, manyPhotos[1], isFavourite = true, memberships = setOf(Category.FAVOURITES_ID)),
+                                surveyTile(2, manyPhotos[2], loaded = false),
+                                surveyTile(3, manyPhotos[3]),
+                            ),
+                            activeTile = 0,
+                            totalInScope = manyPhotos.size,
+                            readOnly = false,
+                            categories = categories,
+                        ),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("survey-four-up")
+    }
+
+    @Test
+    fun survey_twelveUp() {
+        // The dense end of the range (the MAX_SURVEY_PHOTOS cap) lays out 4x3. This is where tiles
+        // get smallest, so capture it to confirm the chrome and fitted tiles still read at that size.
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.fillMaxSize()) {
+                    Survey(
+                        SurveyUiState(
+                            tiles = (0 until 12).map { i ->
+                                surveyTile(
+                                    index = i,
+                                    photo = manyPhotos[i],
+                                    isFavourite = i == 0,
+                                    memberships = if (i == 0) setOf(Category.FAVOURITES_ID) else emptySet(),
+                                )
+                            },
+                            activeTile = 5,
+                            totalInScope = manyPhotos.size,
+                            readOnly = false,
+                            categories = categories,
+                        ),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("survey-twelve-up")
     }
 
     // --- BrowserCategoryHud ---

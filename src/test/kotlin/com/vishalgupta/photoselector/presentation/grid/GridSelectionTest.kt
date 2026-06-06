@@ -170,4 +170,17 @@ class GridSelectionTest {
 
         vm.onClear()
     }
+
+    @Test
+    fun notifySurveyCapExceeded_surfacesAToast() = runBlocking {
+        val vm = viewModel(FakeCategoriesRepository(categories))
+        vm.awaitPhotos()
+
+        vm.notifySurveyCapExceeded()
+
+        val toast = vm.state.value.toast
+        assertTrue("toast names the cap, got: $toast", toast != null && toast.contains("12"))
+
+        vm.onClear()
+    }
 }
