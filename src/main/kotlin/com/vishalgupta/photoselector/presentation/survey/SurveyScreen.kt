@@ -58,8 +58,8 @@ fun SurveyScreen(
     DisposableEffect(viewModel) { onDispose { viewModel.onClear() } }
     val state by viewModel.state.collectAsState()
 
-    LaunchedEffect(Unit) { viewModel.loadIfNeeded() }
-
+    // Decoding is driven entirely by the reported viewport (onViewportSizeChanged) so tiles decode
+    // once, at their real cell size — no eager decode at a guessed default that gets thrown away.
     SurveyScreen(
         state = state,
         systemActions = systemActions,
@@ -74,9 +74,9 @@ fun SurveyScreen(
 /**
  * Stateless survey overview: the selected tiles laid out in an even, non-scrolling grid (every tile
  * stays on screen — it's an overview), one of them active. Keyboard model: `Tab` and `← → ↑ ↓` move
- * the active tile, `F`/`1-9` file it, `Space`/`R`/`O` act on it via the OS, `Esc` returns to the
- * grid. No zoom — survey is for picking between frames at a glance, not pixel-peeping (that's
- * compare).
+ * the active tile, `F`/`1-9` file it, `Space`/`R`/`O` act on it via the OS (when [systemActions] is
+ * wired), `Esc` returns to the grid. No zoom — survey is for picking between frames at a glance, not
+ * pixel-peeping (that's compare).
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -165,13 +165,14 @@ fun SurveyScreen(
                         },
                     verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs),
                 ) {
-                    state.tiles.chunked(cols).forEach { rowTiles ->
+                    // Carry each tile's flat position alongside it so the active highlight and
+                    // onActivate target never depend on tile value-equality (indexOf).
+                    state.tiles.withIndex().chunked(cols).forEach { rowTiles ->
                         Row(
                             modifier = Modifier.fillMaxWidth().weight(1f),
                             horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs),
                         ) {
-                            rowTiles.forEach { tile ->
-                                val pos = state.tiles.indexOf(tile)
+                            rowTiles.forEach { (pos, tile) ->
                                 SurveyTileView(
                                     tile = tile,
                                     isActive = pos == state.activeTile,

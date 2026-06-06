@@ -168,10 +168,13 @@ class SurveyViewModelTest {
     }
 
     @Test
-    fun loadIfNeeded_decodesEveryTile() = runBlocking {
+    fun reportingTheViewport_decodesEveryTile() = runBlocking {
         val vm = viewModel(FakeCategoriesRepository(categories), indices = listOf(1, 3, 4), decode = true)
 
-        vm.loadIfNeeded()
+        // No decode happens until the real per-tile viewport is reported.
+        assertNull("no bitmap before the viewport is known", vm.state.value.tiles.firstOrNull { it.bitmap != null })
+
+        vm.setViewportLongEdgePx(512)
         vm.await { st -> st.tiles.all { it.bitmap != null && !it.isLoading } }
 
         assertNull(vm.state.value.tiles.firstOrNull { it.bitmap == null })

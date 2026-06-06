@@ -878,6 +878,36 @@ class ScreenSplitScreenshotTest {
         rule.dumpScreenshot("survey-four-up")
     }
 
+    @Test
+    fun survey_twelveUp() {
+        // The dense end of the range (the MAX_SURVEY_PHOTOS cap) lays out 4x3. This is where tiles
+        // get smallest, so capture it to confirm the chrome and fitted tiles still read at that size.
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.fillMaxSize()) {
+                    Survey(
+                        SurveyUiState(
+                            tiles = (0 until 12).map { i ->
+                                surveyTile(
+                                    index = i,
+                                    photo = manyPhotos[i],
+                                    isFavourite = i == 0,
+                                    memberships = if (i == 0) setOf(Category.FAVOURITES_ID) else emptySet(),
+                                )
+                            },
+                            activeTile = 5,
+                            totalInScope = manyPhotos.size,
+                            readOnly = false,
+                            categories = categories,
+                        ),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("survey-twelve-up")
+    }
+
     // --- BrowserCategoryHud ---
     // The HUD auto-hides inside the live browser (reveal on key/mouse), so its appearance
     // is captured by rendering the organism directly over a photo-like dark backdrop.

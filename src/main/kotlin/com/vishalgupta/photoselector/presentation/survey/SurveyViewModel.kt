@@ -94,7 +94,9 @@ class SurveyViewModel(
     val state: StateFlow<SurveyUiState> = _state.asStateFlow()
 
     private val loadJobs = mutableMapOf<Int, Job>()
-    private var viewportLongEdgePx: Int = 1024
+    // 0 = viewport not reported yet. Decoding waits for the real per-tile size so we don't decode
+    // every tile once at a guessed default and immediately throw it away (a survey can be 12 tiles).
+    private var viewportLongEdgePx: Int = 0
 
     init {
         combine(categoriesFlow, membershipsFlow, isReadOnly) { cats, members, readOnly ->
@@ -118,6 +120,11 @@ class SurveyViewModel(
             .launchIn(scope)
     }
 
+    /**
+     * Report the real per-tile viewport and (re)decode at it. This is the only decode trigger: the
+     * first call — once the layout reports a size — pins every tile and decodes them at their actual
+     * cell size; later calls (a window resize) re-decode at the new size.
+     */
     fun setViewportLongEdgePx(px: Int) {
         if (px <= 0 || px == viewportLongEdgePx) return
         viewportLongEdgePx = px
@@ -129,7 +136,12 @@ class SurveyViewModel(
         _state.update { if (pos in it.tiles.indices) it.copy(activeTile = pos) else it }
     }
 
-    /** Move the active tile by [delta] through the survey, clamped at the ends (no wrap). */
+    /**
+     * Move the active tile by [delta] through the flat tile list, clamped at the ends (no wrap). The
+     * screen passes ±1 for left/right and ±cols for up/down: vertical movement is a flat index jump,
+     * not column-aware, so on a ragged last row `↓` can clamp to the current tile. Intentional — the
+     * survey is a small at-a-glance grid, and `Tab` always reaches every tile.
+     */
     fun moveActive(delta: Int) {
         _state.update { st ->
             if (st.tiles.isEmpty()) return@update st
@@ -142,11 +154,6 @@ class SurveyViewModel(
         val photo = _state.value.active?.photo ?: return
         if (categoriesFlow.value.none { it.id == categoryId }) return
         scope.launch { categories.toggleMembership(root, categoryId, photo.id) }
-    }
-
-    fun loadIfNeeded() {
-        pinTiles()
-        _state.value.tiles.forEachIndexed { pos, tile -> if (tile.bitmap == null) loadTile(pos) }
     }
 
     private fun loadTile(pos: Int) {
