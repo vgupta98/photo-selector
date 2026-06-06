@@ -27,9 +27,6 @@ import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Snackbar
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -191,7 +188,6 @@ fun GridScreen(
 ) {
     val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = initialScrollIndex)
     val focusRequester = remember { FocusRequester() }
-    val snackbarHostState = remember { SnackbarHostState() }
 
     val currentCategory: Category? = (state.scope as? CategoryScope.Category)
         ?.let { sc -> state.categories.firstOrNull { it.id == sc.id } }
@@ -206,8 +202,8 @@ fun GridScreen(
     }
 
     LaunchedEffect(state.toast) {
-        state.toast?.let {
-            snackbarHostState.showSnackbar(it)
+        if (state.toast != null) {
+            delay(TOAST_DURATION_MS)
             onDismissToast()
         }
     }
@@ -411,9 +407,15 @@ fun GridScreen(
                 )
             }
 
-            SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter)) {
-                Snackbar(snackbarData = it)
-            }
+            // Result/notice for bulk and library-level actions (export, copy, bulk file, the survey
+            // cap notice) — rendered in the app's pill chrome, not a stock Material snackbar, so all
+            // of the grid's transient feedback reads as one family.
+            GridMessagePill(
+                message = state.toast,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = AppTheme.spacing.lg),
+            )
 
             // Transient confirmation that the last F / 1..9 toggle landed and what it did. The
             // tile's star/badge shows the resulting state; this names the action, the way the
@@ -523,6 +525,30 @@ private fun GridEmptyState(
  * resolves, and holds the last non-null [toast] so its text survives the exit fade. Colour
  * encodes added vs removed; favourites also keep their star — matching the browser's pill.
  */
+/** How long a [GridMessagePill] result/notice stays up before it fades out. */
+private const val TOAST_DURATION_MS = 2500L
+
+/**
+ * Result/notice pill for bulk and library-level actions (export saved, copy report, the survey
+ * cap notice). Uses the shared [PillToast] chrome and the same latch + fade as [GridTogglePill], so
+ * the grid's transient feedback is one consistent family rather than a stock Material snackbar.
+ * The caller drives [message] from `state.toast` and clears it on a timer.
+ */
+@Composable
+private fun GridMessagePill(message: String?, modifier: Modifier = Modifier) {
+    // Latch the last message so it stays rendered through the fade-out after the state clears.
+    var displayed by remember { mutableStateOf<String?>(null) }
+    if (message != null) displayed = message
+    AnimatedVisibility(
+        visible = message != null,
+        enter = fadeIn(),
+        exit = fadeOut(),
+        modifier = modifier,
+    ) {
+        displayed?.let { PillToast(text = it) }
+    }
+}
+
 @Composable
 private fun GridTogglePill(toast: CategoryToggle?, modifier: Modifier = Modifier) {
     var displayed by remember { mutableStateOf<CategoryToggle?>(null) }

@@ -317,6 +317,29 @@ class ScreenSplitScreenshotTest {
     }
 
     @Test
+    fun grid_messagePill() {
+        // Bulk / library-level notices (export, copy, the survey cap) now render in the app's pill
+        // chrome instead of a stock Material snackbar. Captured with the survey cap message.
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    Grid(
+                        state = GridUiState(
+                            photos = manyPhotos,
+                            scope = CategoryScope.AllPhotos,
+                            categories = categories,
+                            toast = "Select up to 12 photos to compare side by side",
+                        ),
+                        onBack = null,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("grid-message-pill")
+    }
+
+    @Test
     fun grid_categoryMenuOpen() {
         rule.setContent {
             AppTheme {
