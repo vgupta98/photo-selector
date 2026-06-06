@@ -27,6 +27,7 @@ import com.vishalgupta.photoselector.domain.usecase.ScanRootFolderUseCase
 import com.vishalgupta.photoselector.presentation.browser.BrowserViewModel
 import com.vishalgupta.photoselector.presentation.compare.CompareViewModel
 import com.vishalgupta.photoselector.presentation.grid.GridViewModel
+import com.vishalgupta.photoselector.presentation.survey.SurveyViewModel
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.navigation.activeCategoryId
 import com.vishalgupta.photoselector.presentation.navigation.slice
@@ -153,6 +154,20 @@ class AppContainer {
         photos = photosForScope(root, scope),
         leftIndex = leftIndex,
         rightIndex = rightIndex,
+        categories = categoriesRepository,
+        imageLoader = imageLoader,
+        isReadOnly = categoriesRepository.isReadOnly(root),
+        parentJob = folderJob,
+    )
+
+    fun surveyViewModel(
+        root: RootFolder,
+        scope: CategoryScope,
+        indices: List<Int>,
+    ): SurveyViewModel = SurveyViewModel(
+        root = root,
+        photos = photosForScope(root, scope),
+        indices = indices,
         categories = categoriesRepository,
         imageLoader = imageLoader,
         isReadOnly = categoriesRepository.isReadOnly(root),

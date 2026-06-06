@@ -151,6 +151,7 @@ class GridKeyboardTest {
         onClearSelection: () -> Unit = {},
         onFileSelectionIntoFavourites: () -> Unit = {},
         onFileSelectionIntoCustom: (Int) -> Unit = {},
+        onCompareSelection: (List<Int>, Int) -> Unit = { _, _ -> },
     ) {
         GridScreen(
             state = state,
@@ -173,6 +174,18 @@ class GridKeyboardTest {
             onClearSelection = onClearSelection,
             onFileSelectionIntoFavourites = onFileSelectionIntoFavourites,
             onFileSelectionIntoCustom = onFileSelectionIntoCustom,
+            onCompareSelection = onCompareSelection,
+        )
+    }
+
+    private val fourPhotos = (0 until 4).map { i ->
+        Photo(
+            id = PhotoId("p$i"),
+            absolutePath = Path.of("/photos/img$i.jpg"),
+            relativePath = "img$i.jpg",
+            fileName = "img$i.jpg",
+            sizeBytes = 1,
+            lastModifiedEpochMs = 0,
         )
     }
 
@@ -255,5 +268,58 @@ class GridKeyboardTest {
 
         assertEquals(1, favouriteFiles)
         assertTrue("digit files the selection into slot 0", customSlots == listOf(0))
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun cWithSelection_handsOffTheSelectedIndicesInScopeOrder() {
+        var captured: List<Int>? = null
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    SelectionGrid(
+                        // Select p1 + p3 (out of order on purpose) -> indices come back ascending.
+                        state = GridUiState(
+                            photos = fourPhotos,
+                            scope = CategoryScope.AllPhotos,
+                            selection = setOf(fourPhotos[3].id, fourPhotos[1].id),
+                        ),
+                        onCompareSelection = { indices, _ -> captured = indices },
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        rule.onRoot().performKeyInput { pressKey(Key.C) }
+        rule.waitForIdle()
+
+        assertEquals(listOf(1, 3), captured)
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun cWithFewerThanTwoSelected_doesNothing() {
+        var calls = 0
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    SelectionGrid(
+                        state = GridUiState(
+                            photos = fourPhotos,
+                            scope = CategoryScope.AllPhotos,
+                            selection = setOf(fourPhotos[0].id),
+                        ),
+                        onCompareSelection = { _, _ -> calls++ },
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        rule.onRoot().performKeyInput { pressKey(Key.C) }
+        rule.waitForIdle()
+
+        assertEquals("C needs a 2+ selection to open compare/survey", 0, calls)
     }
 }

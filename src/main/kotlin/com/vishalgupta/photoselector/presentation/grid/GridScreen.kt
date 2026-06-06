@@ -87,6 +87,7 @@ fun GridScreen(
     onTileClick: (index: Int) -> Unit,
     onChangeFolder: () -> Unit,
     onSelectCategory: (currentScrollIndex: Int, id: CategoryId) -> Unit,
+    onCompareSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit,
     onBack: (() -> Unit)?,
 ) {
     DisposableEffect(viewModel) { onDispose { viewModel.onClear() } }
@@ -110,6 +111,7 @@ fun GridScreen(
         onTileClick = onTileClick,
         onChangeFolder = onChangeFolder,
         onSelectCategory = onSelectCategory,
+        onCompareSelection = onCompareSelection,
         onCreateCategory = viewModel::createCategory,
         onRenameCategory = viewModel::renameCategory,
         onDeleteCategory = viewModel::deleteCategory,
@@ -181,6 +183,7 @@ fun GridScreen(
     onFileSelectionIntoFavourites: () -> Unit = {},
     onFileSelectionIntoCustom: (slot: Int) -> Unit = {},
     onCopySelection: (ConflictPolicy) -> Unit = {},
+    onCompareSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = initialScrollIndex)
@@ -238,6 +241,13 @@ fun GridScreen(
                 // Cmd+A arms a multi-select over the whole scope.
                 if (meta && event.key == Key.A) {
                     if (maxIndex >= 0) onSelectAll()
+                    return@onPreviewKeyEvent true
+                }
+                // C opens the multi-selection side by side: 2 tiles -> Compare, 3+ -> Survey. The
+                // indices are taken in scope (reading) order; only fires with a 2+ selection.
+                if (!meta && event.key == Key.C && state.selection.size >= 2) {
+                    val indices = state.photos.indices.filter { state.photos[it].id in state.selection }
+                    onCompareSelection(indices, gridState.firstVisibleItemIndex)
                     return@onPreviewKeyEvent true
                 }
                 val isArrow = event.key == Key.DirectionLeft || event.key == Key.DirectionRight ||
