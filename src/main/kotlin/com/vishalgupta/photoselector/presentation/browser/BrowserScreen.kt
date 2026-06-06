@@ -51,6 +51,7 @@ import com.vishalgupta.photoselector.presentation.common.digitSlot
 import com.vishalgupta.photoselector.presentation.designsystem.atom.FavouriteStar
 import com.vishalgupta.photoselector.presentation.designsystem.atom.LoadingIndicator
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BrowserKeyboardLegend
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.ConfirmDialog
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ErrorPlaceholder
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToast
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToastDefaults
@@ -75,6 +76,7 @@ fun BrowserScreen(
     DisposableEffect(viewModel) { onDispose { viewModel.onClear() } }
     val state by viewModel.state.collectAsState()
     var toast by remember { mutableStateOf<CategoryToastState?>(null) }
+    var deleteMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.loadIfNeeded()
@@ -88,6 +90,14 @@ fun BrowserScreen(
         }
     }
 
+    LaunchedEffect(viewModel) {
+        viewModel.deleteEvents.collectLatest { message ->
+            deleteMessage = message
+            delay(1600)
+            deleteMessage = null
+        }
+    }
+
     LaunchedEffect(state.currentPhoto?.id) {
         toast = null
     }
@@ -95,10 +105,12 @@ fun BrowserScreen(
     BrowserScreen(
         state = state,
         toast = toast,
+        deleteMessage = deleteMessage,
         systemActions = systemActions,
         onPrevious = viewModel::previous,
         onNext = viewModel::next,
         onToggleCategory = viewModel::toggleCategory,
+        onDeleteCurrent = viewModel::deleteCurrent,
         onViewportSizeChanged = viewModel::setViewportLongEdgePx,
         onOpenFavourites = onOpenFavourites,
         onChangeFolder = onChangeFolder,
@@ -121,10 +133,14 @@ fun BrowserScreen(
     onChangeFolder: () -> Unit,
     onBackToGrid: () -> Unit,
     onCompare: () -> Unit = {},
+    deleteMessage: String? = null,
+    onDeleteCurrent: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val focusRequester = remember { FocusRequester() }
     val zoom = rememberZoomState()
+    // Open/closed state of the move-to-Trash confirmation; Cmd+Delete arms it.
+    var confirmingDelete by remember { mutableStateOf(false) }
 
     // The HUD auto-hides; any handled keystroke (and, via HoverOverlay, mouse movement)
     // reveals it. Bumping this token restarts the hide timer.
@@ -154,6 +170,10 @@ fun BrowserScreen(
     var displayedToast by remember { mutableStateOf<CategoryToastState?>(null) }
     if (toast != null) displayedToast = toast
 
+    // Same latch for the delete confirmation/failure message.
+    var displayedDeleteMessage by remember { mutableStateOf<String?>(null) }
+    if (deleteMessage != null) displayedDeleteMessage = deleteMessage
+
     Box(
         modifier
             .fillMaxSize()
@@ -167,6 +187,13 @@ fun BrowserScreen(
                 val slot = if (meta) null else digitSlot(event.key)
                 if (slot != null) {
                     state.categories.customCategories().getOrNull(slot)?.let { onToggleCategory(it.id) }
+                    revealHud++
+                    return@onPreviewKeyEvent true
+                }
+                // Cmd+Delete (Cmd+Backspace on a Mac keyboard) arms the move-to-Trash confirmation
+                // for the photo on screen — the macOS "move to trash" chord.
+                if (meta && (event.key == Key.Backspace || event.key == Key.Delete)) {
+                    if (state.currentPhoto != null) confirmingDelete = true
                     revealHud++
                     return@onPreviewKeyEvent true
                 }
@@ -321,6 +348,31 @@ fun BrowserScreen(
                     },
                 )
             }
+        }
+
+        AnimatedVisibility(
+            visible = deleteMessage != null,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = AppTheme.dimens.browserToastBottomInset),
+        ) {
+            displayedDeleteMessage?.let { PillToast(text = it, colors = PillToastDefaults.removedColors()) }
+        }
+
+        if (confirmingDelete) {
+            ConfirmDialog(
+                title = "Move this photo to Trash?",
+                message = "It will be moved to the macOS Trash. You can restore it from there.",
+                confirmLabel = "Move to Trash",
+                confirmDestructive = true,
+                onConfirm = {
+                    confirmingDelete = false
+                    onDeleteCurrent()
+                },
+                onDismiss = { confirmingDelete = false },
+            )
         }
     }
 }

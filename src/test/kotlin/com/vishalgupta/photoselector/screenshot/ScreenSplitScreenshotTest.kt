@@ -12,13 +12,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.withKeyDown
 import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.model.Category
@@ -260,6 +266,34 @@ class ScreenSplitScreenshotTest {
         }
         rule.waitForIdle()
         rule.dumpScreenshot("grid-multi-select")
+    }
+
+    @Test
+    fun grid_deleteConfirm() {
+        // The Delete button in the selection bar is a destructive action, so it opens an
+        // error-tinted confirm naming the count before anything is moved to the Trash. Capture
+        // the dialog so the copy and the destructive styling stay honest.
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(1100.dp, 700.dp)) {
+                    Grid(
+                        state = GridUiState(
+                            photos = manyPhotos,
+                            scope = CategoryScope.AllPhotos,
+                            categories = categories,
+                            selection = setOf(PhotoId("p2"), PhotoId("p3"), PhotoId("p6")),
+                        ),
+                        onBack = null,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("Delete").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("Move 3 photos to Trash?").assertIsDisplayed()
+        // The dialog renders in its own popup root; capture that, not the base screen.
+        rule.dumpScreenshot("grid-delete-confirm", rule.onAllNodes(isRoot()).onLast())
     }
 
     @Test
@@ -678,6 +712,44 @@ class ScreenSplitScreenshotTest {
         rule.waitForIdle()
         rule.onNodeWithText("Change folder?").assertIsDisplayed()
         rule.dumpScreenshot("browser-change-folder-confirm", rule.onAllNodes(isRoot()).onLast())
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun browser_deleteConfirm() {
+        // Cmd+Delete in the browser arms the same destructive move-to-Trash confirm as the grid,
+        // scoped to the single photo on screen. Driven by the keyboard since there's no button.
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    BrowserScreen(
+                        state = BrowserUiState(
+                            photos = testPhotos,
+                            currentIndex = 0,
+                            currentPhoto = testPhotos[0],
+                            currentBitmap = ImageBitmap(200, 150),
+                            isLoadingBitmap = false,
+                            isCurrentFavourite = false,
+                            favouriteCount = 0,
+                            readOnly = false,
+                        ),
+                        toast = null,
+                        onPrevious = {},
+                        onNext = {},
+                        onToggleCategory = {},
+                        onViewportSizeChanged = {},
+                        onOpenFavourites = {},
+                        onChangeFolder = {},
+                        onBackToGrid = {},
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onRoot().performKeyInput { withKeyDown(Key.MetaLeft) { pressKey(Key.Backspace) } }
+        rule.waitForIdle()
+        rule.onNodeWithText("Move this photo to Trash?").assertIsDisplayed()
+        rule.dumpScreenshot("browser-delete-confirm", rule.onAllNodes(isRoot()).onLast())
     }
 
     // --- CompareScreen ---

@@ -11,8 +11,11 @@ import com.vishalgupta.photoselector.domain.repository.CategoriesRepository
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
 import com.vishalgupta.photoselector.domain.repository.CopyReport
 import com.vishalgupta.photoselector.domain.repository.PhotoExporter
+import com.vishalgupta.photoselector.domain.repository.PhotoTrash
+import com.vishalgupta.photoselector.domain.repository.TrashReport
 import com.vishalgupta.photoselector.domain.usecase.CopyPhotosToFolderUseCase
 import com.vishalgupta.photoselector.domain.usecase.ExportPhotosTxtUseCase
+import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,6 +70,11 @@ class GridSelectionTest {
         ): CopyReport = CopyReport(0, 0, emptyList())
     }
 
+    private val noOpTrash = object : PhotoTrash {
+        override suspend fun moveToTrash(photos: List<Photo>): TrashReport =
+            TrashReport(trashed = photos.size, failed = emptyList())
+    }
+
     private class FakeCategoriesRepository(initial: List<Category>) : CategoriesRepository {
         private val cats = MutableStateFlow(initial)
         private val members = MutableStateFlow<Map<CategoryId, Set<PhotoId>>>(emptyMap())
@@ -87,10 +95,19 @@ class GridSelectionTest {
             members.value = members.value + (id to (current + added))
             return added.size
         }
+        override suspend fun removeMemberships(root: RootFolder, photos: Collection<PhotoId>) {
+            val toRemove = photos.toSet()
+            members.value = members.value.mapValues { (_, ids) -> ids - toRemove }
+        }
         override suspend fun clearContext() {}
     }
 
-    private fun viewModel(repo: CategoriesRepository): GridViewModel = GridViewModel(
+    private val deletedRoots = mutableListOf<Set<PhotoId>>()
+
+    private fun viewModel(
+        repo: CategoriesRepository,
+        trash: PhotoTrash = noOpTrash,
+    ): GridViewModel = GridViewModel(
         root = RootFolder(Path.of("/photos")),
         allPhotos = photos,
         categoryScope = CategoryScope.AllPhotos,
@@ -98,7 +115,9 @@ class GridSelectionTest {
         categories = repo,
         exportTxt = ExportPhotosTxtUseCase(noOpExporter),
         copyToFolder = CopyPhotosToFolderUseCase(noOpExporter),
+        moveToTrash = MovePhotosToTrashUseCase(trash),
         imageLoader = noOpImageLoader,
+        onPhotosDeleted = { ids -> deletedRoots += ids },
     )
 
     private suspend fun GridViewModel.awaitPhotos() {
@@ -167,6 +186,59 @@ class GridSelectionTest {
         assertEquals(1, repo.addCalls.size)
         assertEquals(selectsId, repo.addCalls.single().first)
         assertEquals(setOf(photos[0].id, photos[3].id, photos[5].id), repo.addCalls.single().second)
+
+        vm.onClear()
+    }
+
+    @Test
+    fun deleteSelection_trashesDropsFromListPurgesCategoriesAndNotifiesContainer() = runBlocking {
+        val root = RootFolder(Path.of("/photos"))
+        val repo = FakeCategoriesRepository(categories)
+        // Pre-file two of the about-to-be-deleted photos so we can prove they get purged.
+        repo.addMemberships(root, selectsId, setOf(photos[0].id, photos[3].id))
+        val vm = viewModel(repo)
+        vm.awaitPhotos()
+
+        vm.toggleSelection(0)
+        vm.toggleSelection(3)
+        vm.deleteSelection()
+
+        withTimeout(2_000) { vm.state.first { it.toast != null && !it.isBusy } }
+        val st = vm.state.value
+        assertEquals("two photos left the visible list", photos.size - 2, st.photos.size)
+        assertTrue(st.photos.none { it.id == photos[0].id || it.id == photos[3].id })
+        assertTrue("selection cleared after delete", st.selection.isEmpty())
+        assertTrue("toast names the Trash, got: ${st.toast}", st.toast!!.contains("Trash"))
+
+        // Purged from every category, and the container was told which ids went.
+        val members = repo.observeMemberships(root).value[selectsId].orEmpty()
+        assertTrue(photos[0].id !in members && photos[3].id !in members)
+        assertEquals(setOf(photos[0].id, photos[3].id), deletedRoots.flatten().toSet())
+
+        vm.onClear()
+    }
+
+    @Test
+    fun deleteSelection_keepsPhotosThatFailedToTrash() = runBlocking {
+        // Trash everything except the first target, which "fails" (e.g. locked file).
+        val failingFirst = object : PhotoTrash {
+            override suspend fun moveToTrash(photos: List<Photo>): TrashReport {
+                val failed = photos.take(1).map { it to RuntimeException("locked") }
+                return TrashReport(trashed = photos.size - failed.size, failed = failed)
+            }
+        }
+        val vm = viewModel(FakeCategoriesRepository(categories), failingFirst)
+        vm.awaitPhotos()
+
+        vm.toggleSelection(0)
+        vm.toggleSelection(1)
+        vm.deleteSelection()
+
+        withTimeout(2_000) { vm.state.first { it.toast != null && !it.isBusy } }
+        val st = vm.state.value
+        assertEquals("only the successfully trashed photo left", photos.size - 1, st.photos.size)
+        assertTrue("the failed photo stays put", st.photos.any { it.id == photos[0].id })
+        assertTrue("toast reports the failure, got: ${st.toast}", st.toast!!.contains("failed"))
 
         vm.onClear()
     }

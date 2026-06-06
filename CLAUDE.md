@@ -12,7 +12,8 @@ Clean architecture, single Gradle module, package
 - `domain/` — entities (`Photo`, `RootFolder`, `PhotoId`, `Category`,
   `CategoryId`), repository interfaces, use cases. No framework dependencies.
 - `data/` — repository implementations: `filesystem/`, `categories/`,
-  `image/` (decoding), `format/`, `export/`, plus `io/` (the shared
+  `image/` (decoding), `format/`, `export/`, `trash/` (move-to-Trash via
+  `java.awt.Desktop.moveToTrash`), plus `io/` (the shared
   `AtomicJsonWriter`).
 - `presentation/` — Compose UI + view models, organised by screen
   (`rootpicker/`, `grid/`, `browser/`, `compare/`, `survey/`), plus

@@ -71,6 +71,7 @@ class SurveyViewModelTest {
             return photo in next
         }
         override suspend fun addMemberships(root: RootFolder, id: CategoryId, photos: Collection<PhotoId>): Int = 0
+        override suspend fun removeMemberships(root: RootFolder, photos: Collection<PhotoId>) {}
         override suspend fun clearContext() {}
     }
 
