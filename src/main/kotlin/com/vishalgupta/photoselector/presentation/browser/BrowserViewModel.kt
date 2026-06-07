@@ -12,6 +12,8 @@ import com.vishalgupta.photoselector.domain.repository.CategoriesRepository
 import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
 import com.vishalgupta.photoselector.presentation.StateHolder
 import com.vishalgupta.photoselector.presentation.common.CategoryToggle
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -25,6 +27,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.swing.Swing
 
 data class BrowserUiState(
     val photos: List<Photo>,
@@ -64,9 +67,10 @@ class BrowserViewModel(
     private val imageLoader: ImageLoader,
     private val isReadOnly: StateFlow<Boolean>,
     parentJob: Job? = null,
+    dispatcher: CoroutineDispatcher = Dispatchers.Swing,
     private val onPositionChanged: ((BrowsePosition) -> Unit)? = null,
     private val onPhotosDeleted: ((Set<PhotoId>) -> Unit)? = null,
-) : StateHolder(parentJob) {
+) : StateHolder(parentJob, dispatcher) {
 
     // The HUD shows every category and toggles any of them; F still maps to the built-in
     // Favourites regardless of which category grid the user paged in from.
@@ -209,7 +213,12 @@ class BrowserViewModel(
      * [deleteEvents]. The screen confirms first; this performs the delete.
      */
     fun deleteCurrent() {
-        val photo = _state.value.currentPhoto ?: return
+        // Snapshot the target and its index together, before the suspend: if the user navigates
+        // while the move is in flight, the deleted photo and the landing position must come from
+        // the same frame, or focus lands a slot off the reel.
+        val snapshot = _state.value
+        val photo = snapshot.currentPhoto ?: return
+        val idx = snapshot.currentIndex
         scope.launch {
             val report = try {
                 moveToTrash.invoke(listOf(photo))
@@ -222,7 +231,6 @@ class BrowserViewModel(
                 return@launch
             }
             val deletedId = photo.id
-            val idx = _state.value.currentIndex
             photos = photos.filterNot { it.id == deletedId }
             categories.removeMemberships(root, setOf(deletedId))
             onPhotosDeleted?.invoke(setOf(deletedId))
