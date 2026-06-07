@@ -98,12 +98,12 @@ class AppContainer {
     private var scannedPhotos: List<Photo> = emptyList()
     private var scannedRoot: RootFolder? = null
 
-    fun photosFor(root: RootFolder): List<Photo> =
+    private fun photosFor(root: RootFolder): List<Photo> =
         if (scannedRoot?.path == root.path) scannedPhotos else emptyList()
 
     fun loadBrowsePosition(root: RootFolder): BrowsePosition = browsePositionRepository.load(root)
 
-    fun setScanResult(root: RootFolder, photos: List<Photo>) {
+    private fun setScanResult(root: RootFolder, photos: List<Photo>) {
         scannedRoot = root
         scannedPhotos = photos
     }
@@ -113,7 +113,7 @@ class AppContainer {
      * (navigation rebuilds every view model from [photosFor]) is constructed without them. The
      * live view model that triggered the delete updates its own in-memory copy separately.
      */
-    fun removeScannedPhotos(ids: Set<PhotoId>) {
+    private fun removeScannedPhotos(ids: Set<PhotoId>) {
         if (ids.isEmpty()) return
         scannedPhotos = scannedPhotos.filterNot { it.id in ids }
     }
