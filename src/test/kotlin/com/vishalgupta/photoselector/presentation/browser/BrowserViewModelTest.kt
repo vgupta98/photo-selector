@@ -2,21 +2,17 @@ package com.vishalgupta.photoselector.presentation.browser
 
 import androidx.compose.ui.graphics.ImageBitmap
 import com.vishalgupta.photoselector.data.image.ImageLoader
-import com.vishalgupta.photoselector.domain.model.Category
-import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
-import com.vishalgupta.photoselector.domain.repository.CategoriesRepository
 import com.vishalgupta.photoselector.domain.repository.PhotoTrash
 import com.vishalgupta.photoselector.domain.repository.TrashReport
 import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
+import com.vishalgupta.photoselector.testing.FakeCategoriesRepository
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -53,26 +49,6 @@ class BrowserViewModelTest {
         override fun evictAll() {}
         override fun pin(id: PhotoId) {}
         override fun unpinAllExcept(id: PhotoId?) {}
-    }
-
-    private class FakeCategoriesRepository : CategoriesRepository {
-        private val cats = MutableStateFlow(listOf(Category.favourites()))
-        private val members = MutableStateFlow<Map<CategoryId, Set<PhotoId>>>(emptyMap())
-        private val readOnly = MutableStateFlow(false)
-
-        override fun observeCategories(root: RootFolder): StateFlow<List<Category>> = cats.asStateFlow()
-        override fun observeMemberships(root: RootFolder): StateFlow<Map<CategoryId, Set<PhotoId>>> = members.asStateFlow()
-        override fun isReadOnly(root: RootFolder): StateFlow<Boolean> = readOnly.asStateFlow()
-        override suspend fun create(root: RootFolder, name: String): CategoryId = error("unused")
-        override suspend fun rename(root: RootFolder, id: CategoryId, newName: String) {}
-        override suspend fun delete(root: RootFolder, id: CategoryId) {}
-        override suspend fun toggleMembership(root: RootFolder, id: CategoryId, photo: PhotoId): Boolean = false
-        override suspend fun addMemberships(root: RootFolder, id: CategoryId, photos: Collection<PhotoId>): Int = 0
-        override suspend fun removeMemberships(root: RootFolder, photos: Collection<PhotoId>) {
-            val toRemove = photos.toSet()
-            members.value = members.value.mapValues { (_, ids) -> ids - toRemove }
-        }
-        override suspend fun clearContext() {}
     }
 
     @Test
