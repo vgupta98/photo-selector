@@ -3,6 +3,7 @@ package com.vishalgupta.photoselector.presentation.designsystem.organism
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,7 +23,9 @@ import com.vishalgupta.photoselector.presentation.designsystem.molecule.Selectio
  * sit behind an "Add to category" menu), and trails with **Clear**.
  *
  * [customCategories] is the slot-ordered custom list (Favourites excluded); the menu hides
- * entirely when it is empty so there's no dead control.
+ * entirely when it is empty so there's no dead control. **Delete** sits in the trailing group
+ * beside Clear, tinted with the error colour so the one destructive action reads apart from the
+ * filing actions; the caller is expected to gate it behind a confirmation.
  */
 @Composable
 fun GridSelectionTopBar(
@@ -31,6 +34,7 @@ fun GridSelectionTopBar(
     onFileIntoFavourites: () -> Unit,
     onFileIntoCustom: (slot: Int) -> Unit,
     onCopySelection: (ConflictPolicy) -> Unit,
+    onDeleteSelection: () -> Unit,
     onClearSelection: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -52,6 +56,12 @@ fun GridSelectionTopBar(
 
         Spacer(Modifier.weight(1f))
 
+        AppTextButton(
+            text = "Delete",
+            onClick = onDeleteSelection,
+            leadingIcon = Icons.Outlined.DeleteOutline,
+            contentColor = MaterialTheme.colorScheme.error,
+        )
         AppTextButton(
             text = "Clear",
             onClick = onClearSelection,

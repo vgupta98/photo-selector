@@ -60,6 +60,7 @@ import com.vishalgupta.photoselector.presentation.common.digitSlot
 import com.vishalgupta.photoselector.presentation.designsystem.atom.AppOutlinedButton
 import com.vishalgupta.photoselector.presentation.designsystem.atom.FavouriteStar
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BusyBar
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.ConfirmDialog
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.EmptyState
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.GridKeyboardLegend
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.KeyHint
@@ -143,6 +144,7 @@ fun GridScreen(
         onClearSelection = viewModel::clearSelection,
         onFileSelectionIntoFavourites = viewModel::fileSelectionIntoFavourites,
         onFileSelectionIntoCustom = viewModel::fileSelectionIntoCustom,
+        onDeleteSelection = viewModel::deleteSelection,
         onCopySelection = { policy ->
             coroutineScope.launch {
                 val dir = NativeFileDialogs.pickDirectory("Copy selected photos to…")
@@ -181,6 +183,7 @@ fun GridScreen(
     onClearSelection: () -> Unit = {},
     onFileSelectionIntoFavourites: () -> Unit = {},
     onFileSelectionIntoCustom: (slot: Int) -> Unit = {},
+    onDeleteSelection: () -> Unit = {},
     onCopySelection: (ConflictPolicy) -> Unit = {},
     onCompareSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit = { _, _ -> },
     onSelectionTooLargeToCompare: () -> Unit = {},
@@ -188,6 +191,9 @@ fun GridScreen(
 ) {
     val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = initialScrollIndex)
     val focusRequester = remember { FocusRequester() }
+    // Open/closed state of the destructive delete confirmation. The Delete button and Cmd+Delete
+    // both arm it; confirming calls [onDeleteSelection], which performs the move to Trash.
+    var confirmingDelete by remember { mutableStateOf(false) }
 
     val currentCategory: Category? = (state.scope as? CategoryScope.Category)
         ?.let { sc -> state.categories.firstOrNull { it.id == sc.id } }
@@ -240,6 +246,12 @@ fun GridScreen(
                 // Cmd+A arms a multi-select over the whole scope.
                 if (meta && event.key == Key.A) {
                     if (maxIndex >= 0) onSelectAll()
+                    return@onPreviewKeyEvent true
+                }
+                // Cmd+Delete (Cmd+Backspace on a Mac keyboard) over a selection arms the move-to-
+                // Trash confirmation — the macOS "move to trash" chord, applied to the whole pick.
+                if (meta && (event.key == Key.Backspace || event.key == Key.Delete) && hasSelection) {
+                    confirmingDelete = true
                     return@onPreviewKeyEvent true
                 }
                 // C opens the multi-selection side by side: 2 tiles -> Compare, 3+ -> Survey. The
@@ -326,6 +338,7 @@ fun GridScreen(
                 onFileIntoFavourites = onFileSelectionIntoFavourites,
                 onFileIntoCustom = onFileSelectionIntoCustom,
                 onCopySelection = onCopySelection,
+                onDeleteSelection = { confirmingDelete = true },
                 onClearSelection = onClearSelection,
             )
         } else {
@@ -439,6 +452,32 @@ fun GridScreen(
                 },
             )
         }
+    }
+
+    // If the selection clears out from under an open dialog, drop the latch rather than leave a
+    // confirm hanging over nothing. Done in an effect (not composition) to avoid a back-write.
+    LaunchedEffect(state.hasSelection) {
+        if (!state.hasSelection) confirmingDelete = false
+    }
+
+    // Destructive speed bump in front of the move-to-Trash.
+    if (confirmingDelete && state.hasSelection) {
+        val count = state.selection.size
+        ConfirmDialog(
+            title = if (count == 1) "Move 1 photo to Trash?" else "Move $count photos to Trash?",
+            message = "The selected " +
+                (if (count == 1) "photo" else "photos") +
+                " will be moved to the macOS Trash. You can restore " +
+                (if (count == 1) "it" else "them") +
+                " from there.",
+            confirmLabel = "Move to Trash",
+            confirmDestructive = true,
+            onConfirm = {
+                confirmingDelete = false
+                onDeleteSelection()
+            },
+            onDismiss = { confirmingDelete = false },
+        )
     }
 }
 

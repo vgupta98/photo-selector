@@ -6,6 +6,7 @@ import com.vishalgupta.photoselector.data.export.CopyPhotoExporter
 import com.vishalgupta.photoselector.data.export.TxtPhotoExporter
 import com.vishalgupta.photoselector.data.categories.JsonCategoriesRepository
 import com.vishalgupta.photoselector.data.filesystem.FileSystemPhotoRepository
+import com.vishalgupta.photoselector.data.trash.DesktopPhotoTrash
 import com.vishalgupta.photoselector.data.format.DefaultPhotoFormatRegistry
 import com.vishalgupta.photoselector.data.format.JpegDecoder
 import com.vishalgupta.photoselector.data.format.PngDecoder
@@ -21,8 +22,10 @@ import com.vishalgupta.photoselector.domain.repository.CategoriesRepository
 import com.vishalgupta.photoselector.domain.repository.BrowsePositionRepository
 import com.vishalgupta.photoselector.domain.repository.PhotoExporter
 import com.vishalgupta.photoselector.domain.repository.PhotoRepository
+import com.vishalgupta.photoselector.domain.repository.PhotoTrash
 import com.vishalgupta.photoselector.domain.usecase.CopyPhotosToFolderUseCase
 import com.vishalgupta.photoselector.domain.usecase.ExportPhotosTxtUseCase
+import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
 import com.vishalgupta.photoselector.domain.usecase.ScanRootFolderUseCase
 import com.vishalgupta.photoselector.presentation.browser.BrowserViewModel
 import com.vishalgupta.photoselector.presentation.compare.CompareViewModel
@@ -80,10 +83,12 @@ class AppContainer {
         JsonCategoriesRepository(json, scannedPhotos = { root -> photosFor(root) })
     private val browsePositionRepository: BrowsePositionRepository = JsonBrowsePositionRepository(json)
     private val exporter: PhotoExporter = CompositePhotoExporter(TxtPhotoExporter(), CopyPhotoExporter())
+    private val photoTrash: PhotoTrash = DesktopPhotoTrash()
 
     private val scanUseCase = ScanRootFolderUseCase(photoRepository)
     private val exportTxtUseCase = ExportPhotosTxtUseCase(exporter)
     private val copyPhotosUseCase = CopyPhotosToFolderUseCase(exporter)
+    private val movePhotosToTrashUseCase = MovePhotosToTrashUseCase(photoTrash)
 
     val systemActions: SystemActions = MacSystemActions()
 
@@ -93,14 +98,24 @@ class AppContainer {
     private var scannedPhotos: List<Photo> = emptyList()
     private var scannedRoot: RootFolder? = null
 
-    fun photosFor(root: RootFolder): List<Photo> =
+    private fun photosFor(root: RootFolder): List<Photo> =
         if (scannedRoot?.path == root.path) scannedPhotos else emptyList()
 
     fun loadBrowsePosition(root: RootFolder): BrowsePosition = browsePositionRepository.load(root)
 
-    fun setScanResult(root: RootFolder, photos: List<Photo>) {
+    private fun setScanResult(root: RootFolder, photos: List<Photo>) {
         scannedRoot = root
         scannedPhotos = photos
+    }
+
+    /**
+     * Drops just-trashed photos from the scan snapshot so any screen built *after* the delete
+     * (navigation rebuilds every view model from [photosFor]) is constructed without them. The
+     * live view model that triggered the delete updates its own in-memory copy separately.
+     */
+    private fun removeScannedPhotos(ids: Set<PhotoId>) {
+        if (ids.isEmpty()) return
+        scannedPhotos = scannedPhotos.filterNot { it.id in ids }
     }
 
     fun goTo(screen: Screen) {
@@ -129,9 +144,11 @@ class AppContainer {
         photos = photosForScope(root, scope),
         initialIndex = initialIndex,
         categories = categoriesRepository,
+        moveToTrash = movePhotosToTrashUseCase,
         imageLoader = imageLoader,
         isReadOnly = categoriesRepository.isReadOnly(root),
         parentJob = folderJob,
+        onPhotosDeleted = { ids -> removeScannedPhotos(ids) },
         // Only All Photos owns the per-root scroll index; a category view (its own
         // pushed instance) just records the last photo so a re-open lands near it.
         onPositionChanged = when (scope) {
@@ -191,11 +208,13 @@ class AppContainer {
         categories = categoriesRepository,
         exportTxt = exportTxtUseCase,
         copyToFolder = copyPhotosUseCase,
+        moveToTrash = movePhotosToTrashUseCase,
         imageLoader = imageLoader,
         parentJob = folderJob,
         onScrollIndexChanged = { index ->
             appScope.launch { browsePositionRepository.saveIndex(root, index) }
         },
+        onPhotosDeleted = { ids -> removeScannedPhotos(ids) },
     )
 
     suspend fun resetForNewRoot() {

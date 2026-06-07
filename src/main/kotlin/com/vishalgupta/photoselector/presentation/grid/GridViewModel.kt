@@ -9,8 +9,10 @@ import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.CategoriesRepository
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
 import com.vishalgupta.photoselector.domain.repository.CopyReport
+import com.vishalgupta.photoselector.domain.repository.TrashReport
 import com.vishalgupta.photoselector.domain.usecase.CopyPhotosToFolderUseCase
 import com.vishalgupta.photoselector.domain.usecase.ExportPhotosTxtUseCase
+import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
 import com.vishalgupta.photoselector.presentation.StateHolder
 import com.vishalgupta.photoselector.presentation.common.CategoryToggle
 import com.vishalgupta.photoselector.presentation.common.customCategories
@@ -58,15 +60,21 @@ data class GridUiState(
 
 class GridViewModel(
     private val root: RootFolder,
-    private val allPhotos: List<Photo>,
+    // Mutable: a delete drops the trashed photos here so the All Photos slice (which ignores
+    // membership) stops showing them without waiting for a rescan.
+    private var allPhotos: List<Photo>,
     private val categoryScope: CategoryScope,
     lastViewedPhotoId: PhotoId? = null,
     private val categories: CategoriesRepository,
     private val exportTxt: ExportPhotosTxtUseCase,
     private val copyToFolder: CopyPhotosToFolderUseCase,
+    private val moveToTrash: MovePhotosToTrashUseCase,
     val imageLoader: ImageLoader,
     parentJob: Job? = null,
     private val onScrollIndexChanged: ((Int) -> Unit)? = null,
+    // Lets the container drop the trashed photos from its scan snapshot, so any screen opened
+    // after the delete is built without them too.
+    private val onPhotosDeleted: ((Set<PhotoId>) -> Unit)? = null,
 ) : StateHolder(parentJob) {
 
     private val _state = MutableStateFlow(GridUiState(scope = categoryScope, lastViewedPhotoId = lastViewedPhotoId))
@@ -86,7 +94,7 @@ class GridViewModel(
             categories.observeMemberships(root),
         ) { cats, members -> cats to members }
             .onEach { (cats, members) ->
-                val photos = categoryScope.slice(allPhotos, members[categoryScope.activeCategoryId].orEmpty())
+                val photos = slicedPhotos(members)
                 val validIds = photos.mapTo(HashSet()) { it.id }
                 _state.update {
                     it.copy(
@@ -102,6 +110,10 @@ class GridViewModel(
             }
             .launchIn(scope)
     }
+
+    /** The scope's visible photos for the current [allPhotos] and [members] — the single slice rule. */
+    private fun slicedPhotos(members: Map<CategoryId, Set<PhotoId>>): List<Photo> =
+        categoryScope.slice(allPhotos, members[categoryScope.activeCategoryId].orEmpty())
 
     fun onFirstVisibleItemChanged(index: Int) {
         if (categoryScope != CategoryScope.AllPhotos) return
@@ -205,6 +217,58 @@ class GridViewModel(
     fun copySelectionTo(destination: Path, policy: ConflictPolicy) {
         val ids = _state.value.selection
         copyPhotos(_state.value.photos.filter { it.id in ids }, destination, policy)
+    }
+
+    /**
+     * Moves the selected photos to the Trash, then drops them from the in-memory list, purges
+     * them from every category, and tells the container so later screens are built without them.
+     * Best-effort: photos that couldn't be trashed stay put and are named in the toast. The
+     * caller (the screen) is responsible for confirming first — this performs the delete.
+     */
+    fun deleteSelection() {
+        val ids = _state.value.selection
+        if (ids.isEmpty()) return
+        val targets = _state.value.photos.filter { it.id in ids }
+        if (targets.isEmpty()) return
+        scope.launch {
+            _state.update { it.copy(isBusy = true, progressLabel = "Moving ${targets.size} to Trash…") }
+            val report = try {
+                moveToTrash.invoke(targets)
+            } catch (t: Throwable) {
+                _state.update { it.copy(isBusy = false, progressLabel = null, toast = "Delete failed: ${t.message}") }
+                return@launch
+            }
+            val trashedIds = targets
+                .filter { p -> report.failed.none { it.first.id == p.id } }
+                .mapTo(HashSet()) { it.id }
+            if (trashedIds.isNotEmpty()) {
+                allPhotos = allPhotos.filterNot { it.id in trashedIds }
+                categories.removeMemberships(root, trashedIds)
+                onPhotosDeleted?.invoke(trashedIds)
+            }
+            _state.update { st ->
+                // Recompute directly off the reduced [allPhotos]: removeMemberships only re-emits
+                // when something was actually filed, so the slice can't rely on that callback.
+                val photos = slicedPhotos(st.memberships)
+                val validIds = photos.mapTo(HashSet()) { it.id }
+                st.copy(
+                    isBusy = false,
+                    progressLabel = null,
+                    photos = photos,
+                    selection = st.selection.intersect(validIds),
+                    anchorIndex = null,
+                    focusedIndex = st.focusedIndex.coerceIn(-1, (photos.size - 1).coerceAtLeast(-1)),
+                    toast = deleteToast(report),
+                )
+            }
+        }
+    }
+
+    private fun deleteToast(report: TrashReport): String = when {
+        report.failed.isEmpty() && report.trashed == 1 -> "Moved 1 photo to Trash"
+        report.failed.isEmpty() -> "Moved ${report.trashed} photos to Trash"
+        report.trashed == 0 -> "Couldn't move ${report.failed.size} to Trash"
+        else -> "Moved ${report.trashed}, ${report.failed.size} failed"
     }
 
     /** `C` over more than the side-by-side cap: decline and say why rather than open a useless wall of tiles. */

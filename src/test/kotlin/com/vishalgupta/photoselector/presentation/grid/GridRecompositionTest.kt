@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
@@ -192,6 +193,74 @@ class GridRecompositionTest {
         assertEquals("c should skip", before["c"], tracker["c"])
         assertEquals("d should skip", before["d"], tracker["d"])
     }
+
+    /**
+     * Deleting the tail of the list (the delete path's re-emit of a shorter [photos] list) must
+     * not recompose any surviving tile: every survivor keeps its index, so every per-tile input is
+     * unchanged. Guards the claim that a move-to-Trash drops only the deleted tiles, not the grid.
+     */
+    @Test
+    fun deletingLastPhoto_recomposesNoSurvivingTile() {
+        val tracker = RecompositionTracker()
+        val visible = mutableStateOf(photos)
+
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    KeyedGrid(
+                        photos = visible.value,
+                        focusedIndex = -1,
+                        loader = noOpImageLoader,
+                        tracker = tracker,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        val before = photos.associate { it.id.value to tracker[it.id.value] }
+
+        rule.runOnIdle { visible.value = photos.dropLast(1) } // delete "d"
+        rule.waitForIdle()
+
+        assertEquals("a should skip", before["a"], tracker["a"])
+        assertEquals("b should skip", before["b"], tracker["b"])
+        assertEquals("c should skip", before["c"], tracker["c"])
+    }
+
+    /**
+     * Deleting from the middle recomposes only the tiles whose index shifts (their index-capturing
+     * click lambda changes, exactly as in GridScreen) — never the tiles ahead of the cut. This is
+     * the floor the delete path can't beat: shifted positions must re-run, unchanged ones must not.
+     */
+    @Test
+    fun deletingMiddlePhoto_recomposesOnlyTilesWhoseIndexShifted() {
+        val tracker = RecompositionTracker()
+        val visible = mutableStateOf(photos)
+
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    KeyedGrid(
+                        photos = visible.value,
+                        focusedIndex = -1,
+                        loader = noOpImageLoader,
+                        tracker = tracker,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        val before = photos.associate { it.id.value to tracker[it.id.value] }
+
+        rule.runOnIdle { visible.value = photos.filterNot { it.id.value == "b" } } // delete "b"
+        rule.waitForIdle()
+
+        assertEquals("a should skip (index 0 unchanged)", before["a"], tracker["a"])
+        assertEquals("c should recompose (index 2 -> 1)", before["c"]!! + 1, tracker["c"])
+        assertEquals("d should recompose (index 3 -> 2)", before["d"]!! + 1, tracker["d"])
+    }
 }
 
 /** One tile per photo, with per-tile inputs computed as in GridScreen. */
@@ -260,6 +329,7 @@ private fun CountedThumbnail(
     isFocused: Boolean,
     isSelected: Boolean = false,
     categoryBadges: ImmutableList<Int> = persistentListOf(),
+    onClick: () -> Unit = {},
 ) {
     tracker.record(tag)
     PhotoThumbnail(
@@ -268,10 +338,43 @@ private fun CountedThumbnail(
         isMarked = isFavourite,
         isFocused = isFocused,
         isSelected = isSelected,
-        onClick = {},
+        onClick = onClick,
         onToggleSelect = {},
         onRangeSelect = {},
         modifier = Modifier.size(AppTheme.dimens.thumbnailMinCell),
         categoryBadges = categoryBadges,
     )
+}
+
+/**
+ * As [Grid], but keyed by photo id with an index-capturing click lambda — the exact shape of
+ * GridScreen's LazyVerticalGrid items. Keying lets a deletion preserve surviving tiles'
+ * composition state (the way the lazy grid does), and the index capture means a tile whose
+ * position shifts receives a fresh `onClick` and must recompose, while a tile whose index is
+ * unchanged keeps an equal `onClick` and skips.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun KeyedGrid(
+    photos: List<Photo>,
+    focusedIndex: Int,
+    loader: ImageLoader,
+    tracker: RecompositionTracker,
+    onTileClick: (Int) -> Unit = {},
+) {
+    FlowRow {
+        photos.forEachIndexed { index, photo ->
+            key(photo.id.value) {
+                CountedThumbnail(
+                    tracker = tracker,
+                    tag = photo.id.value,
+                    photo = photo,
+                    loader = loader,
+                    isFavourite = false,
+                    isFocused = index == focusedIndex,
+                    onClick = { onTileClick(index) },
+                )
+            }
+        }
+    }
 }
