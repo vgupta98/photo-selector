@@ -8,6 +8,7 @@ import com.vishalgupta.photoselector.data.categories.JsonCategoriesRepository
 import com.vishalgupta.photoselector.data.filesystem.FileSystemPhotoRepository
 import com.vishalgupta.photoselector.data.trash.DesktopPhotoTrash
 import com.vishalgupta.photoselector.data.format.DefaultPhotoFormatRegistry
+import com.vishalgupta.photoselector.data.format.HeicDecoder
 import com.vishalgupta.photoselector.data.format.JpegDecoder
 import com.vishalgupta.photoselector.data.format.PngDecoder
 import com.vishalgupta.photoselector.data.image.DiskThumbnailCache
@@ -65,7 +66,13 @@ class AppContainer {
     val folderJob: Job get() = _folderJob
 
     private val formatRegistry: PhotoFormatRegistry = DefaultPhotoFormatRegistry(
-        decoders = listOf(JpegDecoder(), PngDecoder()),
+        // HEIC is macOS-only for now (ImageIO bridge); off macOS it's simply unregistered, so
+        // .heic/.heif files fall through the scanner rather than registering a throwing decoder.
+        decoders = buildList {
+            add(JpegDecoder())
+            add(PngDecoder())
+            if (HeicDecoder.isSupportedOnThisPlatform()) add(HeicDecoder())
+        },
     )
 
     private val diskThumbnailCache = DiskThumbnailCache(

@@ -37,6 +37,12 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.collections.immutable)
 
+    // HEIC decode bridges into the macOS ImageIO/CoreGraphics system frameworks via JNA.
+    // No native libs are bundled (system frameworks are loaded by name); JNA ships its own
+    // jnidispatch. The decode path sits behind PhotoDecoder so a future Windows build adds
+    // its own decoder rather than replacing this.
+    implementation(libs.jna)
+
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.junit)
