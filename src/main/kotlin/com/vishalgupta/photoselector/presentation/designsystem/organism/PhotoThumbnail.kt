@@ -78,14 +78,17 @@ fun PhotoThumbnail(
     onRangeSelect: (() -> Unit)? = null,
     categoryBadges: ImmutableList<Int> = persistentListOf(),
     burstCount: Int? = null,
+    withinBurst: Boolean = false,
 ) {
     val bitmap by produceState<ImageBitmap?>(null, photo.id) {
         value = loader.load(photo, viewportLongEdgePx = THUMBNAIL_VIEWPORT_PX)
     }
-    // Selection's accent ring takes precedence over the focus cursor on the rare tile that is both.
+    // Selection's accent ring takes precedence over the focus cursor on the rare tile that is both;
+    // an expanded-burst frame carries a dim bracket ring only when neither of those is present.
     val ringColor = when {
         isSelected -> AppTheme.colors.selectionRing
         isFocused -> AppTheme.colors.focusRing
+        withinBurst -> AppTheme.colors.burstFrameRing
         else -> null
     }
     val borderMod = if (ringColor != null) {

@@ -91,7 +91,9 @@ class BurstGrouperTest {
         assertEquals(2, groups.size)
     }
 
-    @Test fun `frames with no exif cluster by mtime`() {
+    @Test fun `frames with no exif never group, even with adjacent mtimes`() {
+        // mtime is not trusted: a bulk copy flattens it, so EXIF-less frames stay
+        // single rather than over-grouping into a bogus burst.
         val a = photo("A", mtimeMs = 1_000)
         val b = photo("B", mtimeMs = 1_800)
         val c = photo("C", mtimeMs = 9_000)
@@ -101,18 +103,19 @@ class BurstGrouperTest {
             source(mapOf(a.id to CaptureMetadata.NONE, b.id to CaptureMetadata.NONE, c.id to CaptureMetadata.NONE)),
         )
 
-        assertEquals(2, groups.size)
-        assertEquals(listOf(a, b), assertIs<PhotoGroup.Burst>(groups[0]).photos)
-        assertIs<PhotoGroup.Single>(groups[1])
+        assertEquals(3, groups.size)
+        assertTrue(groups.all { it is PhotoGroup.Single })
     }
 
-    @Test fun `missing capture time falls back to mtime even when camera matches`() {
+    @Test fun `a missing capture time on either frame keeps them separate`() {
         val a = photo("A", mtimeMs = 0)
         val b = photo("B", mtimeMs = 500)
-        // Same camera+orientation but no DateTimeOriginal -> compare mtimes.
-        val m = meta(takenAtMs = null)
-        val groups = BurstGrouper.group(listOf(a, b), source(mapOf(a.id to m, b.id to m)))
-        assertIs<PhotoGroup.Burst>(groups.single())
+        // Same camera+orientation, but no DateTimeOriginal -> never the same burst.
+        val withTime = meta(takenAtMs = 0)
+        val noTime = meta(takenAtMs = null)
+        val groups = BurstGrouper.group(listOf(a, b), source(mapOf(a.id to withTime, b.id to noTime)))
+        assertEquals(2, groups.size)
+        assertTrue(groups.all { it is PhotoGroup.Single })
     }
 
     @Test fun `a mixed run produces burst single burst in order`() {

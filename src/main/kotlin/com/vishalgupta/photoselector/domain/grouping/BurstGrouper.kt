@@ -14,17 +14,18 @@ import kotlin.math.abs
  *  - same immediate parent folder (a folder is an event boundary),
  *  - same camera body (EXIF Make+Model; two absent ids count as "same"),
  *  - same orientation (don't merge a portrait into a landscape run),
- *  - shot within [maxGapMs] of each other (EXIF DateTimeOriginal preferred;
- *    file mtime fallback when either frame lacks a capture time).
+ *  - both have a real EXIF capture time, within [maxGapMs] of each other.
  *
  * The gap is measured between *adjacent* frames, the way cameras actually fire a
  * burst; a long sequence of sub-gap frames is one run. Derived after scan, never
  * persisted. The similarity-grouping upgrade swaps this heuristic for embedding
  * clustering behind the same [PhotoGroup] return type.
  *
- * Caveat: when frames lack EXIF time, grouping leans on mtime, which a bulk copy
- * can flatten to near-identical values — that over-grouping is the known limit
- * the similarity upgrade is meant to fix.
+ * A frame without a readable capture time (HEIC today, or any EXIF-less file)
+ * never joins a burst — it always stands alone. We deliberately do NOT fall back
+ * to file mtime: a bulk copy flattens mtime to near-identical values and would
+ * over-group unrelated photos. Reading HEIC capture time (an ImageIO read) is the
+ * way to make HEIC bursts group; until then they stay single.
  */
 object BurstGrouper {
 
@@ -62,11 +63,12 @@ object BurstGrouper {
         if (a.absolutePath.parent != b.absolutePath.parent) return false
         if (metaA.cameraId != metaB.cameraId) return false
         if (metaA.orientation != metaB.orientation) return false
-        val (timeA, timeB) = if (metaA.takenAtEpochMs != null && metaB.takenAtEpochMs != null) {
-            metaA.takenAtEpochMs to metaB.takenAtEpochMs
-        } else {
-            a.lastModifiedEpochMs to b.lastModifiedEpochMs
-        }
+        // Only ever group on a real capture time. Without it (HEIC today, or any
+        // EXIF-less file) we can't tell a burst from an unrelated pair, and file
+        // mtime is unreliable: a bulk copy flattens it and over-groups. So a
+        // missing capture time on either frame means "not the same burst".
+        val timeA = metaA.takenAtEpochMs ?: return false
+        val timeB = metaB.takenAtEpochMs ?: return false
         return abs(timeA - timeB) <= maxGapMs
     }
 }

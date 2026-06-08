@@ -68,16 +68,56 @@ class GridBurstScreenshotTest {
     }
 
     @Test fun `a burst collapses to one badged tile among singles`() {
+        // Grouping on (the toolbar chip is selected): six photos -> four tiles, the middle frame
+        // standing in for the burst with a stacked-frames "3" badge.
+        renderGrid(
+            GridUiState(
+                photos = photos,
+                groups = groups,
+                groupBursts = true,
+                scope = CategoryScope.AllPhotos,
+                categories = listOf(Category.favourites()),
+            ),
+        )
+        rule.dumpScreenshot("grid-burst-collapsed")
+    }
+
+    @Test fun `an expanded burst unfolds inline under a full-width header`() {
+        // Clicking the burst opens it in place: a full-width header, then its three frames as
+        // individual tiles (dim bracket ring), with the surrounding singles untouched.
+        renderGrid(
+            GridUiState(
+                photos = photos,
+                groups = groups,
+                groupBursts = true,
+                expandedBurstId = groups[1].groupId, // the burst tile
+                scope = CategoryScope.AllPhotos,
+                categories = listOf(Category.favourites()),
+            ),
+        )
+        rule.dumpScreenshot("grid-burst-expanded")
+    }
+
+    @Test fun `grouping off shows every frame as its own tile`() {
+        // Grouping off (chip cleared): the same six photos render as six plain tiles, no badge.
+        renderGrid(
+            GridUiState(
+                photos = photos,
+                groups = photos.map(PhotoGroup::Single),
+                groupBursts = false,
+                scope = CategoryScope.AllPhotos,
+                categories = listOf(Category.favourites()),
+            ),
+        )
+        rule.dumpScreenshot("grid-burst-ungrouped")
+    }
+
+    private fun renderGrid(state: GridUiState) {
         rule.setContent {
             AppTheme {
                 Surface(Modifier.size(700.dp, 500.dp)) {
                     GridScreen(
-                        state = GridUiState(
-                            photos = photos,
-                            groups = groups,
-                            scope = CategoryScope.AllPhotos,
-                            categories = listOf(Category.favourites()),
-                        ),
+                        state = state,
                         initialScrollIndex = 0,
                         onTileClick = {},
                         onChangeFolder = {},
@@ -98,7 +138,6 @@ class GridBurstScreenshotTest {
             }
         }
         rule.waitForIdle()
-        rule.dumpScreenshot("grid-burst-collapsed")
     }
 
     private fun solid(color: Color): ImageBitmap {

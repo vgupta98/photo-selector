@@ -17,6 +17,7 @@ import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
 import com.vishalgupta.photoselector.presentation.designsystem.atom.AppTextButton
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.BurstGroupingToggle
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.CategoryActionsMenu
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.CategoryMenu
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.CategoryNameDialog
@@ -48,6 +49,8 @@ fun GridTopBar(
     onExportTxt: () -> Unit,
     onCopyToFolder: (ConflictPolicy) -> Unit,
     onChangeFolder: () -> Unit,
+    groupBursts: Boolean,
+    onToggleGroupBursts: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -104,6 +107,8 @@ fun GridTopBar(
                 )
             }
         }
+
+        BurstGroupingToggle(grouping = groupBursts, onToggle = onToggleGroupBursts)
 
         ChangeFolderButton(
             onChangeFolder = onChangeFolder,

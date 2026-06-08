@@ -46,11 +46,22 @@ Clean architecture, single Gradle module, package
   survey grid is non-lazy and pins every tile's decode); a larger selection is
   declined at the grid with a toast rather than opened. The grid also
   collapses adjacent burst frames into one `PhotoGroup.Burst` tile (a
-  stacked-frames count badge); clicking it opens the same Compare/Survey
-  path over just that burst, since a burst is a contiguous index run. Grid
-  focus, multi-select and keyboard filing operate at tile (group)
-  granularity, while the flat photo list stays the index source for
-  browser/Compare/Survey nav. Grid-originated
+  stacked-frames count badge); clicking that tile **expands the burst in
+  place** — `GridDisplayModel` explodes the open burst (`expandedBurstId`)
+  into one tile per frame, bracketed by a full-width header and footer that
+  fence the run off from the rest of the grid, so the same per-tile
+  filing/selection acts on a single frame while it is open (collapsed
+  `F` files the whole burst, expanded `F` files the focused frame). One
+  burst expands at a time; `Esc` peels selection → collapse → grid-back.
+  The toolbar `Group bursts` chip turns grouping off entirely
+  (`GridUiState.groupBursts`). Grouping is grid-only presentation: focus,
+  multi-select and keyboard filing operate over `displayGroups` (the tile
+  index space, shared by the view model and the renderer via
+  `GridDisplayModel`), while the **flat photo list** stays the index
+  source for browser/Compare/Survey nav — and the grid is the *sole*
+  translator between the two (`tileIndexForFlat`), so every scroll
+  index/position on the wire (browser return, Compare/Survey return,
+  persisted `BrowsePosition.lastIndex`) is a flat photo index. Grid-originated
   Compare/Survey return to the grid on `Esc`
   (`Compare.returnToGrid`, `Survey.returnScrollIndex`); browser-originated
   Compare still returns to the browser. Photos live in N flat per-root categories;
@@ -247,14 +258,19 @@ workflow's fail-fast "branch already exists" check is intentional.
   **only on macOS**, behind the `PhotoDecoder` interface. A future
   Windows build adds its own decoder there — don't reintroduce a search
   for a cross-platform lib without re-checking Maven first.
-- **Burst grouping reads capture time from JPEG EXIF only.** `ExifReader`
-  is JPEG-only, so HEIC (and any EXIF-less file) has no `DateTimeOriginal`
-  and `BurstGrouper` falls back to file **mtime** — which a bulk copy can
-  flatten, over-grouping unrelated photos. Don't "fix" this by loosening
-  the heuristic; the real fix is reading HEIC capture time (an ImageIO
-  read) or the visual-similarity grouping upgrade. Grouping is also
-  recomputed off-thread on every re-slice, which is why
-  `CachingCaptureMetadataSource` exists — keep it in the wiring.
+- **Burst grouping reads capture time from JPEG EXIF only, and never
+  falls back to mtime.** `ExifReader` is JPEG-only, so HEIC (and any
+  EXIF-less file) has no `DateTimeOriginal`. `BurstGrouper` deliberately
+  treats a frame with no readable capture time as ungroupable — it stays
+  a `Single` — rather than leaning on file mtime, because a bulk copy
+  flattens mtime and over-groups unrelated photos (the original mtime
+  fallback shipped exactly that bug). So today **HEIC never groups**;
+  the way to make it group is reading HEIC capture time (an ImageIO read,
+  the same bridge `MacImageIO` already uses), not loosening the heuristic.
+  Grouping can also be turned off entirely from the grid toolbar
+  (`GridUiState.groupBursts`), and is recomputed off-thread on every
+  re-slice, which is why `CachingCaptureMetadataSource` exists — keep it
+  in the wiring.
 
 ## Files worth knowing
 
