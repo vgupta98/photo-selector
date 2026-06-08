@@ -10,12 +10,18 @@ Clean architecture, single Gradle module, package
 `com.vishalgupta.photoselector`:
 
 - `domain/` — entities (`Photo`, `RootFolder`, `PhotoId`, `Category`,
-  `CategoryId`), repository interfaces, use cases. No framework dependencies.
+  `CategoryId`, `PhotoGroup`), repository interfaces, use cases. No framework
+  dependencies. `grouping/` holds burst grouping: `BurstGrouper`, a pure
+  `List<Photo>` → `List<PhotoGroup>` (`Single | Burst`) over a
+  `CaptureMetadataSource` — so the heuristic can be swapped without touching
+  the grid.
 - `data/` — repository implementations: `filesystem/`, `categories/`,
   `image/` (decoding), `format/` (per-format `PhotoDecoder`s; `macos/`
-  holds the JNA→ImageIO bridge for HEIC), `export/`, `trash/`
-  (move-to-Trash via `java.awt.Desktop.moveToTrash`), plus `io/` (the
-  shared `AtomicJsonWriter`).
+  holds the JNA→ImageIO bridge for HEIC; `ExifReader` also backs
+  `ExifCaptureMetadataSource` — capture time + camera for burst grouping,
+  memoized per session by `CachingCaptureMetadataSource`), `export/`,
+  `trash/` (move-to-Trash via `java.awt.Desktop.moveToTrash`), plus `io/`
+  (the shared `AtomicJsonWriter`).
 - `presentation/` — Compose UI + view models, organised by screen
   (`rootpicker/`, `grid/`, `browser/`, `compare/`, `survey/`), plus
   `navigation/` and `common/` (non-UI plumbing: file dialogs, system
@@ -38,7 +44,13 @@ Clean architecture, single Gradle module, package
   selected indices: one tile is active, arrows/`Tab` move it, `F`/`1`-`9` file
   it, no zoom. The side-by-side action is capped at `MAX_SURVEY_PHOTOS` (the
   survey grid is non-lazy and pins every tile's decode); a larger selection is
-  declined at the grid with a toast rather than opened. Grid-originated
+  declined at the grid with a toast rather than opened. The grid also
+  collapses adjacent burst frames into one `PhotoGroup.Burst` tile (a
+  stacked-frames count badge); clicking it opens the same Compare/Survey
+  path over just that burst, since a burst is a contiguous index run. Grid
+  focus, multi-select and keyboard filing operate at tile (group)
+  granularity, while the flat photo list stays the index source for
+  browser/Compare/Survey nav. Grid-originated
   Compare/Survey return to the grid on `Esc`
   (`Compare.returnToGrid`, `Survey.returnScrollIndex`); browser-originated
   Compare still returns to the browser. Photos live in N flat per-root categories;
@@ -235,6 +247,14 @@ workflow's fail-fast "branch already exists" check is intentional.
   **only on macOS**, behind the `PhotoDecoder` interface. A future
   Windows build adds its own decoder there — don't reintroduce a search
   for a cross-platform lib without re-checking Maven first.
+- **Burst grouping reads capture time from JPEG EXIF only.** `ExifReader`
+  is JPEG-only, so HEIC (and any EXIF-less file) has no `DateTimeOriginal`
+  and `BurstGrouper` falls back to file **mtime** — which a bulk copy can
+  flatten, over-grouping unrelated photos. Don't "fix" this by loosening
+  the heuristic; the real fix is reading HEIC capture time (an ImageIO
+  read) or the visual-similarity grouping upgrade. Grouping is also
+  recomputed off-thread on every re-slice, which is why
+  `CachingCaptureMetadataSource` exists — keep it in the wiring.
 
 ## Files worth knowing
 
