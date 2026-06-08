@@ -12,9 +12,10 @@ Clean architecture, single Gradle module, package
 - `domain/` — entities (`Photo`, `RootFolder`, `PhotoId`, `Category`,
   `CategoryId`), repository interfaces, use cases. No framework dependencies.
 - `data/` — repository implementations: `filesystem/`, `categories/`,
-  `image/` (decoding), `format/`, `export/`, `trash/` (move-to-Trash via
-  `java.awt.Desktop.moveToTrash`), plus `io/` (the shared
-  `AtomicJsonWriter`).
+  `image/` (decoding), `format/` (per-format `PhotoDecoder`s; `macos/`
+  holds the JNA→ImageIO bridge for HEIC), `export/`, `trash/`
+  (move-to-Trash via `java.awt.Desktop.moveToTrash`), plus `io/` (the
+  shared `AtomicJsonWriter`).
 - `presentation/` — Compose UI + view models, organised by screen
   (`rootpicker/`, `grid/`, `browser/`, `compare/`, `survey/`), plus
   `navigation/` and `common/` (non-UI plumbing: file dialogs, system
@@ -225,6 +226,15 @@ workflow's fail-fast "branch already exists" check is intentional.
 - **There is a pre-existing `v1.0.0` tag** on the remote from before the
   release pipeline existed. It is treated as the "previous release" for
   notes generation; harmless.
+- **skiko cannot decode HEIC/HEIF.** Verified by probe on the bundled
+  skiko (`Image.makeFromEncoded` throws). There is no maintained
+  cross-platform JVM HEIC library on Maven (`org.bytedeco:libheif` does
+  not exist; FFmpeg was rejected for DMG bloat). HEIC is decoded via a
+  JNA bridge into the macOS ImageIO frameworks
+  (`data/format/macos/MacImageIO.kt`) and registered in `AppContainer`
+  **only on macOS**, behind the `PhotoDecoder` interface. A future
+  Windows build adds its own decoder there — don't reintroduce a search
+  for a cross-platform lib without re-checking Maven first.
 
 ## Files worth knowing
 

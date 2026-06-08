@@ -6,7 +6,8 @@ Built with Kotlin + Compose Multiplatform Desktop, following Clean Architecture.
 
 ## Features
 
-- **Browse** an entire folder tree of JPEG / PNG photos full-screen.
+- **Browse** an entire folder tree of JPEG / PNG / HEIC photos full-screen
+  (HEIC/HEIF on macOS — the iPhone default format).
 - **Keyboard-first navigation** — `←` / `→` to move, `F` (or `Space`) to toggle Favourites, `1`…`9` to toggle the other categories.
 - **Categories** — sort photos into as many flat lists as you like (Selects, Maybes, For Album X…). **Favourites** is the built-in one; create, rename and delete the rest from the top bar. A photo can be in several at once.
 - **Multi-select & bulk filing** — in the grid, `Cmd`-click to pick out photos, `Shift`-click to extend a run, or `Cmd+A` to select everything in view; then file the whole selection into Favourites (`F`) or a category (`1`…`9`), copy just the selection to a folder, or press `C` to open the selection side by side (two photos to Compare, three to twelve to Survey). `Esc` clears it.

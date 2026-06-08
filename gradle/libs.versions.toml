@@ -4,6 +4,7 @@ compose = "1.7.3"
 coroutines = "1.9.0"
 serialization = "1.7.3"
 immutable = "0.3.8"
+jna = "5.14.0"
 junit = "4.13.2"
 jmh = "1.37"
 jmh-gradle = "0.7.2"
@@ -14,6 +15,7 @@ kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-c
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 kotlinx-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collections-immutable", version.ref = "immutable" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 junit = { module = "junit:junit", version.ref = "junit" }
 jmh-core = { module = "org.openjdk.jmh:jmh-core", version.ref = "jmh" }
 jmh-annprocess = { module = "org.openjdk.jmh:jmh-generator-annprocess", version.ref = "jmh" }
