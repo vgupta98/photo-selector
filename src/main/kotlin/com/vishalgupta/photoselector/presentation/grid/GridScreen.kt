@@ -51,6 +51,7 @@ import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.domain.model.Photo
+import com.vishalgupta.photoselector.domain.model.PhotoGroup
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
 import com.vishalgupta.photoselector.presentation.common.CategoryToggle
@@ -203,6 +204,37 @@ fun GridScreen(
     // 1..9 digit mapping, so a tile's "2" chip always matches the key that toggled it.
     val customCategories = state.categories.customCategories()
 
+    // The grid's tiles. The view model populates [GridUiState.groups] (singles, then bursts once
+    // grouping resolves); a state with no groups computed yet (e.g. a test or a static preview)
+    // falls back to one tile per photo so the grid still renders and navigates.
+    val tiles = remember(state.groups, state.photos) {
+        state.groups.ifEmpty { state.photos.map(PhotoGroup::Single) }
+    }
+    // Flat index in [state.photos] where each tile's frames begin. A burst is a contiguous run, so
+    // this maps a tile back onto the flat list that the browser / Compare / Survey navigate.
+    val tileFlatStart = remember(tiles) {
+        var acc = 0
+        tiles.map { group -> acc.also { acc += group.photos.size } }
+    }
+    // Opening a tile: a single photo opens the browser; a burst opens the existing Compare (2) /
+    // Survey (3+) over just its frames. An oversized burst (past the side-by-side cap) falls back
+    // to the browser at its first frame, where the arrows still walk the contiguous run.
+    val openTile: (Int) -> Unit = open@{ tileIndex ->
+        val group = tiles.getOrNull(tileIndex) ?: return@open
+        val start = tileFlatStart[tileIndex]
+        when (group) {
+            is PhotoGroup.Single -> onTileClick(start)
+            is PhotoGroup.Burst -> {
+                val size = group.photos.size
+                if (size in 2..MAX_SURVEY_PHOTOS) {
+                    onCompareSelection((start until start + size).toList(), gridState.firstVisibleItemIndex)
+                } else {
+                    onTileClick(start)
+                }
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
     }
@@ -242,7 +274,9 @@ fun GridScreen(
                 val meta = event.isMetaPressed
                 val hasSelection = state.hasSelection
                 val cols = computeColumnCount(gridState)
-                val maxIndex = state.photos.size - 1
+                // Keyboard focus moves over tiles (groups), not the flat photo list — a collapsed
+                // burst is one stop.
+                val maxIndex = tiles.size - 1
                 // Cmd+A arms a multi-select over the whole scope.
                 if (meta && event.key == Key.A) {
                     if (maxIndex >= 0) onSelectAll()
@@ -303,7 +337,7 @@ fun GridScreen(
                     }
                     Key.Enter -> {
                         if (state.focusedIndex in 0..maxIndex) {
-                            onTileClick(state.focusedIndex)
+                            openTile(state.focusedIndex)
                         }
                         true
                     }
@@ -389,20 +423,24 @@ fun GridScreen(
                     horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs),
                 ) {
                     itemsIndexed(
-                        items = state.photos,
-                        key = { _, photo -> photo.id.value },
-                    ) { index, photo ->
+                        items = tiles,
+                        key = { _, group -> group.groupId.value },
+                    ) { index, group ->
+                        val keyPhoto = group.keyPhoto
                         PhotoThumbnail(
-                            photo = photo,
+                            photo = keyPhoto,
                             loader = imageLoader,
-                            isMarked = photo.id in state.markedIds,
+                            isMarked = keyPhoto.id in state.markedIds,
                             isFocused = index == state.focusedIndex,
-                            isLastViewed = photo.id == state.lastViewedPhotoId,
-                            isSelected = photo.id in state.selection,
-                            onClick = { onTileClick(index) },
+                            isLastViewed = keyPhoto.id == state.lastViewedPhotoId,
+                            // A burst tile reads as selected only when its whole run is selected,
+                            // matching the whole-burst pick in toggleSelection/selectRange.
+                            isSelected = group.photos.all { it.id in state.selection },
+                            onClick = { openTile(index) },
                             onToggleSelect = { onToggleSelection(index) },
                             onRangeSelect = { onSelectRange(index) },
-                            categoryBadges = categoryBadgesFor(photo, customCategories, state.memberships),
+                            categoryBadges = categoryBadgesFor(keyPhoto, customCategories, state.memberships),
+                            burstCount = (group as? PhotoGroup.Burst)?.photos?.size,
                         )
                     }
                 }

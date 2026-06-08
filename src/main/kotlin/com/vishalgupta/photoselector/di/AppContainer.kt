@@ -7,7 +7,9 @@ import com.vishalgupta.photoselector.data.export.TxtPhotoExporter
 import com.vishalgupta.photoselector.data.categories.JsonCategoriesRepository
 import com.vishalgupta.photoselector.data.filesystem.FileSystemPhotoRepository
 import com.vishalgupta.photoselector.data.trash.DesktopPhotoTrash
+import com.vishalgupta.photoselector.data.format.CachingCaptureMetadataSource
 import com.vishalgupta.photoselector.data.format.DefaultPhotoFormatRegistry
+import com.vishalgupta.photoselector.data.format.ExifCaptureMetadataSource
 import com.vishalgupta.photoselector.data.format.HeicDecoder
 import com.vishalgupta.photoselector.data.format.JpegDecoder
 import com.vishalgupta.photoselector.data.format.PngDecoder
@@ -84,6 +86,10 @@ class AppContainer {
         decodeDispatcher = imageDecodeDispatcher,
         diskCache = diskThumbnailCache,
     )
+
+    // Shared across grids so each photo's EXIF (capture time + camera) is read at most once per
+    // session; the cache is what makes burst re-grouping on every re-slice cheap.
+    private val captureMetadataSource = CachingCaptureMetadataSource(ExifCaptureMetadataSource())
 
     private val photoRepository: PhotoRepository = FileSystemPhotoRepository(formatRegistry)
     private val categoriesRepository: CategoriesRepository =
@@ -217,6 +223,7 @@ class AppContainer {
         copyToFolder = copyPhotosUseCase,
         moveToTrash = movePhotosToTrashUseCase,
         imageLoader = imageLoader,
+        captureMetadataSource = captureMetadataSource,
         parentJob = folderJob,
         onScrollIndexChanged = { index ->
             appScope.launch { browsePositionRepository.saveIndex(root, index) }

@@ -2,6 +2,8 @@ package com.vishalgupta.photoselector.presentation.grid
 
 import androidx.compose.ui.graphics.ImageBitmap
 import com.vishalgupta.photoselector.data.image.ImageLoader
+import com.vishalgupta.photoselector.domain.grouping.CaptureMetadata
+import com.vishalgupta.photoselector.domain.grouping.CaptureMetadataSource
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.domain.model.Photo
@@ -75,6 +77,13 @@ class GridSelectionTest {
 
     private val deletedRoots = mutableListOf<Set<PhotoId>>()
 
+    // A distinct camera per photo keeps every tile a [PhotoGroup.Single], so a tile index equals a
+    // photo index and these selection tests read against the flat list — burst collapsing has its
+    // own coverage in BurstGrouperTest and the grid screenshot test.
+    private val perPhotoCameraMetadata = CaptureMetadataSource { photo ->
+        CaptureMetadata(takenAtEpochMs = null, cameraId = photo.id.value, orientation = null)
+    }
+
     private fun viewModel(
         repo: CategoriesRepository,
         trash: PhotoTrash = noOpTrash,
@@ -88,6 +97,7 @@ class GridSelectionTest {
         copyToFolder = CopyPhotosToFolderUseCase(noOpExporter),
         moveToTrash = MovePhotosToTrashUseCase(trash),
         imageLoader = noOpImageLoader,
+        captureMetadataSource = perPhotoCameraMetadata,
         onPhotosDeleted = { ids -> deletedRoots += ids },
     )
 

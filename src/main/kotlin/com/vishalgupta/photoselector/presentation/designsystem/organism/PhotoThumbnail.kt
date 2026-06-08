@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BurstMode
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -58,6 +59,10 @@ private const val THUMBNAIL_VIEWPORT_PX = 320
  * badge). When [onToggleSelect] (Cmd+Click) / [onRangeSelect] (Shift+Click) are supplied, a
  * modified click drives selection while a plain click still falls through to [onClick] — so the
  * established "click a tile to open it" gesture is untouched.
+ *
+ * [burstCount], when non-null, marks this tile as the collapsed representative of a burst of that
+ * many frames (a stacked-frames badge). The tile still shows [photo] (the burst's key frame); the
+ * caller wires [onClick] to open the burst side by side rather than a single browser.
  */
 @Composable
 fun PhotoThumbnail(
@@ -72,6 +77,7 @@ fun PhotoThumbnail(
     onToggleSelect: (() -> Unit)? = null,
     onRangeSelect: (() -> Unit)? = null,
     categoryBadges: ImmutableList<Int> = persistentListOf(),
+    burstCount: Int? = null,
 ) {
     val bitmap by produceState<ImageBitmap?>(null, photo.id) {
         value = loader.load(photo, viewportLongEdgePx = THUMBNAIL_VIEWPORT_PX)
@@ -141,6 +147,16 @@ fun PhotoThumbnail(
                     .padding(AppTheme.spacing.xs),
             )
         }
+        if (burstCount != null) {
+            // Bottom-start keeps the burst badge clear of the star (top-end), category badges
+            // (top-start) and the select check (bottom-end).
+            BurstBadge(
+                count = burstCount,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(AppTheme.spacing.xs),
+            )
+        }
         if (isLastViewed) {
             Box(
                 Modifier
@@ -188,6 +204,33 @@ private fun CategoryBadges(badges: ImmutableList<Int>, modifier: Modifier = Modi
         badges.take(MAX_VISIBLE_BADGES).forEach { slot -> CategoryBadge(slot.toString()) }
         val overflow = badges.size - MAX_VISIBLE_BADGES
         if (overflow > 0) CategoryBadge("+$overflow")
+    }
+}
+
+/**
+ * The collapsed-burst affordance: a stacked-frames glyph plus the frame count, telling the user
+ * this one tile stands in for N near-simultaneous shots that open together.
+ */
+@Composable
+private fun BurstBadge(count: Int, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.small,
+        color = AppTheme.colors.categoryMemberContainer,
+        contentColor = AppTheme.colors.categoryMemberContent,
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.BurstMode,
+                contentDescription = "Burst of $count",
+                modifier = Modifier.size(AppTheme.dimens.iconSm),
+            )
+            Text(text = count.toString(), style = MaterialTheme.typography.labelMedium)
+        }
     }
 }
 
