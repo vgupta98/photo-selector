@@ -7,6 +7,7 @@ import com.vishalgupta.photoselector.domain.grouping.CaptureMetadataSource
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.domain.model.Photo
+import com.vishalgupta.photoselector.domain.model.PhotoGroup
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.CategoriesRepository
@@ -100,6 +101,17 @@ class GridSelectionTest {
             0 -> CaptureMetadata(takenAtEpochMs = 0L, cameraId = "head", orientation = 1)
             5 -> CaptureMetadata(takenAtEpochMs = 0L, cameraId = "tail", orientation = 1)
             else -> CaptureMetadata(takenAtEpochMs = i * 1_000L, cameraId = "burst", orientation = 1)
+        }
+    }
+
+    // p0|p1 are a two-frame burst (shared camera, a second apart); p2..p5 sit on their own cameras.
+    // Deleting one of the pair drops the burst below two frames, so the survivor must regroup to a
+    // Single - the fixture for the below-two-frames regroup test.
+    private val twoFrameBurstMetadata = CaptureMetadataSource { photo ->
+        when (val i = photo.id.value.removePrefix("p").toInt()) {
+            0 -> CaptureMetadata(takenAtEpochMs = 0L, cameraId = "pair", orientation = 1)
+            1 -> CaptureMetadata(takenAtEpochMs = 1_000L, cameraId = "pair", orientation = 1)
+            else -> CaptureMetadata(takenAtEpochMs = 0L, cameraId = "solo$i", orientation = 1)
         }
     }
 
@@ -280,6 +292,31 @@ class GridSelectionTest {
         assertTrue("delete re-grouped despite grouping being off", !collapsed)
         assertEquals(photos.size - 1, vm.state.value.groups.size)
         assertTrue(!vm.state.value.groupBursts)
+
+        vm.onClear()
+    }
+
+    @Test
+    fun deleteSelection_regroupsABurstDroppedBelowTwoFramesToASingle() = runBlocking {
+        val vm = viewModel(FakeCategoriesRepository(categories), metadata = twoFrameBurstMetadata)
+        vm.awaitPhotos()
+        // p0|p1 burst + p2..p5 singles -> 5 tiles, exactly one of them a burst.
+        withTimeout(2_000) { vm.state.first { st -> st.groups.count { it is PhotoGroup.Burst } == 1 } }
+        val burstId = vm.state.value.groups.first { it is PhotoGroup.Burst }.groupId
+
+        // Expand so the two frames are individually addressable, then delete just the second one (p1).
+        vm.toggleBurstExpansion(burstId)
+        assertEquals(burstId, vm.state.value.expandedBurstId)
+        vm.toggleSelection(1) // display tile 1 == p1, the burst's second frame
+        vm.deleteSelection()
+        withTimeout(2_000) { vm.state.first { it.toast != null && !it.isBusy } }
+
+        // p1 gone, p0 survives alone: the burst falls below two frames, so it must regroup to a Single
+        // (BurstGrouper requires >= 2). No burst remains, and p0 + the four solos are five tiles.
+        withTimeout(2_000) { vm.state.first { st -> st.photos.size == photos.size - 1 } }
+        withTimeout(2_000) { vm.state.first { st -> st.groups.none { it is PhotoGroup.Burst } } }
+        assertTrue(vm.state.value.photos.any { it.id == photos[0].id })
+        assertEquals(photos.size - 1, vm.state.value.groups.size)
 
         vm.onClear()
     }

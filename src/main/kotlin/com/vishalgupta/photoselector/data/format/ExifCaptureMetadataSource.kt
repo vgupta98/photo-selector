@@ -37,6 +37,8 @@ class ExifCaptureMetadataSource : CaptureMetadataSource {
 
     private fun parseTakenAt(dateTimeOriginal: String?, subSec: String?): Long? {
         if (dateTimeOriginal == null) return null
+        // A blank/placeholder EXIF date ("    :  :     :  :  ", common in stripped files) fails to
+        // parse and falls through to null here - treated as no capture time, so the frame won't group.
         val base = runCatching { LocalDateTime.parse(dateTimeOriginal.trim(), EXIF_FORMAT) }
             .getOrNull() ?: return null
         var ms = base.toInstant(ZoneOffset.UTC).toEpochMilli()

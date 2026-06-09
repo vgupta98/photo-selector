@@ -89,6 +89,18 @@ internal fun tileDisplayIndexForRenderItem(renderItems: List<GridRenderItem>, re
 }
 
 /**
+ * The inverse of [tileDisplayIndexForRenderItem]: the LazyGrid *render-item* index of the
+ * [GridRenderItem.Tile] carrying [displayIndex], or null if none does. Needed wherever a tile-space
+ * focus index has to address the LazyGrid directly ([androidx.compose.foundation.lazy.grid.LazyGridState.animateScrollToItem],
+ * [androidx.compose.foundation.lazy.grid.LazyGridItemInfo.index] matching), since those APIs speak
+ * render-item space and an expanded burst's header/footer make the two diverge.
+ */
+internal fun renderIndexForTile(renderItems: List<GridRenderItem>, displayIndex: Int): Int? {
+    val i = renderItems.indexOfFirst { it is GridRenderItem.Tile && it.displayIndex == displayIndex }
+    return if (i >= 0) i else null
+}
+
+/**
  * Maps a LazyGrid first-visible *render-item* index to a FLAT photo index for persistence / return
  * anchors, bridging the render-item space (with header/footer rows) and the tile space [tileFlatStart]
  * is keyed on. Without this, an expanded burst's header/footer offset the lookup and the persisted /

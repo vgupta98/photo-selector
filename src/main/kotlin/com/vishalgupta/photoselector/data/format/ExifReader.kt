@@ -298,7 +298,9 @@ internal object ExifReader {
 
         /** Reads up to [count] bytes as US-ASCII, stopping at the NUL terminator. */
         fun ascii(at: Int, count: Int): String? {
-            if (at < 0 || count < 0 || at + count > buf.size) return null
+            // `count > buf.size - at` rather than `at + count > buf.size`: a hostile offset (u32 can
+            // return a large/negative Int) could overflow the addition and slip past the bound.
+            if (at < 0 || count < 0 || at > buf.size || count > buf.size - at) return null
             var end = at
             val limit = at + count
             while (end < limit && buf[end].toInt() != 0) end++

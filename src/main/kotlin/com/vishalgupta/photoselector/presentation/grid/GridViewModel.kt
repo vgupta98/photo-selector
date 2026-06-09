@@ -169,6 +169,8 @@ class GridViewModel(
                 groupBursts = groupBursts,
                 groups = photos.map(PhotoGroup::Single),
                 expandedBurstId = null,
+                // The tile space renumbers, so a stored Shift+click anchor (a tile index) is stale.
+                anchorIndex = null,
                 focusedIndex = it.focusedIndex.coerceIn(-1, (photos.size - 1).coerceAtLeast(-1)),
             )
         }
@@ -248,7 +250,12 @@ class GridViewModel(
             val open = if (st.expandedBurstId == groupId) null else groupId
             val display = displayGroupsFor(st.groups, open)
             val focus = display.indexOfFirst { it.groupId == groupId }.takeIf { it >= 0 } ?: st.focusedIndex
-            st.copy(expandedBurstId = open, focusedIndex = focus.coerceIn(-1, (display.size - 1).coerceAtLeast(-1)))
+            // Expanding/folding renumbers the tile space, so any stored Shift+click anchor is stale.
+            st.copy(
+                expandedBurstId = open,
+                anchorIndex = null,
+                focusedIndex = focus.coerceIn(-1, (display.size - 1).coerceAtLeast(-1)),
+            )
         }
     }
 
@@ -262,7 +269,12 @@ class GridViewModel(
             val burstId = st.expandedBurstId ?: return@update st
             val display = displayGroupsFor(st.groups, null)
             val focus = display.indexOfFirst { it.groupId == burstId }.takeIf { it >= 0 } ?: st.focusedIndex
-            st.copy(expandedBurstId = null, focusedIndex = focus.coerceIn(-1, (display.size - 1).coerceAtLeast(-1)))
+            // Folding renumbers the tile space, so any stored Shift+click anchor is stale.
+            st.copy(
+                expandedBurstId = null,
+                anchorIndex = null,
+                focusedIndex = focus.coerceIn(-1, (display.size - 1).coerceAtLeast(-1)),
+            )
         }
     }
 

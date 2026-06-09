@@ -271,13 +271,17 @@ fun GridScreen(
     LaunchedEffect(state.focusedIndex) {
         val idx = state.focusedIndex
         if (idx < 0) return@LaunchedEffect
+        // focusedIndex is a TILE index; the LazyGrid (visibleItemsInfo.index, animateScrollToItem)
+        // speaks RENDER-ITEM space, which gains header/footer rows when a burst is open - so convert
+        // before addressing it, or we'd mis-detect visibility and scroll to the wrong row.
+        val renderIdx = renderIndexForTile(renderItems, idx) ?: return@LaunchedEffect
         val layout = gridState.layoutInfo
-        val item = layout.visibleItemsInfo.firstOrNull { it.index == idx }
+        val item = layout.visibleItemsInfo.firstOrNull { it.index == renderIdx }
         val isFullyVisible = item != null &&
             item.offset.y >= layout.viewportStartOffset &&
             item.offset.y + item.size.height <= layout.viewportEndOffset
         if (!isFullyVisible) {
-            gridState.animateScrollToItem(idx)
+            gridState.animateScrollToItem(renderIdx)
         }
     }
 
@@ -299,6 +303,10 @@ fun GridScreen(
     // the moment the user scrolls away from our anchor so we never fight their own scrolling. Keyed
     // on the collapsed grouping (not the display tiles) so expanding a burst - which also reshapes
     // the tiles - doesn't yank the scroll; the focus effect above handles keeping a burst in view.
+    //
+    // Invariant: this only fires while grouping settles, when no burst can be expanded - so the tile
+    // index space and the LazyGrid's render-item space coincide here, and it is safe to compare
+    // firstVisibleItemIndex (render) against tile-space targets and scrollToItem with a tile index.
     var anchoredTile by remember { mutableStateOf(-1) }
     LaunchedEffect(baseGroups) {
         val target = tileIndexForFlat(tileFlatStart, initialScrollIndex)
@@ -347,7 +355,10 @@ fun GridScreen(
                 val isArrow = event.key == Key.DirectionLeft || event.key == Key.DirectionRight ||
                     event.key == Key.DirectionUp || event.key == Key.DirectionDown
                 if (isArrow && state.focusedIndex < 0 && maxIndex >= 0) {
-                    onSetFocusedIndex(gridState.firstVisibleItemIndex.coerceIn(0, maxIndex))
+                    // Seed focus on the first visible TILE. firstVisibleItemIndex is render-item space
+                    // (header/footer included when a burst is open), so map it into tile space first.
+                    val seed = tileDisplayIndexForRenderItem(renderItems, gridState.firstVisibleItemIndex) ?: 0
+                    onSetFocusedIndex(seed.coerceIn(0, maxIndex))
                     return@onPreviewKeyEvent true
                 }
                 // Bare 1..9 files into the Nth custom category: the whole selection when one is

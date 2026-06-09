@@ -225,8 +225,7 @@ private fun BurstBadge(count: Int, modifier: Modifier = Modifier) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.xxs),
             verticalAlignment = Alignment.CenterVertically,
-            // 5dp horizontal is the shared badge inset (matches CategoryBadge); off the spacing scale by design.
-            modifier = Modifier.padding(horizontal = 5.dp, vertical = AppTheme.spacing.xxs),
+            modifier = Modifier.padding(horizontal = AppTheme.dimens.badgeInset, vertical = AppTheme.spacing.xxs),
         ) {
             Icon(
                 imageVector = Icons.Filled.BurstMode,
@@ -248,7 +247,7 @@ private fun CategoryBadge(label: String) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+            modifier = Modifier.padding(horizontal = AppTheme.dimens.badgeInset, vertical = 1.dp),
         )
     }
 }

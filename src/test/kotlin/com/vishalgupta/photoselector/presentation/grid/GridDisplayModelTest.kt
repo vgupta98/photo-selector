@@ -94,6 +94,21 @@ class GridDisplayModelTest {
         assertEquals(4, flatIndexForRenderItem(expandedRenderItems, expandedTileFlatStart, 6))
     }
 
+    @Test fun `renderIndexForTile is the inverse of the render-to-tile map, and null off the end`() {
+        // Expanded render items: 0:Tile(a) 1:Header 2:Tile(b) 3:Tile(c) 4:Tile(d) 5:Footer 6:Tile(e).
+        // A tile displayIndex resolves to the render slot the focus effect must scroll to.
+        assertEquals(0, renderIndexForTile(expandedRenderItems, 0)) // a
+        assertEquals(2, renderIndexForTile(expandedRenderItems, 1)) // b - skips the header
+        assertEquals(6, renderIndexForTile(expandedRenderItems, 4)) // e - skips header + footer
+        assertNull(renderIndexForTile(expandedRenderItems, 99)) // no such tile
+
+        // Round-trips with tileDisplayIndexForRenderItem for every tile.
+        for (displayIndex in 0..4) {
+            val renderIndex = renderIndexForTile(expandedRenderItems, displayIndex)!!
+            assertEquals(displayIndex, tileDisplayIndexForRenderItem(expandedRenderItems, renderIndex))
+        }
+    }
+
     @Test fun `collapsed render items map one-to-one and empty input is safe`() {
         val collapsed = buildRenderItems(groups, expandedBurstId = null)
         assertEquals(0, flatIndexForRenderItem(collapsed, listOf(0, 1, 4), 0)) // a
