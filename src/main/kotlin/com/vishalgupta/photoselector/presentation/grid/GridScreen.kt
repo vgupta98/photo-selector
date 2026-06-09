@@ -36,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -279,9 +280,14 @@ fun GridScreen(
         }
     }
 
+    // Persisted scroll position is a FLAT photo index, so convert the first visible tile through
+    // [tileFlatStart]. The subscription is start-once (gridState is stable), but tileFlatStart
+    // changes on every regroup/expansion - so read the latest via rememberUpdatedState rather than
+    // capture a stale snapshot that would persist a wrong position after a burst expands.
+    val latestTileFlatStart by rememberUpdatedState(tileFlatStart)
     LaunchedEffect(gridState) {
         snapshotFlow { gridState.firstVisibleItemIndex }
-            .collect { index -> onFirstVisibleItemChanged(tileFlatStart.getOrElse(index) { 0 }) }
+            .collect { index -> onFirstVisibleItemChanged(latestTileFlatStart.getOrElse(index) { 0 }) }
     }
 
     // Re-anchor the photo we returned on (initialScrollIndex, a FLAT index) as burst grouping
