@@ -98,6 +98,24 @@ class GridBurstScreenshotTest {
         rule.dumpScreenshot("grid-burst-expanded")
     }
 
+    @Test fun `a collapsed burst shows the last-viewed marker for any frame, not just its key`() {
+        // Open a burst, view its first frame (b, not the middle key c), come back: the burst
+        // collapses again and must still carry the last-viewed underline. Eyeball
+        // build/screenshots/grid-burst-lastviewed-nonkey-frame.png - the burst tile (2nd) shows the
+        // marker even though its key frame is c, because b is one of its frames.
+        renderGrid(
+            GridUiState(
+                photos = photos,
+                groups = groups,
+                groupBursts = true,
+                lastViewedPhotoId = photos[1].id, // "b": a non-key frame of the burst
+                scope = CategoryScope.AllPhotos,
+                categories = listOf(Category.favourites()),
+            ),
+        )
+        rule.dumpScreenshot("grid-burst-lastviewed-nonkey-frame")
+    }
+
     @Test fun `grouping off shows every frame as its own tile`() {
         // Grouping off (chip cleared): the same six photos render as six plain tiles, no badge.
         renderGrid(

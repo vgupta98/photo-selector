@@ -518,7 +518,10 @@ fun GridScreen(
                                     loader = imageLoader,
                                     isMarked = keyPhoto.id in state.markedIds,
                                     isFocused = index == state.focusedIndex,
-                                    isLastViewed = keyPhoto.id == state.lastViewedPhotoId,
+                                    // Any frame of the run counts: a collapsed burst shows the
+                                    // middle frame as its key, but you may have opened (and last
+                                    // viewed) a different frame, so match against the whole run.
+                                    isLastViewed = group.photos.any { it.id == state.lastViewedPhotoId },
                                     // A collapsed burst reads as selected only when its whole run is
                                     // selected, matching the whole-burst pick in toggleSelection.
                                     isSelected = group.photos.all { it.id in state.selection },
