@@ -28,6 +28,9 @@ data class Dimens(
     val scrollbarThickness: Dp = 8.dp,
     val scrollbarMinHeight: Dp = 48.dp,
     val progressIndicatorLg: Dp = 48.dp,
+    // Thickness of the little drag-style handle that closes an expanded burst (one of the 3dp
+    // hairline family alongside focusBorderWidth / lastViewedIndicatorHeight).
+    val burstHandleHeight: Dp = 3.dp,
 )
 
 val LocalDimens = staticCompositionLocalOf { Dimens() }

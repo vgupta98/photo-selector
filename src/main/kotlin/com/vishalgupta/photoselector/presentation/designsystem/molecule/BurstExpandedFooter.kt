@@ -10,8 +10,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
+
+// Fraction of the row the centred handle spans - a layout ratio, not a theme dimension, so it lives
+// here as a named constant rather than in Dimens.
+private const val HANDLE_WIDTH_FRACTION = 0.12f
 
 /**
  * Closes an expanded burst: a full-width bar mirroring [BurstExpandedHeader], with a short centred
@@ -29,8 +32,8 @@ fun BurstExpandedFooter(modifier: Modifier = Modifier) {
     ) {
         Box(
             Modifier
-                .fillMaxWidth(0.12f)
-                .height(3.dp)
+                .fillMaxWidth(HANDLE_WIDTH_FRACTION)
+                .height(AppTheme.dimens.burstHandleHeight)
                 .clip(CircleShape)
                 .background(AppTheme.colors.burstFrameRing),
         )

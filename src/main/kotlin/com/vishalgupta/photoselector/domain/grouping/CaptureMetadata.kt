@@ -2,8 +2,10 @@ package com.vishalgupta.photoselector.domain.grouping
 
 /**
  * Per-photo capture facts the burst grouper compares. Every field is nullable:
- * a photo with no readable EXIF (a PNG, a HEIC, a stripped JPEG) yields [NONE]
- * and the grouper falls back to file mtime and the containing folder.
+ * a photo with no readable EXIF (a PNG, a HEIC, a stripped JPEG) yields [NONE],
+ * which the grouper treats as ungroupable — a [NONE] frame never joins a burst
+ * and stays a lone Single. There is deliberately no file-mtime fallback (a bulk
+ * copy flattens mtime and over-groups unrelated photos).
  */
 data class CaptureMetadata(
     /**

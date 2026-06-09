@@ -14,8 +14,10 @@ import java.time.format.DateTimeFormatter
  *
  * Non-JPEG or EXIF-less files yield [CaptureMetadata.NONE]; the timestamp is
  * interpreted in UTC because the grouper only ever compares deltas between
- * frames, never absolute time. Currently JPEG-only (ExifReader's scope) — HEIC
- * EXIF would need an ImageIO read and falls back to mtime grouping until then.
+ * frames, never absolute time. Currently JPEG-only (ExifReader's scope), so HEIC
+ * yields [CaptureMetadata.NONE] and the grouper leaves it ungroupable (a lone
+ * Single) — there is no mtime fallback. Grouping HEIC means reading its capture
+ * time via an ImageIO read, not loosening the heuristic.
  */
 class ExifCaptureMetadataSource : CaptureMetadataSource {
 

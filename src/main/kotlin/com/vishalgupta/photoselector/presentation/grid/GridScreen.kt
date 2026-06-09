@@ -229,8 +229,9 @@ fun GridScreen(
         initialFirstVisibleItemIndex = tileIndexForFlat(tileFlatStart, initialScrollIndex),
     )
     // What we hand back to the browser / Compare / Survey / persistence is a FLAT photo index, so no
-    // caller needs to know tiles exist. Convert the first visible tile to its first frame's index.
-    fun firstVisibleFlat() = tileFlatStart.getOrElse(gridState.firstVisibleItemIndex) { 0 }
+    // caller needs to know tiles exist. firstVisibleItemIndex is a renderItems index (header/footer
+    // included when a burst is open), so map it through the tile space before the flat lookup.
+    fun firstVisibleFlat() = flatIndexForRenderItem(renderItems, tileFlatStart, gridState.firstVisibleItemIndex)
     val focusRequester = remember { FocusRequester() }
     // Open/closed state of the destructive delete confirmation. The Delete button and Cmd+Delete
     // both arm it; confirming calls [onDeleteSelection], which performs the move to Trash.
@@ -280,14 +281,16 @@ fun GridScreen(
         }
     }
 
-    // Persisted scroll position is a FLAT photo index, so convert the first visible tile through
-    // [tileFlatStart]. The subscription is start-once (gridState is stable), but tileFlatStart
-    // changes on every regroup/expansion - so read the latest via rememberUpdatedState rather than
-    // capture a stale snapshot that would persist a wrong position after a burst expands.
+    // Persisted scroll position is a FLAT photo index, so map the first visible render item through
+    // the tile space and [tileFlatStart]. The subscription is start-once (gridState is stable), but
+    // renderItems / tileFlatStart change on every regroup/expansion - so read the latest via
+    // rememberUpdatedState rather than capture a stale snapshot that would persist a wrong position
+    // after a burst expands (and the render index would then mis-index a tile-keyed map).
+    val latestRenderItems by rememberUpdatedState(renderItems)
     val latestTileFlatStart by rememberUpdatedState(tileFlatStart)
     LaunchedEffect(gridState) {
         snapshotFlow { gridState.firstVisibleItemIndex }
-            .collect { index -> onFirstVisibleItemChanged(latestTileFlatStart.getOrElse(index) { 0 }) }
+            .collect { index -> onFirstVisibleItemChanged(flatIndexForRenderItem(latestRenderItems, latestTileFlatStart, index)) }
     }
 
     // Re-anchor the photo we returned on (initialScrollIndex, a FLAT index) as burst grouping

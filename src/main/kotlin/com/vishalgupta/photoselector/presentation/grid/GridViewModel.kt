@@ -238,28 +238,31 @@ class GridViewModel(
 
     /**
      * Clicking / Enter on a collapsed burst tile: unfold it in place into its frames (or fold it
-     * back if it is already open). At most one burst is expanded at a time. Focus jumps to the
-     * burst's first frame so the arrow keys start inside it.
+     * back if it is already open). At most one burst is expanded at a time. Focus tracks the burst:
+     * on expand it jumps to the first frame so the arrow keys start inside the run; on fold-back it
+     * returns to the collapsed burst tile. (Both share one lookup: [PhotoGroup.groupId] is the first
+     * frame's id, so it resolves to the first frame when open and to the burst tile when collapsed.)
      */
     fun toggleBurstExpansion(groupId: PhotoId) {
         _state.update { st ->
             val open = if (st.expandedBurstId == groupId) null else groupId
             val display = displayGroupsFor(st.groups, open)
-            val focus = if (open != null) {
-                display.indexOfFirst { it.photos.firstOrNull()?.id == groupId }
-            } else {
-                st.focusedIndex
-            }
+            val focus = display.indexOfFirst { it.groupId == groupId }.takeIf { it >= 0 } ?: st.focusedIndex
             st.copy(expandedBurstId = open, focusedIndex = focus.coerceIn(-1, (display.size - 1).coerceAtLeast(-1)))
         }
     }
 
-    /** Esc (after clearing any selection): fold the open burst back into one tile. */
+    /**
+     * Esc (after clearing any selection): fold the open burst back into one tile, returning focus to
+     * that burst tile so the cursor lands where the user opened from rather than on whatever tile now
+     * occupies the shrunken index (symmetric with [toggleBurstExpansion]'s jump to the first frame).
+     */
     fun collapseBurst() {
         _state.update { st ->
-            if (st.expandedBurstId == null) return@update st
+            val burstId = st.expandedBurstId ?: return@update st
             val display = displayGroupsFor(st.groups, null)
-            st.copy(expandedBurstId = null, focusedIndex = st.focusedIndex.coerceIn(-1, (display.size - 1).coerceAtLeast(-1)))
+            val focus = display.indexOfFirst { it.groupId == burstId }.takeIf { it >= 0 } ?: st.focusedIndex
+            st.copy(expandedBurstId = null, focusedIndex = focus.coerceIn(-1, (display.size - 1).coerceAtLeast(-1)))
         }
     }
 
@@ -408,7 +411,9 @@ class GridViewModel(
                     toast = deleteToast(report),
                 )
             }
-            regroup(photos, ids)
+            // Respect the toolbar toggle: re-collapse only when grouping is on, otherwise
+            // the grid would silently regroup behind a chip that still reads "off".
+            if (groupBursts) regroup(photos, ids) else lastGroupedIds = ids
         }
     }
 

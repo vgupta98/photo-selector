@@ -67,6 +67,42 @@ internal fun buildRenderItems(groups: List<PhotoGroup>, expandedBurstId: PhotoId
     return items
 }
 
+/**
+ * Resolves a LazyGrid first-visible *render-item* index to the tile ([GridRenderItem.Tile.displayIndex])
+ * it represents, or null when [renderItems] is empty. The grid's items are [renderItems] - which, when a
+ * burst is expanded, also hold non-focusable [GridRenderItem.BurstHeader]/[GridRenderItem.BurstFooter]
+ * rows - so a render index runs 1-2 ahead of the tile (displayIndex) space. We map to the first tile at
+ * or after [renderIndex] (the first visible tile content; a header sits directly above its frames, a
+ * footer directly above the post-burst tiles), falling back to the nearest preceding tile when the
+ * render index lands on a trailing footer with no tile after it.
+ */
+internal fun tileDisplayIndexForRenderItem(renderItems: List<GridRenderItem>, renderIndex: Int): Int? {
+    if (renderItems.isEmpty()) return null
+    val start = renderIndex.coerceIn(0, renderItems.lastIndex)
+    for (i in start..renderItems.lastIndex) {
+        (renderItems[i] as? GridRenderItem.Tile)?.let { return it.displayIndex }
+    }
+    for (i in start downTo 0) {
+        (renderItems[i] as? GridRenderItem.Tile)?.let { return it.displayIndex }
+    }
+    return null
+}
+
+/**
+ * Maps a LazyGrid first-visible *render-item* index to a FLAT photo index for persistence / return
+ * anchors, bridging the render-item space (with header/footer rows) and the tile space [tileFlatStart]
+ * is keyed on. Without this, an expanded burst's header/footer offset the lookup and the persisted /
+ * returned position drifts by one or two tiles.
+ */
+internal fun flatIndexForRenderItem(
+    renderItems: List<GridRenderItem>,
+    tileFlatStart: List<Int>,
+    renderIndex: Int,
+): Int {
+    val displayIndex = tileDisplayIndexForRenderItem(renderItems, renderIndex) ?: return 0
+    return tileFlatStart.getOrElse(displayIndex) { 0 }
+}
+
 /** A laid-out tile's position: its [displayIndex] and the top-left pixel offset of its grid cell. */
 internal data class TilePosition(val displayIndex: Int, val x: Int, val y: Int)
 

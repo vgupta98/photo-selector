@@ -71,6 +71,37 @@ class GridDisplayModelTest {
         assertEquals(emptyList(), items.filterIsInstance<GridRenderItem.Tile>().filter { it.expandedFrame })
     }
 
+    // --- render-item index -> flat photo index (persistence / return anchors) ----------------
+    //
+    // The LazyGrid is keyed on render items (header/footer included when a burst is open), but the
+    // flat-index map is keyed on tiles. With [burst] expanded the render-item list is
+    //   0:Tile(a) 1:Header 2:Tile(b) 3:Tile(c) 4:Tile(d) 5:Footer 6:Tile(e)
+    // while the tile space (and tileFlatStart) is a b c d e -> [0,1,2,3,4]. The two diverge by the
+    // header/footer once a burst is open, which is the scroll/anchor-drift bug this maps away.
+    private val expandedRenderItems = buildRenderItems(groups, expandedBurstId = burst.groupId)
+    private val expandedTileFlatStart = listOf(0, 1, 2, 3, 4) // every frame its own tile when open
+
+    @Test fun `a header or footer maps to the first visible tile, not an offset flat index`() {
+        // Header (render 1) -> first frame b (flat 1); footer (render 5) -> post-burst tile e (flat 4).
+        assertEquals(1, flatIndexForRenderItem(expandedRenderItems, expandedTileFlatStart, 1))
+        assertEquals(4, flatIndexForRenderItem(expandedRenderItems, expandedTileFlatStart, 5))
+    }
+
+    @Test fun `tiles after the header map through the tile space, not the render index`() {
+        // render 2 is tile b (flat 1) - the naive tileFlatStart[2] would have returned 2 (off by one).
+        assertEquals(1, flatIndexForRenderItem(expandedRenderItems, expandedTileFlatStart, 2))
+        // render 6 is the trailing tile e (flat 4) - naive tileFlatStart[6] is out of range -> 0, the bug.
+        assertEquals(4, flatIndexForRenderItem(expandedRenderItems, expandedTileFlatStart, 6))
+    }
+
+    @Test fun `collapsed render items map one-to-one and empty input is safe`() {
+        val collapsed = buildRenderItems(groups, expandedBurstId = null)
+        assertEquals(0, flatIndexForRenderItem(collapsed, listOf(0, 1, 4), 0)) // a
+        assertEquals(1, flatIndexForRenderItem(collapsed, listOf(0, 1, 4), 1)) // burst tile
+        assertEquals(4, flatIndexForRenderItem(collapsed, listOf(0, 1, 4), 2)) // e
+        assertEquals(0, flatIndexForRenderItem(emptyList(), emptyList(), 3)) // no items -> 0
+    }
+
     // --- vertical keyboard navigation (geometry, not index arithmetic) -----------------------
     //
     // A 4-column grid with the burst [b c d] expanded. Cells are 100px; a full-width header/footer

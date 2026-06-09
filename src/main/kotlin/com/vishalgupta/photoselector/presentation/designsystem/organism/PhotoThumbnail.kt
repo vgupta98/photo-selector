@@ -223,9 +223,10 @@ private fun BurstBadge(count: Int, modifier: Modifier = Modifier) {
         contentColor = AppTheme.colors.categoryMemberContent,
     ) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.xxs),
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+            // 5dp horizontal is the shared badge inset (matches CategoryBadge); off the spacing scale by design.
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = AppTheme.spacing.xxs),
         ) {
             Icon(
                 imageVector = Icons.Filled.BurstMode,
