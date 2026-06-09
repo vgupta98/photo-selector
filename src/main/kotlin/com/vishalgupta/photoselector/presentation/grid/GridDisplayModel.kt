@@ -2,6 +2,7 @@ package com.vishalgupta.photoselector.presentation.grid
 
 import com.vishalgupta.photoselector.domain.model.PhotoGroup
 import com.vishalgupta.photoselector.domain.model.PhotoId
+import kotlin.math.abs
 
 /**
  * The grid's "display groups": the collapsed [groups] with at most one burst expanded in place.
@@ -64,4 +65,25 @@ internal fun buildRenderItems(groups: List<PhotoGroup>, expandedBurstId: PhotoId
         }
     }
     return items
+}
+
+/** A laid-out tile's position: its [displayIndex] and the top-left pixel offset of its grid cell. */
+internal data class TilePosition(val displayIndex: Int, val x: Int, val y: Int)
+
+/**
+ * Picks the up/down keyboard target among the laid-out [tiles] by geometry: the nearest tile row in
+ * the chosen direction, then within it the tile closest to the cursor's column. Returns null when
+ * the cursor isn't among [tiles] (scrolled off) or there is no tile row in that direction on screen
+ * - the caller then falls back to a column-step so the focus effect can scroll a fresh target in.
+ *
+ * Geometry, not `index +/- columns`, because an expanded burst inserts full-width header/footer rows
+ * and the partial rows they create, which the arithmetic model can't represent (it made Down behave
+ * like Right). [tiles] must already exclude the non-focusable header/footer items.
+ */
+internal fun pickVerticalTarget(tiles: List<TilePosition>, focusedIndex: Int, down: Boolean): Int? {
+    val current = tiles.firstOrNull { it.displayIndex == focusedIndex } ?: return null
+    val inDirection = tiles.filter { if (down) it.y > current.y else it.y < current.y }
+    if (inDirection.isEmpty()) return null
+    val rowY = inDirection.minByOrNull { abs(it.y - current.y) }!!.y
+    return inDirection.filter { it.y == rowY }.minByOrNull { abs(it.x - current.x) }!!.displayIndex
 }

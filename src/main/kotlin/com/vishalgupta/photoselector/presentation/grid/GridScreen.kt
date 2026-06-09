@@ -309,7 +309,6 @@ fun GridScreen(
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 val meta = event.isMetaPressed
                 val hasSelection = state.hasSelection
-                val cols = computeColumnCount(gridState)
                 // Keyboard focus moves over tiles (groups), not the flat photo list — a collapsed
                 // burst is one stop.
                 val maxIndex = tiles.size - 1
@@ -364,11 +363,11 @@ fun GridScreen(
                         true
                     }
                     Key.DirectionUp -> {
-                        onSetFocusedIndex((state.focusedIndex - cols).coerceAtLeast(0))
+                        onSetFocusedIndex(verticalNavTarget(gridState, renderItems, state.focusedIndex, maxIndex, down = false))
                         true
                     }
                     Key.DirectionDown -> {
-                        onSetFocusedIndex((state.focusedIndex + cols).coerceAtMost(maxIndex))
+                        onSetFocusedIndex(verticalNavTarget(gridState, renderItems, state.focusedIndex, maxIndex, down = true))
                         true
                     }
                     Key.Enter -> {
@@ -756,15 +755,46 @@ internal fun tileIndexForFlat(tileFlatStart: List<Int>, flatIndex: Int): Int {
     return if (i >= 0) i else (-i - 2).coerceIn(0, tileFlatStart.lastIndex)
 }
 
-// Derives the column count from the rendered grid (count of leading visible items
-// sharing the first row's y-offset) so the keyboard model matches what
-// GridCells.Adaptive actually laid out — recomputing from viewport width drifts
-// once contentPadding / horizontalArrangement spacing are taken into account.
-// Returns 1 before first layout (visibleItemsInfo empty), which is safe: the
-// user can't have pressed an arrow yet.
+/**
+ * Vertical (up/down) keyboard move for the grid cursor, resolved against the *actual* laid-out tile
+ * positions rather than `focusedIndex ± columns`. An expanded burst inserts full-width header/footer
+ * rows and the partial rows they create, which the arithmetic model can't represent (it made down
+ * behave like right). So from the focused tile we pick the nearest tile - by horizontal offset - in
+ * the closest tile row in the chosen direction, skipping the non-focusable header/footer items.
+ *
+ * Falls back to a column-count step only when the focused tile isn't currently laid out (e.g. it was
+ * scrolled off after a non-keyboard scroll): the step nudges [focusedIndex] so the focus effect can
+ * scroll it back into view, after which geometry resumes. [renderItems] is the LazyGrid's item list
+ * (headers/footers included), so an item's `index` there maps to a tile's `displayIndex`.
+ */
+private fun verticalNavTarget(
+    gridState: LazyGridState,
+    renderItems: List<GridRenderItem>,
+    focusedIndex: Int,
+    maxIndex: Int,
+    down: Boolean,
+): Int {
+    // The laid-out tile cells (headers/footers excluded), mapped to the tile index space.
+    val tilePositions = gridState.layoutInfo.visibleItemsInfo.mapNotNull { info ->
+        (renderItems.getOrNull(info.index) as? GridRenderItem.Tile)
+            ?.let { TilePosition(it.displayIndex, info.offset.x, info.offset.y) }
+    }
+    pickVerticalTarget(tilePositions, focusedIndex, down)?.let { return it }
+    // No on-screen tile beyond the cursor (a true edge, or the next row is just off-screen): step by
+    // a row so the focus effect can scroll a fresh target into view. Clamps to a no-op at the very
+    // top/bottom.
+    val columns = computeColumnCount(gridState)
+    return if (down) (focusedIndex + columns).coerceAtMost(maxIndex)
+    else (focusedIndex - columns).coerceAtLeast(0)
+}
+
+// The grid's column count, read from the *widest* laid-out row so a full-width burst header/footer
+// row (one spanning item) or a partial row never undercounts it. Used only as the fallback step when
+// geometry-based [verticalNavTarget] has no on-screen anchor. Matches what GridCells.Adaptive
+// actually laid out (recomputing from viewport width drifts once padding/spacing are accounted for).
+// Returns 1 before first layout (visibleItemsInfo empty), which is safe: no arrow can have fired yet.
 private fun computeColumnCount(gridState: LazyGridState): Int {
     val visible = gridState.layoutInfo.visibleItemsInfo
     if (visible.isEmpty()) return 1
-    val firstRowY = visible.first().offset.y
-    return visible.count { it.offset.y == firstRowY }.coerceAtLeast(1)
+    return visible.groupingBy { it.offset.y }.eachCount().values.maxOrNull()?.coerceAtLeast(1) ?: 1
 }

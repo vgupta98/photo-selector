@@ -71,6 +71,46 @@ class GridDisplayModelTest {
         assertEquals(emptyList(), items.filterIsInstance<GridRenderItem.Tile>().filter { it.expandedFrame })
     }
 
+    // --- vertical keyboard navigation (geometry, not index arithmetic) -----------------------
+    //
+    // A 4-column grid with the burst [b c d] expanded. Cells are 100px; a full-width header/footer
+    // forces row breaks, leaving partial rows the old "index +/- columns" model mishandled.
+    // Layout (display indices; tiles only, header/footer carry none):
+    //   row y=0   : 0(a)
+    //   [header]
+    //   row y=200 : 1(b) 2(c) 3(d)
+    //   [footer]
+    //   row y=400 : 4(e) 5(f)
+    private val expandedLayout = listOf(
+        TilePosition(displayIndex = 0, x = 0, y = 0),                                   // a
+        TilePosition(1, x = 0, y = 200), TilePosition(2, x = 100, y = 200), TilePosition(3, x = 200, y = 200), // b c d
+        TilePosition(4, x = 0, y = 400), TilePosition(5, x = 100, y = 400),             // e f
+    )
+
+    @Test fun `down from the lone first tile lands on the frame directly below, not sideways`() {
+        // The reported bug: Down moved sideways (to index 1's right neighbour) because the column
+        // count collapsed to 1. Geometry sends it straight down to b (index 1, same column x=0).
+        assertEquals(1, pickVerticalTarget(expandedLayout, focusedIndex = 0, down = true))
+    }
+
+    @Test fun `down from a middle frame lands in the row below at the nearest column`() {
+        // From c (index 2, x=100) down -> the e/f row; nearest column is f (index 5, x=100).
+        assertEquals(5, pickVerticalTarget(expandedLayout, focusedIndex = 2, down = true))
+        // From d (index 3, x=200) down -> e/f row has no x=200 tile; nearest is f (x=100).
+        assertEquals(5, pickVerticalTarget(expandedLayout, focusedIndex = 3, down = true))
+    }
+
+    @Test fun `up from a trailing single returns into the burst frames`() {
+        // From e (index 4, x=0) up -> the b/c/d row, nearest column is b (index 1, x=0).
+        assertEquals(1, pickVerticalTarget(expandedLayout, focusedIndex = 4, down = false))
+    }
+
+    @Test fun `no row in the direction returns null so the caller can fall back`() {
+        assertNull(pickVerticalTarget(expandedLayout, focusedIndex = 0, down = false)) // nothing above a
+        assertNull(pickVerticalTarget(expandedLayout, focusedIndex = 5, down = true))  // nothing below f
+        assertNull(pickVerticalTarget(expandedLayout, focusedIndex = 99, down = true)) // cursor off-screen
+    }
+
     private fun photo(id: String): Photo = Photo(
         id = PhotoId(id),
         absolutePath = Path.of("/photos/$id.jpg"),
