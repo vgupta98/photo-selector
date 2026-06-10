@@ -8,6 +8,8 @@ import com.vishalgupta.photoselector.data.categories.JsonCategoriesRepository
 import com.vishalgupta.photoselector.data.filesystem.FileSystemPhotoRepository
 import com.vishalgupta.photoselector.data.ai.DownscaleGrayEmbeddingModel
 import com.vishalgupta.photoselector.data.ai.EmbeddingCache
+import com.vishalgupta.photoselector.data.ai.EmbeddingModel
+import com.vishalgupta.photoselector.data.ai.OnnxEmbeddingModel
 import com.vishalgupta.photoselector.data.ai.PhotoFeatureExtractor
 import com.vishalgupta.photoselector.data.ai.SimilarityPhotoGrouper
 import com.vishalgupta.photoselector.data.trash.DesktopPhotoTrash
@@ -100,11 +102,12 @@ class AppContainer {
     // session; the cache is what makes burst re-grouping on every re-slice cheap.
     private val captureMetadataSource = CachingCaptureMetadataSource(ExifCaptureMetadataSource())
 
-    // Visual-similarity grouping (GroupingMode.Similarity). The classical, dependency-free embedder
-    // is the on-device default; a future PR swaps in a learned ONNX model behind EmbeddingModel.
-    // Embeddings are derived from a small decode and persisted, keyed by content + model id, so the
-    // cost is paid once and survives a restart.
-    private val embeddingModel = DownscaleGrayEmbeddingModel()
+    // Visual-similarity grouping (GroupingMode.Similarity). The learned MobileNetV3-Small embedder
+    // (OnnxEmbeddingModel) is the on-device default; if its bundled blob can't load we fall back to
+    // the classical, dependency-free DownscaleGrayEmbeddingModel so the lens still works. Either way
+    // embeddings are derived from a small decode and persisted, keyed by content + model id, so the
+    // cost is paid once and survives a restart (and a model swap re-keys the cache automatically).
+    private val embeddingModel: EmbeddingModel = loadEmbeddingModel()
     private val embeddingCache = EmbeddingCache(cacheDir = cacheDir, modelId = embeddingModel.id)
         .also { it.startEviction(appScope) }
     private val similarityGrouper: PhotoGrouper = SimilarityPhotoGrouper(
@@ -114,6 +117,13 @@ class AppContainer {
             decode = ::decodeForEmbedding,
         ),
     )
+
+    private fun loadEmbeddingModel(): EmbeddingModel = try {
+        OnnxEmbeddingModel.Loader.fromResource()
+    } catch (t: Throwable) {
+        System.err.println("ONNX embedder unavailable, falling back to classical embedder: ${t.message}")
+        DownscaleGrayEmbeddingModel()
+    }
 
     private suspend fun decodeForEmbedding(photo: Photo): DecodedImage? = try {
         formatRegistry.decoderFor(photo.absolutePath)?.decode(photo.absolutePath, EMBEDDING_EDGE_PX)
@@ -279,8 +289,9 @@ class AppContainer {
     }
 
     private companion object {
-        // Edge length of the decode used to compute embeddings + sharpness. Small enough to be cheap
-        // across thousands of photos, large enough for the downscale-gray fingerprint to discriminate.
-        const val EMBEDDING_EDGE_PX = 160
+        // Edge length of the decode feeding the embedder + sharpness scorer. Sized to the learned
+        // model's 224px square input so OnnxEmbeddingModel downscales rather than upscales; the
+        // classical fallback and the sharpness metric are happy at this size too.
+        const val EMBEDDING_EDGE_PX = 224
     }
 }

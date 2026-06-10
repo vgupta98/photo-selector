@@ -17,3 +17,6 @@ local.properties
 
 # Personal feature briefs / proposals (not for the repo)
 proposals/
+
+# Python venv for the embedding-model export tool (the .onnx output IS committed)
+tools/embedding-model/.venv/

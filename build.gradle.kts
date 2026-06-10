@@ -43,6 +43,11 @@ dependencies {
     // its own decoder rather than replacing this.
     implementation(libs.jna)
 
+    // ONNX Runtime powers the learned visual-similarity embedder (OnnxEmbeddingModel). The JAR
+    // bundles the JNI native library for every desktop platform, so it works behind the
+    // EmbeddingModel interface with no per-OS wiring; the model blob itself ships as a resource.
+    implementation(libs.onnxruntime)
+
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.junit)
