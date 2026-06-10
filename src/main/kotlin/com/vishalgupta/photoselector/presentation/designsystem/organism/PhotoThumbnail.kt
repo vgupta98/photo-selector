@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BurstMode
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -58,6 +59,10 @@ private const val THUMBNAIL_VIEWPORT_PX = 320
  * badge). When [onToggleSelect] (Cmd+Click) / [onRangeSelect] (Shift+Click) are supplied, a
  * modified click drives selection while a plain click still falls through to [onClick] — so the
  * established "click a tile to open it" gesture is untouched.
+ *
+ * [burstCount], when non-null, marks this tile as the collapsed representative of a burst of that
+ * many frames (a stacked-frames badge). The tile still shows [photo] (the burst's key frame); the
+ * caller wires [onClick] to open the burst side by side rather than a single browser.
  */
 @Composable
 fun PhotoThumbnail(
@@ -72,14 +77,18 @@ fun PhotoThumbnail(
     onToggleSelect: (() -> Unit)? = null,
     onRangeSelect: (() -> Unit)? = null,
     categoryBadges: ImmutableList<Int> = persistentListOf(),
+    burstCount: Int? = null,
+    withinBurst: Boolean = false,
 ) {
     val bitmap by produceState<ImageBitmap?>(null, photo.id) {
         value = loader.load(photo, viewportLongEdgePx = THUMBNAIL_VIEWPORT_PX)
     }
-    // Selection's accent ring takes precedence over the focus cursor on the rare tile that is both.
+    // Selection's accent ring takes precedence over the focus cursor on the rare tile that is both;
+    // an expanded-burst frame carries a dim bracket ring only when neither of those is present.
     val ringColor = when {
         isSelected -> AppTheme.colors.selectionRing
         isFocused -> AppTheme.colors.focusRing
+        withinBurst -> AppTheme.colors.burstFrameRing
         else -> null
     }
     val borderMod = if (ringColor != null) {
@@ -141,6 +150,16 @@ fun PhotoThumbnail(
                     .padding(AppTheme.spacing.xs),
             )
         }
+        if (burstCount != null) {
+            // Bottom-start keeps the burst badge clear of the star (top-end), category badges
+            // (top-start) and the select check (bottom-end).
+            BurstBadge(
+                count = burstCount,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(AppTheme.spacing.xs),
+            )
+        }
         if (isLastViewed) {
             Box(
                 Modifier
@@ -191,6 +210,33 @@ private fun CategoryBadges(badges: ImmutableList<Int>, modifier: Modifier = Modi
     }
 }
 
+/**
+ * The collapsed-burst affordance: a stacked-frames glyph plus the frame count, telling the user
+ * this one tile stands in for N near-simultaneous shots that open together.
+ */
+@Composable
+private fun BurstBadge(count: Int, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.small,
+        color = AppTheme.colors.categoryMemberContainer,
+        contentColor = AppTheme.colors.categoryMemberContent,
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.xxs),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = AppTheme.dimens.badgeInset, vertical = AppTheme.spacing.xxs),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.BurstMode,
+                contentDescription = "Burst of $count",
+                modifier = Modifier.size(AppTheme.dimens.iconSm),
+            )
+            Text(text = count.toString(), style = MaterialTheme.typography.labelMedium)
+        }
+    }
+}
+
 @Composable
 private fun CategoryBadge(label: String) {
     Surface(
@@ -201,7 +247,7 @@ private fun CategoryBadge(label: String) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+            modifier = Modifier.padding(horizontal = AppTheme.dimens.badgeInset, vertical = 1.dp),
         )
     }
 }

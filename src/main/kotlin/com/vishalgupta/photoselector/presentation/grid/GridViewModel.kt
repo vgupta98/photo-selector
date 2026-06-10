@@ -1,9 +1,12 @@
 package com.vishalgupta.photoselector.presentation.grid
 
 import com.vishalgupta.photoselector.data.image.ImageLoader
+import com.vishalgupta.photoselector.domain.grouping.BurstGrouper
+import com.vishalgupta.photoselector.domain.grouping.CaptureMetadataSource
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.domain.model.Photo
+import com.vishalgupta.photoselector.domain.model.PhotoGroup
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.CategoriesRepository
@@ -20,6 +23,7 @@ import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.navigation.MAX_SURVEY_PHOTOS
 import com.vishalgupta.photoselector.presentation.navigation.activeCategoryId
 import com.vishalgupta.photoselector.presentation.navigation.slice
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -37,6 +41,11 @@ import java.nio.file.Path
 
 data class GridUiState(
     val photos: List<Photo> = emptyList(),
+    // The grid's tiles: bursts collapse into one [PhotoGroup.Burst] tile, everything else is a
+    // [PhotoGroup.Single]. Derived from [photos] off-thread (EXIF reads); until grouping resolves
+    // it mirrors [photos] one-to-one as singles. [photos] stays the flat source of truth for
+    // selection -> index mapping and browser/Compare/Survey navigation.
+    val groups: List<PhotoGroup> = emptyList(),
     val scope: CategoryScope = CategoryScope.AllPhotos,
     val categories: List<Category> = emptyList(),
     val memberships: Map<CategoryId, Set<PhotoId>> = emptyMap(),
@@ -47,6 +56,12 @@ data class GridUiState(
     // is the pivot a Shift-click range extends from.
     val selection: Set<PhotoId> = emptySet(),
     val anchorIndex: Int? = null,
+    // Whether bursts collapse into one tile. On by default; the grid toolbar can turn it off to
+    // see every frame as its own tile. In-memory per grid instance (not persisted).
+    val groupBursts: Boolean = true,
+    // The burst (by tile id) currently expanded in place, or null. Clicking a burst tile unfolds it
+    // into its frames inline; at most one is open at a time. Pure presentation state.
+    val expandedBurstId: PhotoId? = null,
     val isBusy: Boolean = false,
     val progressLabel: String? = null,
     val toast: String? = null,
@@ -56,6 +71,13 @@ data class GridUiState(
 
     /** True while a multi-select is active — drives the top-bar swap and bulk key routing. */
     val hasSelection: Boolean get() = selection.isNotEmpty()
+
+    /**
+     * The tiles focus/selection/filing act on: [groups] with the expanded burst (if any) exploded
+     * into one tile per frame. A collapsed burst is one tile here (files all its frames); an open
+     * burst's frames are individual tiles (file just that frame). The grid renders the same space.
+     */
+    val displayGroups: List<PhotoGroup> get() = displayGroupsFor(groups, expandedBurstId)
 }
 
 class GridViewModel(
@@ -70,6 +92,8 @@ class GridViewModel(
     private val copyToFolder: CopyPhotosToFolderUseCase,
     private val moveToTrash: MovePhotosToTrashUseCase,
     val imageLoader: ImageLoader,
+    // Reads capture time + camera per photo for burst grouping; memoized across re-groups.
+    private val captureMetadataSource: CaptureMetadataSource,
     parentJob: Job? = null,
     private val onScrollIndexChanged: ((Int) -> Unit)? = null,
     // Lets the container drop the trashed photos from its scan snapshot, so any screen opened
@@ -88,6 +112,15 @@ class GridViewModel(
     private var scrollSaveJob: Job? = null
     private var lastKnownIndex: Int? = null
 
+    // The id-list the current [groups] were computed for; guards against re-grouping (and the
+    // singles flicker) when a membership change re-slices to the same set of photos.
+    private var lastGroupedIds: List<PhotoId>? = null
+    private var groupingJob: Job? = null
+
+    // Mirrors [GridUiState.groupBursts]; when false the grid stays one tile per photo and the
+    // off-thread regroup is skipped entirely.
+    private var groupBursts: Boolean = true
+
     init {
         combine(
             categories.observeCategories(root),
@@ -96,9 +129,16 @@ class GridViewModel(
             .onEach { (cats, members) ->
                 val photos = slicedPhotos(members)
                 val validIds = photos.mapTo(HashSet()) { it.id }
+                val ids = photos.map { it.id }
+                val sliceChanged = ids != lastGroupedIds
                 _state.update {
                     it.copy(
                         photos = photos,
+                        // Show tiles immediately as ungrouped singles when the slice changes;
+                        // regroup() refines them off-thread. An unchanged slice keeps its groups.
+                        groups = if (sliceChanged) photos.map(PhotoGroup::Single) else it.groups,
+                        // A new slice has different tiles, so any expanded burst no longer applies.
+                        expandedBurstId = if (sliceChanged) null else it.expandedBurstId,
                         categories = cats,
                         memberships = members,
                         focusedIndex = it.focusedIndex.coerceIn(-1, (photos.size - 1).coerceAtLeast(-1)),
@@ -107,8 +147,77 @@ class GridViewModel(
                         selection = if (it.selection.isEmpty()) it.selection else it.selection.intersect(validIds),
                     )
                 }
+                // Only collapse bursts when grouping is on; otherwise the singles set above stands
+                // and we record the slice so a membership re-slice doesn't needlessly re-run.
+                if (sliceChanged) {
+                    if (groupBursts) regroup(photos, ids) else lastGroupedIds = ids
+                }
             }
             .launchIn(scope)
+    }
+
+    /**
+     * Flips burst grouping for this grid. Turning it off drops straight back to one tile per photo;
+     * turning it on shows singles immediately and refines bursts off-thread, exactly like a re-slice.
+     */
+    fun toggleGroupBursts() {
+        groupBursts = !groupBursts
+        val photos = _state.value.photos
+        val ids = photos.map { it.id }
+        _state.update {
+            it.copy(
+                groupBursts = groupBursts,
+                groups = photos.map(PhotoGroup::Single),
+                expandedBurstId = null,
+                // The tile space renumbers, so a stored Shift+click anchor (a tile index) is stale.
+                anchorIndex = null,
+                focusedIndex = it.focusedIndex.coerceIn(-1, (photos.size - 1).coerceAtLeast(-1)),
+            )
+        }
+        if (groupBursts) {
+            regroup(photos, ids)
+        } else {
+            groupingJob?.cancel()
+            lastGroupedIds = ids
+        }
+    }
+
+    /**
+     * Recomputes burst [groups] off-thread (EXIF reads) and applies them only if the slice still
+     * matches what was grouped. [ids] is the slice fingerprint captured by the caller.
+     */
+    private fun regroup(photos: List<Photo>, ids: List<PhotoId>) {
+        lastGroupedIds = ids
+        groupingJob?.cancel()
+        groupingJob = scope.launch(Dispatchers.IO) {
+            val groups = BurstGrouper.group(photos, captureMetadataSource)
+            _state.update { st ->
+                // Bail if the slice moved under us, OR grouping was toggled off while this ran:
+                // cancel() is cooperative and there is no suspension point between BurstGrouper.group
+                // above and this update, so a regroup that finished computing just as the user turned
+                // grouping off would otherwise re-apply bursts over a chip that now reads "off".
+                if (st.photos.map { it.id } != ids || !groupBursts) {
+                    st
+                } else {
+                    // Keep an expanded burst open only if it survived the re-group as a burst.
+                    val stillExpanded = st.expandedBurstId
+                        ?.takeIf { id -> groups.any { it is PhotoGroup.Burst && it.groupId == id } }
+                    val display = displayGroupsFor(groups, stillExpanded)
+                    // Only when this async pass actually renumbers the tile space (singles ->
+                    // collapsed bursts) is a stored Shift+click anchor (a tile index) stale. If the
+                    // pass yields the same tiles - the common all-singles case - keep the anchor, or a
+                    // mid-grouping Cmd+click would lose its pivot. Matches the synchronous reshapes,
+                    // which null the anchor precisely because they always change the tile shape.
+                    val reshaped = groups != st.groups || stillExpanded != st.expandedBurstId
+                    st.copy(
+                        groups = groups,
+                        expandedBurstId = stillExpanded,
+                        anchorIndex = if (reshaped) null else st.anchorIndex,
+                        focusedIndex = st.focusedIndex.coerceIn(-1, (display.size - 1).coerceAtLeast(-1)),
+                    )
+                }
+            }
+        }
     }
 
     /** The scope's visible photos for the current [allPhotos] and [members] — the single slice rule. */
@@ -137,25 +246,76 @@ class GridViewModel(
     }
 
     fun setFocusedIndex(index: Int) {
-        _state.update { it.copy(focusedIndex = index.coerceIn(-1, (it.photos.size - 1).coerceAtLeast(-1))) }
+        _state.update { it.copy(focusedIndex = index.coerceIn(-1, (it.displayGroups.size - 1).coerceAtLeast(-1))) }
     }
 
-    /** Toggles the focused photo's Favourites membership (F / Space, in any scope). */
-    fun toggleMembershipAtFocus() {
-        val photo = _state.value.photos.getOrNull(_state.value.focusedIndex) ?: return
-        scope.launch {
-            val added = categories.toggleMembership(root, Category.FAVOURITES_ID, photo.id)
-            _toggleEvents.send(CategoryToggle(Category.FAVOURITES_NAME, isFavourite = true, added = added))
+    /**
+     * Clicking / Enter on a collapsed burst tile: unfold it in place into its frames (or fold it
+     * back if it is already open). At most one burst is expanded at a time. Focus tracks the burst:
+     * on expand it jumps to the first frame so the arrow keys start inside the run; on fold-back it
+     * returns to the collapsed burst tile. (Both share one lookup: [PhotoGroup.groupId] is the first
+     * frame's id, so it resolves to the first frame when open and to the burst tile when collapsed.)
+     */
+    fun toggleBurstExpansion(groupId: PhotoId) {
+        _state.update { st ->
+            val open = if (st.expandedBurstId == groupId) null else groupId
+            val display = displayGroupsFor(st.groups, open)
+            val focus = display.indexOfFirst { it.groupId == groupId }.takeIf { it >= 0 } ?: st.focusedIndex
+            // Expanding/folding renumbers the tile space, so any stored Shift+click anchor is stale.
+            st.copy(
+                expandedBurstId = open,
+                anchorIndex = null,
+                focusedIndex = focus.coerceIn(-1, (display.size - 1).coerceAtLeast(-1)),
+            )
         }
     }
 
-    /** Toggles the focused photo in the Nth custom category (bare digit 1..9), if one exists. */
+    /**
+     * Esc (after clearing any selection): fold the open burst back into one tile, returning focus to
+     * that burst tile so the cursor lands where the user opened from rather than on whatever tile now
+     * occupies the shrunken index (symmetric with [toggleBurstExpansion]'s jump to the first frame).
+     */
+    fun collapseBurst() {
+        _state.update { st ->
+            val burstId = st.expandedBurstId ?: return@update st
+            val display = displayGroupsFor(st.groups, null)
+            val focus = display.indexOfFirst { it.groupId == burstId }.takeIf { it >= 0 } ?: st.focusedIndex
+            // Folding renumbers the tile space, so any stored Shift+click anchor is stale.
+            st.copy(
+                expandedBurstId = null,
+                anchorIndex = null,
+                focusedIndex = focus.coerceIn(-1, (display.size - 1).coerceAtLeast(-1)),
+            )
+        }
+    }
+
+    /**
+     * F / Space at the focused tile. A single photo toggles its Favourites membership (as before);
+     * a collapsed burst files all its frames into Favourites in one additive write — toggling a
+     * representative you can't fully see would be ambiguous, so a burst always *adds*.
+     */
+    fun toggleMembershipAtFocus() {
+        when (val group = _state.value.displayGroups.getOrNull(_state.value.focusedIndex)) {
+            is PhotoGroup.Single -> toggleSingleMembership(group.photo, Category.FAVOURITES_ID, Category.FAVOURITES_NAME, isFavourite = true)
+            is PhotoGroup.Burst -> fileIdsInto(group.photos.mapTo(HashSet()) { it.id }, Category.FAVOURITES_ID, Category.FAVOURITES_NAME)
+            null -> Unit
+        }
+    }
+
+    /** Bare digit 1..9 at the focused tile: toggle the single, or file the whole burst, into the Nth custom category. */
     fun toggleCustomCategoryAtFocus(slot: Int) {
-        val photo = _state.value.photos.getOrNull(_state.value.focusedIndex) ?: return
         val category = _state.value.categories.customCategories().getOrNull(slot) ?: return
+        when (val group = _state.value.displayGroups.getOrNull(_state.value.focusedIndex)) {
+            is PhotoGroup.Single -> toggleSingleMembership(group.photo, category.id, category.name, isFavourite = false)
+            is PhotoGroup.Burst -> fileIdsInto(group.photos.mapTo(HashSet()) { it.id }, category.id, category.name)
+            null -> Unit
+        }
+    }
+
+    private fun toggleSingleMembership(photo: Photo, id: CategoryId, name: String, isFavourite: Boolean) {
         scope.launch {
-            val added = categories.toggleMembership(root, category.id, photo.id)
-            _toggleEvents.send(CategoryToggle(category.name, isFavourite = false, added = added))
+            val added = categories.toggleMembership(root, id, photo.id)
+            _toggleEvents.send(CategoryToggle(name, isFavourite = isFavourite, added = added))
         }
     }
 
@@ -163,23 +323,31 @@ class GridViewModel(
     // Mouse-driven (Cmd/Shift-click, Cmd+A) so the established plain-click-opens-the-browser
     // gesture is preserved. The set lives in state and is screenshot-testable directly.
 
-    /** Cmd+Click: flip one tile in the selection; that tile becomes the range anchor. */
+    // Selection operates at tile granularity over [displayGroups]: [index] is a tile index, and a
+    // collapsed burst contributes all its frames so a whole burst is picked or dropped as one, while
+    // an expanded burst's frames select individually. The set itself stays per-photo, so downstream
+    // (bulk file, copy, the C entry's flat-index mapping) is unchanged.
+
+    /** Cmd+Click: flip the tile's photos in the selection; that tile becomes the range anchor. */
     fun toggleSelection(index: Int) {
-        val photo = _state.value.photos.getOrNull(index) ?: return
+        val group = _state.value.displayGroups.getOrNull(index) ?: return
+        val ids = group.photos.mapTo(HashSet()) { it.id }
         _state.update {
-            val next = if (photo.id in it.selection) it.selection - photo.id else it.selection + photo.id
+            val allSelected = ids.all { id -> id in it.selection }
+            val next = if (allSelected) it.selection - ids else it.selection + ids
             it.copy(selection = next, anchorIndex = index)
         }
     }
 
-    /** Shift+Click: select the contiguous run from the anchor to [index]; anchor unchanged. */
+    /** Shift+Click: select every photo in the contiguous run of tiles from the anchor to [index]. */
     fun selectRange(index: Int) {
         _state.update { st ->
-            if (index !in st.photos.indices) return@update st
-            val anchor = (st.anchorIndex ?: index).coerceIn(st.photos.indices)
+            val display = st.displayGroups
+            if (index !in display.indices) return@update st
+            val anchor = (st.anchorIndex ?: index).coerceIn(display.indices)
             val lo = minOf(anchor, index)
             val hi = maxOf(anchor, index)
-            val ids = (lo..hi).mapNotNull { st.photos.getOrNull(it)?.id }.toSet()
+            val ids = (lo..hi).flatMap { display.getOrNull(it)?.photos.orEmpty() }.mapTo(HashSet()) { it.id }
             st.copy(selection = ids, anchorIndex = anchor)
         }
     }
@@ -204,8 +372,10 @@ class GridViewModel(
         fileSelectionInto(category.id, category.name)
     }
 
-    private fun fileSelectionInto(id: CategoryId, name: String) {
-        val ids = _state.value.selection
+    private fun fileSelectionInto(id: CategoryId, name: String) = fileIdsInto(_state.value.selection, id, name)
+
+    /** Additive bulk file of [ids] into a category, with a result toast. Shared by selection filing and focused-burst filing. */
+    private fun fileIdsInto(ids: Set<PhotoId>, id: CategoryId, name: String) {
         if (ids.isEmpty()) return
         scope.launch {
             val added = categories.addMemberships(root, id, ids)
@@ -246,21 +416,27 @@ class GridViewModel(
                 categories.removeMemberships(root, trashedIds)
                 onPhotosDeleted?.invoke(trashedIds)
             }
+            // Recompute directly off the reduced [allPhotos]: removeMemberships only re-emits
+            // when something was actually filed, so the slice can't rely on that callback.
+            val photos = slicedPhotos(_state.value.memberships)
+            val ids = photos.map { it.id }
             _state.update { st ->
-                // Recompute directly off the reduced [allPhotos]: removeMemberships only re-emits
-                // when something was actually filed, so the slice can't rely on that callback.
-                val photos = slicedPhotos(st.memberships)
                 val validIds = photos.mapTo(HashSet()) { it.id }
                 st.copy(
                     isBusy = false,
                     progressLabel = null,
                     photos = photos,
+                    groups = photos.map(PhotoGroup::Single),
+                    expandedBurstId = null,
                     selection = st.selection.intersect(validIds),
                     anchorIndex = null,
                     focusedIndex = st.focusedIndex.coerceIn(-1, (photos.size - 1).coerceAtLeast(-1)),
                     toast = deleteToast(report),
                 )
             }
+            // Respect the toolbar toggle: re-collapse only when grouping is on, otherwise
+            // the grid would silently regroup behind a chip that still reads "off".
+            if (groupBursts) regroup(photos, ids) else lastGroupedIds = ids
         }
     }
 

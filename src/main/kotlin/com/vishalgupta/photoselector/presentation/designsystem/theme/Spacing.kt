@@ -13,6 +13,8 @@ import androidx.compose.ui.unit.dp
  */
 @Immutable
 data class Spacing(
+    // Tightest gap on the scale, for badge interiors where xs (4dp) reads too loose.
+    val xxs: Dp = 2.dp,
     val xs: Dp = 4.dp,
     val sm: Dp = 8.dp,
     val md: Dp = 12.dp,

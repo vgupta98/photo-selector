@@ -10,12 +10,18 @@ Clean architecture, single Gradle module, package
 `com.vishalgupta.photoselector`:
 
 - `domain/` — entities (`Photo`, `RootFolder`, `PhotoId`, `Category`,
-  `CategoryId`), repository interfaces, use cases. No framework dependencies.
+  `CategoryId`, `PhotoGroup`), repository interfaces, use cases. No framework
+  dependencies. `grouping/` holds burst grouping: `BurstGrouper`, a pure
+  `List<Photo>` → `List<PhotoGroup>` (`Single | Burst`) over a
+  `CaptureMetadataSource` — so the heuristic can be swapped without touching
+  the grid.
 - `data/` — repository implementations: `filesystem/`, `categories/`,
   `image/` (decoding), `format/` (per-format `PhotoDecoder`s; `macos/`
-  holds the JNA→ImageIO bridge for HEIC), `export/`, `trash/`
-  (move-to-Trash via `java.awt.Desktop.moveToTrash`), plus `io/` (the
-  shared `AtomicJsonWriter`).
+  holds the JNA→ImageIO bridge for HEIC; `ExifReader` also backs
+  `ExifCaptureMetadataSource` — capture time + camera for burst grouping,
+  memoized per session by `CachingCaptureMetadataSource`), `export/`,
+  `trash/` (move-to-Trash via `java.awt.Desktop.moveToTrash`), plus `io/`
+  (the shared `AtomicJsonWriter`).
 - `presentation/` — Compose UI + view models, organised by screen
   (`rootpicker/`, `grid/`, `browser/`, `compare/`, `survey/`), plus
   `navigation/` and `common/` (non-UI plumbing: file dialogs, system
@@ -38,7 +44,24 @@ Clean architecture, single Gradle module, package
   selected indices: one tile is active, arrows/`Tab` move it, `F`/`1`-`9` file
   it, no zoom. The side-by-side action is capped at `MAX_SURVEY_PHOTOS` (the
   survey grid is non-lazy and pins every tile's decode); a larger selection is
-  declined at the grid with a toast rather than opened. Grid-originated
+  declined at the grid with a toast rather than opened. The grid also
+  collapses adjacent burst frames into one `PhotoGroup.Burst` tile (a
+  stacked-frames count badge); clicking that tile **expands the burst in
+  place** — `GridDisplayModel` explodes the open burst (`expandedBurstId`)
+  into one tile per frame, bracketed by a full-width header and footer that
+  fence the run off from the rest of the grid, so the same per-tile
+  filing/selection acts on a single frame while it is open (collapsed
+  `F` files the whole burst, expanded `F` files the focused frame). One
+  burst expands at a time; `Esc` peels selection → collapse → grid-back.
+  The toolbar `Group bursts` chip turns grouping off entirely
+  (`GridUiState.groupBursts`). Grouping is grid-only presentation: focus,
+  multi-select and keyboard filing operate over `displayGroups` (the tile
+  index space, shared by the view model and the renderer via
+  `GridDisplayModel`), while the **flat photo list** stays the index
+  source for browser/Compare/Survey nav — and the grid is the *sole*
+  translator between the two (`tileIndexForFlat`), so every scroll
+  index/position on the wire (browser return, Compare/Survey return,
+  persisted `BrowsePosition.lastIndex`) is a flat photo index. Grid-originated
   Compare/Survey return to the grid on `Esc`
   (`Compare.returnToGrid`, `Survey.returnScrollIndex`); browser-originated
   Compare still returns to the browser. Photos live in N flat per-root categories;
@@ -235,6 +258,19 @@ workflow's fail-fast "branch already exists" check is intentional.
   **only on macOS**, behind the `PhotoDecoder` interface. A future
   Windows build adds its own decoder there — don't reintroduce a search
   for a cross-platform lib without re-checking Maven first.
+- **Burst grouping reads capture time from JPEG EXIF only, and never
+  falls back to mtime.** `ExifReader` is JPEG-only, so HEIC (and any
+  EXIF-less file) has no `DateTimeOriginal`. `BurstGrouper` deliberately
+  treats a frame with no readable capture time as ungroupable — it stays
+  a `Single` — rather than leaning on file mtime, because a bulk copy
+  flattens mtime and over-groups unrelated photos (the original mtime
+  fallback shipped exactly that bug). So today **HEIC never groups**;
+  the way to make it group is reading HEIC capture time (an ImageIO read,
+  the same bridge `MacImageIO` already uses), not loosening the heuristic.
+  Grouping can also be turned off entirely from the grid toolbar
+  (`GridUiState.groupBursts`), and is recomputed off-thread on every
+  re-slice, which is why `CachingCaptureMetadataSource` exists — keep it
+  in the wiring.
 
 ## Files worth knowing
 

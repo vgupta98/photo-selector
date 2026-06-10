@@ -28,6 +28,12 @@ data class Dimens(
     val scrollbarThickness: Dp = 8.dp,
     val scrollbarMinHeight: Dp = 48.dp,
     val progressIndicatorLg: Dp = 48.dp,
+    // Thickness of the little drag-style handle that closes an expanded burst (one of the 3dp
+    // hairline family alongside focusBorderWidth / lastViewedIndicatorHeight).
+    val burstHandleHeight: Dp = 3.dp,
+    // Horizontal inset inside the small overlay badges (burst count, category chip). Tighter than
+    // the spacing scale by design, shared so both badges stay visually identical.
+    val badgeInset: Dp = 5.dp,
 )
 
 val LocalDimens = staticCompositionLocalOf { Dimens() }

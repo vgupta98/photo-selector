@@ -2,9 +2,12 @@ package com.vishalgupta.photoselector.presentation.grid
 
 import androidx.compose.ui.graphics.ImageBitmap
 import com.vishalgupta.photoselector.data.image.ImageLoader
+import com.vishalgupta.photoselector.domain.grouping.CaptureMetadata
+import com.vishalgupta.photoselector.domain.grouping.CaptureMetadataSource
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.domain.model.Photo
+import com.vishalgupta.photoselector.domain.model.PhotoGroup
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.CategoriesRepository
@@ -19,6 +22,7 @@ import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.testing.FakeCategoriesRepository
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -75,9 +79,46 @@ class GridSelectionTest {
 
     private val deletedRoots = mutableListOf<Set<PhotoId>>()
 
+    // A distinct camera per photo keeps every tile a [PhotoGroup.Single], so a tile index equals a
+    // photo index and these selection tests read against the flat list — burst collapsing has its
+    // own coverage in BurstGrouperTest and the grid screenshot test.
+    private val perPhotoCameraMetadata = CaptureMetadataSource { photo ->
+        CaptureMetadata(takenAtEpochMs = null, cameraId = photo.id.value, orientation = null)
+    }
+
+    // Same camera + capture times one second apart, so all six photos collapse into one burst when
+    // grouping is on - the fixture the toggle test flips on and off.
+    private val oneBurstMetadata = CaptureMetadataSource { photo ->
+        val i = photo.id.value.removePrefix("p").toInt()
+        CaptureMetadata(takenAtEpochMs = i * 1_000L, cameraId = "cam", orientation = 1)
+    }
+
+    // single | burst[p1..p4] | single : p0 and p5 sit on their own cameras, p1..p4 share one and
+    // shoot a second apart. The burst is tile 1, so collapsing it is a meaningful focus target
+    // (distinct from the first/last tile) - the fixture for the collapse-returns-focus test.
+    private val singleBurstSingleMetadata = CaptureMetadataSource { photo ->
+        when (val i = photo.id.value.removePrefix("p").toInt()) {
+            0 -> CaptureMetadata(takenAtEpochMs = 0L, cameraId = "head", orientation = 1)
+            5 -> CaptureMetadata(takenAtEpochMs = 0L, cameraId = "tail", orientation = 1)
+            else -> CaptureMetadata(takenAtEpochMs = i * 1_000L, cameraId = "burst", orientation = 1)
+        }
+    }
+
+    // p0|p1 are a two-frame burst (shared camera, a second apart); p2..p5 sit on their own cameras.
+    // Deleting one of the pair drops the burst below two frames, so the survivor must regroup to a
+    // Single - the fixture for the below-two-frames regroup test.
+    private val twoFrameBurstMetadata = CaptureMetadataSource { photo ->
+        when (val i = photo.id.value.removePrefix("p").toInt()) {
+            0 -> CaptureMetadata(takenAtEpochMs = 0L, cameraId = "pair", orientation = 1)
+            1 -> CaptureMetadata(takenAtEpochMs = 1_000L, cameraId = "pair", orientation = 1)
+            else -> CaptureMetadata(takenAtEpochMs = 0L, cameraId = "solo$i", orientation = 1)
+        }
+    }
+
     private fun viewModel(
         repo: CategoriesRepository,
         trash: PhotoTrash = noOpTrash,
+        metadata: CaptureMetadataSource = perPhotoCameraMetadata,
     ): GridViewModel = GridViewModel(
         root = RootFolder(Path.of("/photos")),
         allPhotos = photos,
@@ -88,6 +129,7 @@ class GridSelectionTest {
         copyToFolder = CopyPhotosToFolderUseCase(noOpExporter),
         moveToTrash = MovePhotosToTrashUseCase(trash),
         imageLoader = noOpImageLoader,
+        captureMetadataSource = metadata,
         onPhotosDeleted = { ids -> deletedRoots += ids },
     )
 
@@ -137,6 +179,180 @@ class GridSelectionTest {
         vm.clearSelection()
         assertTrue(vm.state.value.selection.isEmpty())
         assertNull(vm.state.value.anchorIndex)
+
+        vm.onClear()
+    }
+
+    @Test
+    fun toggleGroupBursts_collapsesAndExpandsTiles() = runBlocking {
+        val vm = viewModel(FakeCategoriesRepository(categories), metadata = oneBurstMetadata)
+        vm.awaitPhotos()
+        // Grouping is on by default: the six frames settle into a single burst tile.
+        withTimeout(2_000) { vm.state.first { it.groups.size == 1 } }
+        assertTrue(vm.state.value.groupBursts)
+
+        // Turning it off drops straight back to one tile per photo.
+        vm.toggleGroupBursts()
+        assertTrue(!vm.state.value.groupBursts)
+        assertEquals(photos.size, vm.state.value.groups.size)
+
+        // Turning it back on re-collapses the burst off-thread.
+        vm.toggleGroupBursts()
+        assertTrue(vm.state.value.groupBursts)
+        withTimeout(2_000) { vm.state.first { it.groups.size == 1 } }
+
+        vm.onClear()
+    }
+
+    @Test
+    fun expandBurst_thenFocusFilesOneFrame_whileCollapsedFilesWholeBurst() = runBlocking {
+        val repo = FakeCategoriesRepository(categories)
+        val vm = viewModel(repo, metadata = oneBurstMetadata)
+        vm.awaitPhotos()
+        withTimeout(2_000) { vm.state.first { it.groups.size == 1 } } // one burst of six
+
+        val burstId = vm.state.value.groups.single().groupId
+
+        // Collapsed: F at the burst tile files all six frames in one additive batch (addMemberships).
+        vm.setFocusedIndex(0)
+        vm.toggleMembershipAtFocus()
+        withTimeout(2_000) { vm.state.first { repo.addCalls.isNotEmpty() } }
+        assertEquals(Category.FAVOURITES_ID, repo.addCalls.single().first)
+        assertEquals(photos.map { it.id }.toSet(), repo.addCalls.single().second)
+
+        // Expand: now six per-frame tiles, focus on the first frame.
+        vm.toggleBurstExpansion(burstId)
+        assertEquals(burstId, vm.state.value.expandedBurstId)
+        assertEquals(photos.size, vm.state.value.displayGroups.size)
+        assertEquals(0, vm.state.value.focusedIndex)
+
+        // Expanded: filing the 3rd frame into "Selects" toggles exactly that one photo (not a batch).
+        vm.setFocusedIndex(2)
+        vm.toggleCustomCategoryAtFocus(0) // slot 0 == "Selects"
+        withTimeout(2_000) { vm.state.first { repo.toggleCalls.isNotEmpty() } }
+        assertEquals(selectsId to photos[2].id, repo.toggleCalls.single())
+
+        // Collapse folds back to the single burst tile.
+        vm.collapseBurst()
+        assertNull(vm.state.value.expandedBurstId)
+        assertEquals(1, vm.state.value.displayGroups.size)
+
+        vm.onClear()
+    }
+
+    @Test
+    fun collapseBurst_returnsFocusToTheBurstTile() = runBlocking {
+        val vm = viewModel(FakeCategoriesRepository(categories), metadata = singleBurstSingleMetadata)
+        vm.awaitPhotos()
+        // single | burst[p1..p4] | single -> three tiles, the burst in the middle (tile 1).
+        withTimeout(2_000) { vm.state.first { it.groups.size == 3 } }
+        val burstId = vm.state.value.groups[1].groupId
+
+        // Expand and arrow onto a later frame, away from the burst's leading edge.
+        vm.toggleBurstExpansion(burstId)
+        assertEquals(burstId, vm.state.value.expandedBurstId)
+        vm.setFocusedIndex(3) // p3, deep inside the unfolded run
+
+        // Collapsing returns focus to the burst tile (index 1), not whatever now sits at the old
+        // index - symmetric with expansion jumping focus to the first frame.
+        vm.collapseBurst()
+        assertNull(vm.state.value.expandedBurstId)
+        assertEquals(3, vm.state.value.displayGroups.size)
+        assertEquals(1, vm.state.value.focusedIndex)
+        assertEquals(burstId, vm.state.value.displayGroups[1].groupId)
+
+        vm.onClear()
+    }
+
+    @Test
+    fun regroupCompletingAfterGroupingToggledOff_doesNotReapplyBursts() = runBlocking {
+        // Same-camera burst metadata, but the first read blocks on a gate, so the off-thread grouping
+        // pass is guaranteed in-flight when we toggle grouping off - the race that finding 2 describes.
+        val gate = java.util.concurrent.CountDownLatch(1)
+        val gatedBurstMetadata = CaptureMetadataSource { photo ->
+            gate.await()
+            val i = photo.id.value.removePrefix("p").toInt()
+            CaptureMetadata(takenAtEpochMs = i * 1_000L, cameraId = "cam", orientation = 1)
+        }
+        val vm = viewModel(FakeCategoriesRepository(categories), metadata = gatedBurstMetadata)
+        vm.awaitPhotos()
+
+        // Grouping is on by default, so a regroup is already launched and now blocked on the gate.
+        // Toggle off before releasing it: singles stand, and cancel() can't stop the blocked job.
+        vm.toggleGroupBursts()
+        assertTrue(!vm.state.value.groupBursts)
+        assertEquals(photos.size, vm.state.value.groups.size)
+
+        gate.countDown() // let the now-stale regroup finish and attempt its _state.update
+
+        // Give that update a window to (wrongly) collapse the tiles; it must not.
+        var collapsed = false
+        try {
+            withTimeout(500) { vm.state.first { it.groups.size < photos.size } }
+            collapsed = true
+        } catch (_: TimeoutCancellationException) {
+            // No collapse within the window - the in-flight regroup correctly bailed on groupBursts.
+        }
+        assertTrue("a stale regroup re-applied bursts after grouping was toggled off", !collapsed)
+        assertTrue(!vm.state.value.groupBursts)
+        assertEquals(photos.size, vm.state.value.groups.size)
+
+        vm.onClear()
+    }
+
+    @Test
+    fun deleteSelection_doesNotRegroupWhenGroupingIsOff() = runBlocking {
+        val vm = viewModel(FakeCategoriesRepository(categories), metadata = oneBurstMetadata)
+        vm.awaitPhotos()
+        withTimeout(2_000) { vm.state.first { it.groups.size == 1 } } // one burst of six
+
+        // User turns grouping off -> one tile per photo.
+        vm.toggleGroupBursts()
+        withTimeout(2_000) { vm.state.first { it.groups.size == photos.size } }
+        assertTrue(!vm.state.value.groupBursts)
+
+        // Delete one frame. With grouping off the delete must leave the tiles flat - it must not
+        // re-collapse the remaining frames behind the user's "off" choice.
+        vm.toggleSelection(5)
+        vm.deleteSelection()
+        withTimeout(2_000) { vm.state.first { it.toast != null && !it.isBusy } }
+
+        // Give any (buggy) off-thread regroup a window to fire; assert it never collapses.
+        var collapsed = false
+        try {
+            withTimeout(500) { vm.state.first { it.groups.size < photos.size - 1 } }
+            collapsed = true
+        } catch (_: TimeoutCancellationException) {
+            // No collapse within the window - the correct, grouping-off behaviour.
+        }
+        assertTrue("delete re-grouped despite grouping being off", !collapsed)
+        assertEquals(photos.size - 1, vm.state.value.groups.size)
+        assertTrue(!vm.state.value.groupBursts)
+
+        vm.onClear()
+    }
+
+    @Test
+    fun deleteSelection_regroupsABurstDroppedBelowTwoFramesToASingle() = runBlocking {
+        val vm = viewModel(FakeCategoriesRepository(categories), metadata = twoFrameBurstMetadata)
+        vm.awaitPhotos()
+        // p0|p1 burst + p2..p5 singles -> 5 tiles, exactly one of them a burst.
+        withTimeout(2_000) { vm.state.first { st -> st.groups.count { it is PhotoGroup.Burst } == 1 } }
+        val burstId = vm.state.value.groups.first { it is PhotoGroup.Burst }.groupId
+
+        // Expand so the two frames are individually addressable, then delete just the second one (p1).
+        vm.toggleBurstExpansion(burstId)
+        assertEquals(burstId, vm.state.value.expandedBurstId)
+        vm.toggleSelection(1) // display tile 1 == p1, the burst's second frame
+        vm.deleteSelection()
+        withTimeout(2_000) { vm.state.first { it.toast != null && !it.isBusy } }
+
+        // p1 gone, p0 survives alone: the burst falls below two frames, so it must regroup to a Single
+        // (BurstGrouper requires >= 2). No burst remains, and p0 + the four solos are five tiles.
+        withTimeout(2_000) { vm.state.first { st -> st.photos.size == photos.size - 1 } }
+        withTimeout(2_000) { vm.state.first { st -> st.groups.none { it is PhotoGroup.Burst } } }
+        assertTrue(vm.state.value.photos.any { it.id == photos[0].id })
+        assertEquals(photos.size - 1, vm.state.value.groups.size)
 
         vm.onClear()
     }
