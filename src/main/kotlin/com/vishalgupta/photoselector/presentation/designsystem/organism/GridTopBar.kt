@@ -16,14 +16,15 @@ import androidx.compose.ui.Modifier
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
+import com.vishalgupta.photoselector.presentation.common.GroupingMode
 import com.vishalgupta.photoselector.presentation.designsystem.atom.AppTextButton
-import com.vishalgupta.photoselector.presentation.designsystem.molecule.BurstGroupingToggle
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.CategoryActionsMenu
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.CategoryMenu
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.CategoryNameDialog
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ChangeFolderButton
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ConflictPolicyButton
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.FavouritesButton
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.GroupingModeToggle
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 
 /**
@@ -49,8 +50,8 @@ fun GridTopBar(
     onExportTxt: () -> Unit,
     onCopyToFolder: (ConflictPolicy) -> Unit,
     onChangeFolder: () -> Unit,
-    groupBursts: Boolean,
-    onToggleGroupBursts: () -> Unit,
+    groupingMode: GroupingMode,
+    onSelectGroupingMode: (GroupingMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -108,7 +109,7 @@ fun GridTopBar(
             }
         }
 
-        BurstGroupingToggle(grouping = groupBursts, onToggle = onToggleGroupBursts)
+        GroupingModeToggle(mode = groupingMode, onSelect = onSelectGroupingMode)
 
         ChangeFolderButton(
             onChangeFolder = onChangeFolder,

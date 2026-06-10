@@ -6,6 +6,10 @@ import com.vishalgupta.photoselector.data.export.CopyPhotoExporter
 import com.vishalgupta.photoselector.data.export.TxtPhotoExporter
 import com.vishalgupta.photoselector.data.categories.JsonCategoriesRepository
 import com.vishalgupta.photoselector.data.filesystem.FileSystemPhotoRepository
+import com.vishalgupta.photoselector.data.ai.DownscaleGrayEmbeddingModel
+import com.vishalgupta.photoselector.data.ai.EmbeddingCache
+import com.vishalgupta.photoselector.data.ai.PhotoFeatureExtractor
+import com.vishalgupta.photoselector.data.ai.SimilarityPhotoGrouper
 import com.vishalgupta.photoselector.data.trash.DesktopPhotoTrash
 import com.vishalgupta.photoselector.data.format.CachingCaptureMetadataSource
 import com.vishalgupta.photoselector.data.format.DefaultPhotoFormatRegistry
@@ -17,6 +21,8 @@ import com.vishalgupta.photoselector.data.image.DiskThumbnailCache
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.data.image.SkikoImageLoader
 import com.vishalgupta.photoselector.domain.format.PhotoFormatRegistry
+import com.vishalgupta.photoselector.domain.grouping.PhotoGrouper
+import com.vishalgupta.photoselector.domain.model.DecodedImage
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
@@ -37,6 +43,7 @@ import com.vishalgupta.photoselector.presentation.survey.SurveyViewModel
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.navigation.activeCategoryId
 import com.vishalgupta.photoselector.presentation.navigation.slice
+import com.vishalgupta.photoselector.presentation.common.GroupingMode
 import com.vishalgupta.photoselector.presentation.common.MacSystemActions
 import com.vishalgupta.photoselector.presentation.common.SystemActions
 import com.vishalgupta.photoselector.presentation.navigation.Screen
@@ -77,9 +84,11 @@ class AppContainer {
         },
     )
 
-    private val diskThumbnailCache = DiskThumbnailCache(
-        cacheDir = Path.of(System.getProperty("user.home"), "Library", "Caches", "PhotoSelector"),
-    ).also { it.startEviction(appScope) }
+    private val cacheDir: Path =
+        Path.of(System.getProperty("user.home"), "Library", "Caches", "PhotoSelector")
+
+    private val diskThumbnailCache = DiskThumbnailCache(cacheDir = cacheDir)
+        .also { it.startEviction(appScope) }
 
     val imageLoader: ImageLoader = SkikoImageLoader(
         registry = formatRegistry,
@@ -90,6 +99,27 @@ class AppContainer {
     // Shared across grids so each photo's EXIF (capture time + camera) is read at most once per
     // session; the cache is what makes burst re-grouping on every re-slice cheap.
     private val captureMetadataSource = CachingCaptureMetadataSource(ExifCaptureMetadataSource())
+
+    // Visual-similarity grouping (GroupingMode.Similarity). The classical, dependency-free embedder
+    // is the on-device default; a future PR swaps in a learned ONNX model behind EmbeddingModel.
+    // Embeddings are derived from a small decode and persisted, keyed by content + model id, so the
+    // cost is paid once and survives a restart.
+    private val embeddingModel = DownscaleGrayEmbeddingModel()
+    private val embeddingCache = EmbeddingCache(cacheDir = cacheDir, modelId = embeddingModel.id)
+        .also { it.startEviction(appScope) }
+    private val similarityGrouper: PhotoGrouper = SimilarityPhotoGrouper(
+        PhotoFeatureExtractor(
+            model = embeddingModel,
+            cache = embeddingCache,
+            decode = ::decodeForEmbedding,
+        ),
+    )
+
+    private suspend fun decodeForEmbedding(photo: Photo): DecodedImage? = try {
+        formatRegistry.decoderFor(photo.absolutePath)?.decode(photo.absolutePath, EMBEDDING_EDGE_PX)
+    } catch (_: Throwable) {
+        null
+    }
 
     private val photoRepository: PhotoRepository = FileSystemPhotoRepository(formatRegistry)
     private val categoriesRepository: CategoriesRepository =
@@ -110,6 +140,11 @@ class AppContainer {
 
     private var scannedPhotos: List<Photo> = emptyList()
     private var scannedRoot: RootFolder? = null
+
+    // The grouping lens the user last picked, remembered for the session so a rebuilt grid (every
+    // Grid -> Browser -> Grid round trip makes a fresh view model) reopens in the same lens rather
+    // than snapping back to the default.
+    private var lastGroupingMode: GroupingMode = GroupingMode.Time
 
     private fun photosFor(root: RootFolder): List<Photo> =
         if (scannedRoot?.path == root.path) scannedPhotos else emptyList()
@@ -224,10 +259,13 @@ class AppContainer {
         moveToTrash = movePhotosToTrashUseCase,
         imageLoader = imageLoader,
         captureMetadataSource = captureMetadataSource,
+        similarityGrouper = similarityGrouper,
+        initialGroupingMode = lastGroupingMode,
         parentJob = folderJob,
         onScrollIndexChanged = { index ->
             appScope.launch { browsePositionRepository.saveIndex(root, index) }
         },
+        onGroupingModeChanged = { lastGroupingMode = it },
         onPhotosDeleted = { ids -> removeScannedPhotos(ids) },
     )
 
@@ -238,5 +276,11 @@ class AppContainer {
         imageLoader.evictAll()
         scannedRoot = null
         scannedPhotos = emptyList()
+    }
+
+    private companion object {
+        // Edge length of the decode used to compute embeddings + sharpness. Small enough to be cheap
+        // across thousands of photos, large enough for the downscale-gray fingerprint to discriminate.
+        const val EMBEDDING_EDGE_PX = 160
     }
 }

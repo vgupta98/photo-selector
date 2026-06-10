@@ -14,6 +14,7 @@ import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoGroup
 import com.vishalgupta.photoselector.domain.model.PhotoId
+import com.vishalgupta.photoselector.presentation.common.GroupingMode
 import com.vishalgupta.photoselector.presentation.grid.GridScreen
 import com.vishalgupta.photoselector.presentation.grid.GridUiState
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
@@ -74,7 +75,7 @@ class GridBurstScreenshotTest {
             GridUiState(
                 photos = photos,
                 groups = groups,
-                groupBursts = true,
+                groupingMode = GroupingMode.Time,
                 scope = CategoryScope.AllPhotos,
                 categories = listOf(Category.favourites()),
             ),
@@ -89,7 +90,7 @@ class GridBurstScreenshotTest {
             GridUiState(
                 photos = photos,
                 groups = groups,
-                groupBursts = true,
+                groupingMode = GroupingMode.Time,
                 expandedBurstId = groups[1].groupId, // the burst tile
                 scope = CategoryScope.AllPhotos,
                 categories = listOf(Category.favourites()),
@@ -107,7 +108,7 @@ class GridBurstScreenshotTest {
             GridUiState(
                 photos = photos,
                 groups = groups,
-                groupBursts = true,
+                groupingMode = GroupingMode.Time,
                 lastViewedPhotoId = photos[1].id, // "b": a non-key frame of the burst
                 scope = CategoryScope.AllPhotos,
                 categories = listOf(Category.favourites()),
@@ -122,12 +123,35 @@ class GridBurstScreenshotTest {
             GridUiState(
                 photos = photos,
                 groups = photos.map(PhotoGroup::Single),
-                groupBursts = false,
+                groupingMode = GroupingMode.Off,
                 scope = CategoryScope.AllPhotos,
                 categories = listOf(Category.favourites()),
             ),
         )
         rule.dumpScreenshot("grid-burst-ungrouped")
+    }
+
+    @Test fun `the similarity lens collapses to the suggested-sharpest frame`() {
+        // Toolbar set to "Similar": the same b|c|d run collapses, but keyIndex 0 marks b (the
+        // suggested-sharpest frame) as the representative instead of the middle c. Eyeball
+        // build/screenshots/grid-similarity-collapsed.png - the 2nd tile shows b's cyan, not c's
+        // blue, and the segmented toolbar control reads "Similar".
+        val similarityGroups = listOf(
+            PhotoGroup.Single(photos[0]),
+            PhotoGroup.Burst(listOf(photos[1], photos[2], photos[3]), keyIndex = 0),
+            PhotoGroup.Single(photos[4]),
+            PhotoGroup.Single(photos[5]),
+        )
+        renderGrid(
+            GridUiState(
+                photos = photos,
+                groups = similarityGroups,
+                groupingMode = GroupingMode.Similarity,
+                scope = CategoryScope.AllPhotos,
+                categories = listOf(Category.favourites()),
+            ),
+        )
+        rule.dumpScreenshot("grid-similarity-collapsed")
     }
 
     private fun renderGrid(state: GridUiState) {

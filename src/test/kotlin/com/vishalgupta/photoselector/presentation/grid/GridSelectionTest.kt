@@ -19,6 +19,7 @@ import com.vishalgupta.photoselector.domain.repository.TrashReport
 import com.vishalgupta.photoselector.domain.usecase.CopyPhotosToFolderUseCase
 import com.vishalgupta.photoselector.domain.usecase.ExportPhotosTxtUseCase
 import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
+import com.vishalgupta.photoselector.presentation.common.GroupingMode
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.testing.FakeCategoriesRepository
 import kotlinx.coroutines.CoroutineScope
@@ -119,6 +120,8 @@ class GridSelectionTest {
         repo: CategoriesRepository,
         trash: PhotoTrash = noOpTrash,
         metadata: CaptureMetadataSource = perPhotoCameraMetadata,
+        initialGroupingMode: GroupingMode = GroupingMode.Time,
+        onGroupingModeChanged: ((GroupingMode) -> Unit)? = null,
     ): GridViewModel = GridViewModel(
         root = RootFolder(Path.of("/photos")),
         allPhotos = photos,
@@ -130,6 +133,8 @@ class GridSelectionTest {
         moveToTrash = MovePhotosToTrashUseCase(trash),
         imageLoader = noOpImageLoader,
         captureMetadataSource = metadata,
+        initialGroupingMode = initialGroupingMode,
+        onGroupingModeChanged = onGroupingModeChanged,
         onPhotosDeleted = { ids -> deletedRoots += ids },
     )
 
@@ -200,6 +205,34 @@ class GridSelectionTest {
         vm.toggleGroupBursts()
         assertTrue(vm.state.value.groupBursts)
         withTimeout(2_000) { vm.state.first { it.groups.size == 1 } }
+
+        vm.onClear()
+    }
+
+    @Test
+    fun groupingMode_opensInTheSeededLens() = runBlocking {
+        // A rebuilt grid (Grid -> Browser -> Grid) is constructed with the session's last lens.
+        val vm = viewModel(FakeCategoriesRepository(categories), initialGroupingMode = GroupingMode.Similarity)
+        vm.awaitPhotos()
+        assertEquals(GroupingMode.Similarity, vm.state.value.groupingMode)
+        vm.onClear()
+    }
+
+    @Test
+    fun setGroupingMode_reportsTheChangeUpwards() = runBlocking {
+        // The container listens here to remember the choice, so the next rebuilt grid reopens in it.
+        var reported: GroupingMode? = null
+        val vm = viewModel(FakeCategoriesRepository(categories), onGroupingModeChanged = { reported = it })
+        vm.awaitPhotos()
+
+        vm.setGroupingMode(GroupingMode.Off)
+        assertEquals(GroupingMode.Off, reported)
+        assertEquals(GroupingMode.Off, vm.state.value.groupingMode)
+
+        // A no-op re-select of the current lens reports nothing new.
+        reported = null
+        vm.setGroupingMode(GroupingMode.Off)
+        assertEquals(null, reported)
 
         vm.onClear()
     }

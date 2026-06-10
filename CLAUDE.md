@@ -11,15 +11,22 @@ Clean architecture, single Gradle module, package
 
 - `domain/` — entities (`Photo`, `RootFolder`, `PhotoId`, `Category`,
   `CategoryId`, `PhotoGroup`), repository interfaces, use cases. No framework
-  dependencies. `grouping/` holds burst grouping: `BurstGrouper`, a pure
-  `List<Photo>` → `List<PhotoGroup>` (`Single | Burst`) over a
-  `CaptureMetadataSource` — so the heuristic can be swapped without touching
-  the grid.
+  dependencies. `grouping/` holds grouping behind one `PhotoGrouper` seam
+  (`suspend (List<Photo>) -> List<PhotoGroup>` of `Single | Burst`): the
+  pure `BurstGrouper` (time + camera, over a `CaptureMetadataSource`) and
+  the pure `SimilarityGrouper` (visual, over precomputed embeddings +
+  sharpness) both feed it, so the heuristic swaps without touching the grid.
+  `PhotoGroup.Burst.keyIndex` is the representative frame — middle by default,
+  the suggested-sharpest for a similarity cluster.
 - `data/` — repository implementations: `filesystem/`, `categories/`,
   `image/` (decoding), `format/` (per-format `PhotoDecoder`s; `macos/`
   holds the JNA→ImageIO bridge for HEIC; `ExifReader` also backs
   `ExifCaptureMetadataSource` — capture time + camera for burst grouping,
-  memoized per session by `CachingCaptureMetadataSource`), `export/`,
+  memoized per session by `CachingCaptureMetadataSource`), `ai/` (on-device
+  visual-similarity grouping: `EmbeddingModel` + the classical, dependency-free
+  `DownscaleGrayEmbeddingModel`, `SharpnessScorer`, an `EmbeddingCache` that
+  mirrors `DiskThumbnailCache`, `PhotoFeatureExtractor`, and the
+  `SimilarityPhotoGrouper` adapter), `export/`,
   `trash/` (move-to-Trash via `java.awt.Desktop.moveToTrash`), plus `io/`
   (the shared `AtomicJsonWriter`).
 - `presentation/` — Compose UI + view models, organised by screen
@@ -53,8 +60,11 @@ Clean architecture, single Gradle module, package
   filing/selection acts on a single frame while it is open (collapsed
   `F` files the whole burst, expanded `F` files the focused frame). One
   burst expands at a time; `Esc` peels selection → collapse → grid-back.
-  The toolbar `Group bursts` chip turns grouping off entirely
-  (`GridUiState.groupBursts`). Grouping is grid-only presentation: focus,
+  The toolbar's segmented control picks the grouping lens
+  (`GridUiState.groupingMode`: `Off | Time | Similarity` — flat grid,
+  time-based bursts (default), or on-device visual similarity); the view
+  model resolves each non-`Off` mode to one `PhotoGrouper` and regroups
+  off-thread with a mode-aware staleness guard. Grouping is grid-only presentation: focus,
   multi-select and keyboard filing operate over `displayGroups` (the tile
   index space, shared by the view model and the renderer via
   `GridDisplayModel`), while the **flat photo list** stays the index
@@ -286,10 +296,23 @@ workflow's fail-fast "branch already exists" check is intentional.
   fallback shipped exactly that bug). So today **HEIC never groups**;
   the way to make it group is reading HEIC capture time (an ImageIO read,
   the same bridge `MacImageIO` already uses), not loosening the heuristic.
-  Grouping can also be turned off entirely from the grid toolbar
-  (`GridUiState.groupBursts`), and is recomputed off-thread on every
+  Grouping can also be switched off or to another lens from the grid toolbar
+  (`GridUiState.groupingMode`), and is recomputed off-thread on every
   re-slice, which is why `CachingCaptureMetadataSource` exists — keep it
   in the wiring.
+- **Similarity grouping only merges *adjacent* frames, and persists nothing
+  but the embeddings.** Like `BurstGrouper`, `SimilarityGrouper` forms
+  contiguous runs in scan order — the grid's expand-in-place burst UI fences
+  a contiguous run, so a cluster must be contiguous — meaning it groups
+  visually-alike *neighbours*, not arbitrary matches scattered across a
+  folder. It never groups across a folder boundary (a folder is an event
+  boundary, same as `BurstGrouper`). Per-photo embeddings + sharpness are
+  cached to disk (`EmbeddingCache`, keyed by content + model id, invalidated
+  on source edit or model swap); the *grouping* itself is recomputed, never
+  persisted. The shipped embedder is the classical, dependency-free
+  `DownscaleGrayEmbeddingModel` — a learned ONNX model is a planned swap
+  behind the `EmbeddingModel` interface, so don't bake model assumptions into
+  callers.
 
 ## Files worth knowing
 
