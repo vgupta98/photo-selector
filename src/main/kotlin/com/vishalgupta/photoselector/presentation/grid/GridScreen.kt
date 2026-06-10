@@ -57,6 +57,7 @@ import com.vishalgupta.photoselector.domain.model.PhotoGroup
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
 import com.vishalgupta.photoselector.presentation.common.CategoryToggle
+import com.vishalgupta.photoselector.presentation.common.GroupingMode
 import com.vishalgupta.photoselector.presentation.common.NativeFileDialogs
 import com.vishalgupta.photoselector.presentation.common.customCategories
 import com.vishalgupta.photoselector.presentation.common.digitSlot
@@ -142,7 +143,7 @@ fun GridScreen(
         },
         onDismissToast = viewModel::dismissToast,
         onFirstVisibleItemChanged = viewModel::onFirstVisibleItemChanged,
-        onToggleGroupBursts = viewModel::toggleGroupBursts,
+        onSelectGroupingMode = viewModel::setGroupingMode,
         onToggleBurstExpansion = viewModel::toggleBurstExpansion,
         onCollapseBurst = viewModel::collapseBurst,
         imageLoader = viewModel.imageLoader,
@@ -181,7 +182,7 @@ fun GridScreen(
     onCopyToFolder: (ConflictPolicy) -> Unit,
     onDismissToast: () -> Unit,
     onFirstVisibleItemChanged: (Int) -> Unit = {},
-    onToggleGroupBursts: () -> Unit = {},
+    onSelectGroupingMode: (GroupingMode) -> Unit = {},
     onToggleBurstExpansion: (PhotoId) -> Unit = {},
     onCollapseBurst: () -> Unit = {},
     imageLoader: ImageLoader,
@@ -458,8 +459,8 @@ fun GridScreen(
                 onExportTxt = onExportTxt,
                 onCopyToFolder = onCopyToFolder,
                 onChangeFolder = onChangeFolder,
-                groupBursts = state.groupBursts,
-                onToggleGroupBursts = onToggleGroupBursts,
+                groupingMode = state.groupingMode,
+                onSelectGroupingMode = onSelectGroupingMode,
             )
         }
 

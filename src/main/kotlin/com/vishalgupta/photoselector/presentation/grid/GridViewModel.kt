@@ -1,8 +1,9 @@
 package com.vishalgupta.photoselector.presentation.grid
 
 import com.vishalgupta.photoselector.data.image.ImageLoader
-import com.vishalgupta.photoselector.domain.grouping.BurstGrouper
 import com.vishalgupta.photoselector.domain.grouping.CaptureMetadataSource
+import com.vishalgupta.photoselector.domain.grouping.PhotoGrouper
+import com.vishalgupta.photoselector.domain.grouping.burstGrouper
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.domain.model.Photo
@@ -18,6 +19,7 @@ import com.vishalgupta.photoselector.domain.usecase.ExportPhotosTxtUseCase
 import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
 import com.vishalgupta.photoselector.presentation.StateHolder
 import com.vishalgupta.photoselector.presentation.common.CategoryToggle
+import com.vishalgupta.photoselector.presentation.common.GroupingMode
 import com.vishalgupta.photoselector.presentation.common.customCategories
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.navigation.MAX_SURVEY_PHOTOS
@@ -56,9 +58,10 @@ data class GridUiState(
     // is the pivot a Shift-click range extends from.
     val selection: Set<PhotoId> = emptySet(),
     val anchorIndex: Int? = null,
-    // Whether bursts collapse into one tile. On by default; the grid toolbar can turn it off to
-    // see every frame as its own tile. In-memory per grid instance (not persisted).
-    val groupBursts: Boolean = true,
+    // Which grouping lens collapses tiles: Off (one tile per photo), Time (bursts, the default),
+    // or Similarity (visual). In-memory per grid instance (not persisted). The grid toolbar picks
+    // one of the three.
+    val groupingMode: GroupingMode = GroupingMode.Time,
     // The burst (by tile id) currently expanded in place, or null. Clicking a burst tile unfolds it
     // into its frames inline; at most one is open at a time. Pure presentation state.
     val expandedBurstId: PhotoId? = null,
@@ -66,6 +69,9 @@ data class GridUiState(
     val progressLabel: String? = null,
     val toast: String? = null,
 ) {
+    /** True when any grouping lens is active — drives the off-thread regroup and tile collapse. */
+    val groupBursts: Boolean get() = groupingMode != GroupingMode.Off
+
     /** Photos in the built-in Favourites — what the tile star indicates, in any scope. */
     val markedIds: Set<PhotoId> get() = memberships[Category.FAVOURITES_ID].orEmpty()
 
@@ -92,16 +98,27 @@ class GridViewModel(
     private val copyToFolder: CopyPhotosToFolderUseCase,
     private val moveToTrash: MovePhotosToTrashUseCase,
     val imageLoader: ImageLoader,
-    // Reads capture time + camera per photo for burst grouping; memoized across re-groups.
+    // Reads capture time + camera per photo for burst grouping; memoized across re-groups. Backs
+    // the [GroupingMode.Time] lens.
     private val captureMetadataSource: CaptureMetadataSource,
+    // Backs the [GroupingMode.Similarity] lens. Null when no embedding model is wired (e.g. tests,
+    // or a platform without one): the Similarity option then degrades to ungrouped singles.
+    private val similarityGrouper: PhotoGrouper? = null,
+    // The lens this grid opens in. The container seeds it with the session's last choice so the
+    // lens survives a Grid -> Browser -> Grid round trip (which rebuilds this view model).
+    initialGroupingMode: GroupingMode = GroupingMode.Time,
     parentJob: Job? = null,
     private val onScrollIndexChanged: ((Int) -> Unit)? = null,
+    // Reports a lens change up to the container so the next rebuilt grid opens in the same lens.
+    private val onGroupingModeChanged: ((GroupingMode) -> Unit)? = null,
     // Lets the container drop the trashed photos from its scan snapshot, so any screen opened
     // after the delete is built without them too.
     private val onPhotosDeleted: ((Set<PhotoId>) -> Unit)? = null,
 ) : StateHolder(parentJob) {
 
-    private val _state = MutableStateFlow(GridUiState(scope = categoryScope, lastViewedPhotoId = lastViewedPhotoId))
+    private val _state = MutableStateFlow(
+        GridUiState(scope = categoryScope, lastViewedPhotoId = lastViewedPhotoId, groupingMode = initialGroupingMode),
+    )
     val state: StateFlow<GridUiState> = _state.asStateFlow()
 
     // One-shot confirmation that a keyboard toggle landed — the persistent star/badge on the
@@ -117,9 +134,18 @@ class GridViewModel(
     private var lastGroupedIds: List<PhotoId>? = null
     private var groupingJob: Job? = null
 
-    // Mirrors [GridUiState.groupBursts]; when false the grid stays one tile per photo and the
-    // off-thread regroup is skipped entirely.
-    private var groupBursts: Boolean = true
+    // Mirrors [GridUiState.groupingMode]; [GroupingMode.Off] keeps one tile per photo and skips the
+    // off-thread regroup entirely. The grouper for a mode comes from [grouperFor].
+    private var groupingMode: GroupingMode = initialGroupingMode
+
+    /** The grouper backing [mode], or null for [GroupingMode.Off] (and Similarity with no model wired). */
+    private fun grouperFor(mode: GroupingMode): PhotoGrouper? = when (mode) {
+        GroupingMode.Off -> null
+        GroupingMode.Time -> timeGrouper
+        GroupingMode.Similarity -> similarityGrouper
+    }
+
+    private val timeGrouper: PhotoGrouper = burstGrouper(captureMetadataSource)
 
     init {
         combine(
@@ -147,26 +173,29 @@ class GridViewModel(
                         selection = if (it.selection.isEmpty()) it.selection else it.selection.intersect(validIds),
                     )
                 }
-                // Only collapse bursts when grouping is on; otherwise the singles set above stands
-                // and we record the slice so a membership re-slice doesn't needlessly re-run.
+                // Only collapse when a lens is active; otherwise the singles set above stands and we
+                // record the slice so a membership re-slice doesn't needlessly re-run.
                 if (sliceChanged) {
-                    if (groupBursts) regroup(photos, ids) else lastGroupedIds = ids
+                    if (groupingMode != GroupingMode.Off) regroup(photos, ids, groupingMode) else lastGroupedIds = ids
                 }
             }
             .launchIn(scope)
     }
 
     /**
-     * Flips burst grouping for this grid. Turning it off drops straight back to one tile per photo;
-     * turning it on shows singles immediately and refines bursts off-thread, exactly like a re-slice.
+     * Picks the grouping lens for this grid. [GroupingMode.Off] drops straight back to one tile per
+     * photo; a lens shows singles immediately and refines groups off-thread, exactly like a re-slice.
+     * Switching lens cancels any in-flight regroup so a stale result can't land over the new mode.
      */
-    fun toggleGroupBursts() {
-        groupBursts = !groupBursts
+    fun setGroupingMode(mode: GroupingMode) {
+        if (mode == groupingMode) return
+        groupingMode = mode
+        onGroupingModeChanged?.invoke(mode)
         val photos = _state.value.photos
         val ids = photos.map { it.id }
         _state.update {
             it.copy(
-                groupBursts = groupBursts,
+                groupingMode = mode,
                 groups = photos.map(PhotoGroup::Single),
                 expandedBurstId = null,
                 // The tile space renumbers, so a stored Shift+click anchor (a tile index) is stale.
@@ -174,29 +203,35 @@ class GridViewModel(
                 focusedIndex = it.focusedIndex.coerceIn(-1, (photos.size - 1).coerceAtLeast(-1)),
             )
         }
-        if (groupBursts) {
-            regroup(photos, ids)
+        if (mode != GroupingMode.Off) {
+            regroup(photos, ids, mode)
         } else {
             groupingJob?.cancel()
             lastGroupedIds = ids
         }
     }
 
+    /** Off <-> Time convenience for callers (and tests) that just want grouping flipped on/off. */
+    fun toggleGroupBursts() {
+        setGroupingMode(if (groupingMode == GroupingMode.Off) GroupingMode.Time else GroupingMode.Off)
+    }
+
     /**
-     * Recomputes burst [groups] off-thread (EXIF reads) and applies them only if the slice still
-     * matches what was grouped. [ids] is the slice fingerprint captured by the caller.
+     * Recomputes [groups] off-thread (EXIF reads for Time; decode + embedding for Similarity) using
+     * [mode]'s grouper, and applies them only if the slice still matches what was grouped and the
+     * lens is still [mode]. [ids] is the slice fingerprint captured by the caller.
      */
-    private fun regroup(photos: List<Photo>, ids: List<PhotoId>) {
+    private fun regroup(photos: List<Photo>, ids: List<PhotoId>, mode: GroupingMode) {
         lastGroupedIds = ids
         groupingJob?.cancel()
+        val grouper = grouperFor(mode) ?: run { return }
         groupingJob = scope.launch(Dispatchers.IO) {
-            val groups = BurstGrouper.group(photos, captureMetadataSource)
+            val groups = grouper.group(photos)
             _state.update { st ->
-                // Bail if the slice moved under us, OR grouping was toggled off while this ran:
-                // cancel() is cooperative and there is no suspension point between BurstGrouper.group
-                // above and this update, so a regroup that finished computing just as the user turned
-                // grouping off would otherwise re-apply bursts over a chip that now reads "off".
-                if (st.photos.map { it.id } != ids || !groupBursts) {
+                // Bail if the slice moved under us, OR the lens changed while this ran: cancel() is
+                // cooperative, so a regroup that finished computing just as the user switched modes
+                // would otherwise re-apply its groups over a toolbar that now reads a different lens.
+                if (st.photos.map { it.id } != ids || groupingMode != mode) {
                     st
                 } else {
                     // Keep an expanded burst open only if it survived the re-group as a burst.
@@ -434,9 +469,9 @@ class GridViewModel(
                     toast = deleteToast(report),
                 )
             }
-            // Respect the toolbar toggle: re-collapse only when grouping is on, otherwise
-            // the grid would silently regroup behind a chip that still reads "off".
-            if (groupBursts) regroup(photos, ids) else lastGroupedIds = ids
+            // Respect the toolbar lens: re-collapse only when one is active, otherwise the grid
+            // would silently regroup behind a control that reads "Off".
+            if (groupingMode != GroupingMode.Off) regroup(photos, ids, groupingMode) else lastGroupedIds = ids
         }
     }
 

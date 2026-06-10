@@ -30,17 +30,21 @@ sealed interface PhotoGroup {
         override val keyPhoto: Photo = photo
     }
 
-    data class Burst(override val photos: List<Photo>) : PhotoGroup {
+    /**
+     * @param keyIndex which frame represents the burst on a collapsed tile. Defaults to the
+     * middle frame: time-based [BurstGrouper] has no quality signal to pick a "best"
+     * (favourites/categories are the model, not stars), so the middle is the neutral
+     * representative. Similarity grouping passes the *sharpest* frame's index here as a hint.
+     */
+    data class Burst(
+        override val photos: List<Photo>,
+        val keyIndex: Int = photos.size / 2,
+    ) : PhotoGroup {
         init {
             require(photos.size >= 2) { "A burst needs at least two frames, got ${photos.size}" }
+            require(keyIndex in photos.indices) { "keyIndex $keyIndex out of bounds for ${photos.size} frames" }
         }
 
-        /**
-         * The middle frame. The app has no rating primitive to pick a "best"
-         * (favourites/categories are the model, not stars), so the middle of the
-         * burst is the neutral representative. The similarity-grouping upgrade
-         * later swaps this for the sharpest frame as a hint.
-         */
-        override val keyPhoto: Photo = photos[photos.size / 2]
+        override val keyPhoto: Photo = photos[keyIndex]
     }
 }
