@@ -200,6 +200,25 @@ workflow's fail-fast "branch already exists" check is intentional.
 - **Commit flow.** When asked to commit: stage the relevant files by name
   (never `git add -A`), then invoke the `/commit staged` skill — do not
   run `git diff`/`status`/`log` first; the skill handles that.
+- **Reuse first; don't grow the code.** Before adding a file, composable,
+  helper, parser, or test fake, look for an existing one to extend — the
+  default is *extend, not fork*:
+  - **UI:** compose from existing `atom/`/`molecule/`/`organism/` pieces;
+    add a parameter to a component before writing a near-twin; reuse a
+    whole screen where the flow fits (a burst opens the existing
+    Compare/Survey, not a new viewer).
+  - **Parsing/decoding:** extend the existing reader/registry (`ExifReader`,
+    `DefaultPhotoFormatRegistry`) rather than writing a parallel one.
+  - **Logic:** the second time the same logic appears, extract one helper
+    (e.g. `fileIdsInto`) instead of copy-pasting.
+  - **Tests:** shared fakes live in `src/test/.../testing/` — reuse them,
+    never re-declare a private copy.
+  Keep navigation/state on one source of truth and layer presentation over
+  it (the grid groups the flat photo list rather than duplicating it). A
+  file growing materially, or a new sibling that overlaps an existing one,
+  is the signal to extract/extend. When something genuinely new is needed,
+  pick the smallest seam — a param, a new `PhotoDecoder`, a strategy behind
+  an existing interface.
 - **UI-touching changes must include or update a screenshot test.** Any
   change that affects what the user sees on screen — new composables,
   layout tweaks, theming, a decode/render path feeding an existing
