@@ -265,6 +265,42 @@ class GridSelectionTest {
     }
 
     @Test
+    fun regroupCompletingAfterGroupingToggledOff_doesNotReapplyBursts() = runBlocking {
+        // Same-camera burst metadata, but the first read blocks on a gate, so the off-thread grouping
+        // pass is guaranteed in-flight when we toggle grouping off - the race that finding 2 describes.
+        val gate = java.util.concurrent.CountDownLatch(1)
+        val gatedBurstMetadata = CaptureMetadataSource { photo ->
+            gate.await()
+            val i = photo.id.value.removePrefix("p").toInt()
+            CaptureMetadata(takenAtEpochMs = i * 1_000L, cameraId = "cam", orientation = 1)
+        }
+        val vm = viewModel(FakeCategoriesRepository(categories), metadata = gatedBurstMetadata)
+        vm.awaitPhotos()
+
+        // Grouping is on by default, so a regroup is already launched and now blocked on the gate.
+        // Toggle off before releasing it: singles stand, and cancel() can't stop the blocked job.
+        vm.toggleGroupBursts()
+        assertTrue(!vm.state.value.groupBursts)
+        assertEquals(photos.size, vm.state.value.groups.size)
+
+        gate.countDown() // let the now-stale regroup finish and attempt its _state.update
+
+        // Give that update a window to (wrongly) collapse the tiles; it must not.
+        var collapsed = false
+        try {
+            withTimeout(500) { vm.state.first { it.groups.size < photos.size } }
+            collapsed = true
+        } catch (_: TimeoutCancellationException) {
+            // No collapse within the window - the in-flight regroup correctly bailed on groupBursts.
+        }
+        assertTrue("a stale regroup re-applied bursts after grouping was toggled off", !collapsed)
+        assertTrue(!vm.state.value.groupBursts)
+        assertEquals(photos.size, vm.state.value.groups.size)
+
+        vm.onClear()
+    }
+
+    @Test
     fun deleteSelection_doesNotRegroupWhenGroupingIsOff() = runBlocking {
         val vm = viewModel(FakeCategoriesRepository(categories), metadata = oneBurstMetadata)
         vm.awaitPhotos()

@@ -192,16 +192,27 @@ class GridViewModel(
         groupingJob = scope.launch(Dispatchers.IO) {
             val groups = BurstGrouper.group(photos, captureMetadataSource)
             _state.update { st ->
-                if (st.photos.map { it.id } != ids) {
+                // Bail if the slice moved under us, OR grouping was toggled off while this ran:
+                // cancel() is cooperative and there is no suspension point between BurstGrouper.group
+                // above and this update, so a regroup that finished computing just as the user turned
+                // grouping off would otherwise re-apply bursts over a chip that now reads "off".
+                if (st.photos.map { it.id } != ids || !groupBursts) {
                     st
                 } else {
                     // Keep an expanded burst open only if it survived the re-group as a burst.
                     val stillExpanded = st.expandedBurstId
                         ?.takeIf { id -> groups.any { it is PhotoGroup.Burst && it.groupId == id } }
                     val display = displayGroupsFor(groups, stillExpanded)
+                    // Only when this async pass actually renumbers the tile space (singles ->
+                    // collapsed bursts) is a stored Shift+click anchor (a tile index) stale. If the
+                    // pass yields the same tiles - the common all-singles case - keep the anchor, or a
+                    // mid-grouping Cmd+click would lose its pivot. Matches the synchronous reshapes,
+                    // which null the anchor precisely because they always change the tile shape.
+                    val reshaped = groups != st.groups || stillExpanded != st.expandedBurstId
                     st.copy(
                         groups = groups,
                         expandedBurstId = stillExpanded,
+                        anchorIndex = if (reshaped) null else st.anchorIndex,
                         focusedIndex = st.focusedIndex.coerceIn(-1, (display.size - 1).coerceAtLeast(-1)),
                     )
                 }

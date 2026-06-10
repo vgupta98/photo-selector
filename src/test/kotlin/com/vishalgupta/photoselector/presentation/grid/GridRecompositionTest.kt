@@ -7,6 +7,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -195,6 +196,48 @@ class GridRecompositionTest {
     }
 
     /**
+     * Guards [GridScreen]'s `openTile` shape: the onClick is `{ openTile(index) }`, and `openTile`
+     * is a resolver that captures the (unstable) tile lists. If that resolver is rebuilt every
+     * recomposition (a bare val, the regression), every tile's onClick changes identity on any
+     * unrelated state flip and no tile can skip. Remembering it on the tile lists - which don't
+     * change on a favourite flip - keeps the onClick stable, so only the flipped tile recomposes.
+     * The earlier [KeyedGrid] tests miss this because they pass a stable top-level onTileClick.
+     */
+    @Test
+    fun togglingFavourite_withACapturedClickResolver_recomposesOnlyThatTile() {
+        val tracker = RecompositionTracker()
+        val favourites = mutableStateOf(emptySet<PhotoId>())
+        // Stands in for GridScreen's tileFlatStart: an unstable list the resolver captures. It does
+        // not change when a favourite flips, exactly as in the real grid.
+        val flats = photos.indices.toList()
+
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    ResolvedClickGrid(
+                        photos = photos,
+                        favourites = favourites.value,
+                        flats = flats,
+                        loader = noOpImageLoader,
+                        tracker = tracker,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        val before = photos.associate { it.id.value to tracker[it.id.value] }
+
+        rule.runOnIdle { favourites.value = setOf(PhotoId("b")) }
+        rule.waitForIdle()
+
+        assertEquals("b should recompose (its favourite flipped)", before["b"]!! + 1, tracker["b"])
+        assertEquals("a should skip (resolver stable -> onClick identity held)", before["a"], tracker["a"])
+        assertEquals("c should skip", before["c"], tracker["c"])
+        assertEquals("d should skip", before["d"], tracker["d"])
+    }
+
+    /**
      * Deleting the tail of the list (the delete path's re-emit of a shorter [photos] list) must
      * not recompose any surviving tile: every survivor keeps its index, so every per-tile input is
      * unchanged. Guards the claim that a move-to-Trash drops only the deleted tiles, not the grid.
@@ -309,6 +352,40 @@ private fun GridWithBadges(
                 isFocused = false,
                 categoryBadges = badges[photo.id.value] ?: persistentListOf(),
             )
+        }
+    }
+}
+
+/**
+ * As [Grid], but the click handler is resolved through a list the lambda captures - the exact shape
+ * of GridScreen's `openTile` (Single -> open, Burst -> expand). The resolver is remember-keyed on the
+ * captured list, so an unrelated state flip (a favourite) must not hand any tile a fresh onClick. A
+ * regression that drops the remember (a bare-val resolver) rebuilds it every recomposition and churns
+ * every tile - flipping the "should skip" assertions in [togglingFavourite_withACapturedClickResolver_recomposesOnlyThatTile].
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ResolvedClickGrid(
+    photos: List<Photo>,
+    favourites: Set<PhotoId>,
+    flats: List<Int>,
+    loader: ImageLoader,
+    tracker: RecompositionTracker,
+) {
+    val openTile: (Int) -> Unit = remember(photos, flats) { { _ -> } }
+    FlowRow {
+        photos.forEachIndexed { index, photo ->
+            key(photo.id.value) {
+                CountedThumbnail(
+                    tracker = tracker,
+                    tag = photo.id.value,
+                    photo = photo,
+                    loader = loader,
+                    isFavourite = photo.id in favourites,
+                    isFocused = false,
+                    onClick = { openTile(index) },
+                )
+            }
         }
     }
 }

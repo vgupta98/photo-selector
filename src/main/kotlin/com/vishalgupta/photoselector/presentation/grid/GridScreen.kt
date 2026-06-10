@@ -249,11 +249,19 @@ fun GridScreen(
     // an open burst's frame - opens the browser at that photo. There is no frame-count cap: even a
     // huge burst is culled inline. (Compare / Survey stay reachable by selecting frames and pressing
     // C, exactly as for any multi-select.)
-    val openTile: (Int) -> Unit = open@{ tileIndex ->
-        val group = tiles.getOrNull(tileIndex) ?: return@open
-        when (group) {
-            is PhotoGroup.Single -> onTileClick(tileFlatStart[tileIndex])
-            is PhotoGroup.Burst -> onToggleBurstExpansion(group.groupId)
+    // Remembered, not a bare val: this resolver captures the unstable tiles / tileFlatStart lists, so
+    // rebuilding it every recomposition would hand every tile a fresh { openTile(index) } onClick and
+    // defeat per-tile skipping on any unrelated state flip (favourite, focus, selection). tiles and
+    // tileFlatStart only change on a regroup/expansion, which is exactly when the resolver *should*
+    // be rebuilt - so key on them (and the two stable callbacks) and the onClick identity holds steady
+    // through the hot path.
+    val openTile: (Int) -> Unit = remember(tiles, tileFlatStart, onTileClick, onToggleBurstExpansion) {
+        open@{ tileIndex ->
+            val group = tiles.getOrNull(tileIndex) ?: return@open
+            when (group) {
+                is PhotoGroup.Single -> onTileClick(tileFlatStart[tileIndex])
+                is PhotoGroup.Burst -> onToggleBurstExpansion(group.groupId)
+            }
         }
     }
 
