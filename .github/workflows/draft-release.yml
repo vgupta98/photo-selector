@@ -24,6 +24,14 @@ jobs:
         with:
           ref: develop
           fetch-depth: 0
+          # Push the release branch with a PAT (falling back to GITHUB_TOKEN when
+          # the secret is unset, so releases never break). A branch pushed and a PR
+          # opened by the built-in GITHUB_TOKEN do NOT trigger further workflows
+          # (GitHub's recursion guard), which is why release-perf.yml never ran. The
+          # persisted PAT credential makes the push — and the PR opened below with the
+          # same token — fire the pull_request event release-perf.yml listens for.
+          # The PAT needs `repo` + `workflow` scopes; store it as the RELEASE_PAT secret.
+          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Verify there are changes to release
         id: diff
@@ -180,7 +188,9 @@ jobs:
 
       - name: Open release PR
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Same PAT (fallback to GITHUB_TOKEN): a PR opened by GITHUB_TOKEN does
+          # not emit a pull_request "opened" event that triggers release-perf.yml.
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
           NEXT: ${{ steps.next.outputs.version }}
         run: |
           gh pr create \
