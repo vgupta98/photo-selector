@@ -337,30 +337,50 @@ fun GridScreen(
             .collect { index -> onFirstVisibleItemChanged(flatIndexForRenderItem(latestRenderItems, latestTileFlatStart, index)) }
     }
 
-    // Re-anchor the photo we returned on (initialScrollIndex, a FLAT index) as burst grouping
-    // settles: the view model emits singles first, then collapses bursts a frame later, which
-    // shifts tile indices under us. We map the flat photo to its tile and scroll there each time the
-    // grouping reshapes, but stop the moment the user has scrolled themselves so we never fight them.
+    // The FLAT photo to keep pinned at the viewport top across a grouping RESHAPE - the cold settle
+    // (singles emitted first, bursts collapsed a frame later) AND a lens switch from the toolbar. A
+    // reshape renumbers the tile space, so the retained render-item index now addresses a *different*
+    // photo and the grid appears to jump to a random spot. Re-anchoring this photo by identity holds
+    // the viewport still. Seeded from the returned scroll index (the cold settle pins the photo we
+    // returned on); re-captured from the live top at each lens switch (onSelectGroupingMode below).
+    var anchorFlat by remember { mutableStateOf(initialScrollIndex) }
+    // "User scrolled" MUST come from a real scroll gesture (onPointerEvent below) or an arrow, NOT from
+    // the index moving: when grouping collapses many singles into fewer tiles the LazyGrid clamps its
+    // offset to the new, shorter end, which shifts firstVisibleItemIndex without any user input.
+    // Inferring "moved" from that delta made us abandon the anchor and leave the grid stuck at the end.
+    var userScrolled by remember { mutableStateOf(false) }
+    // Armed whenever a reshape should re-pin [anchorFlat]: true on a cold first visit (pin the returned
+    // photo as grouping settles) and re-armed at each lens switch. A warm return leaves it false, so
+    // the effect's mount run is a no-op and an unrelated re-slice never yanks the retained scroll.
+    var reanchorArmed by remember { mutableStateOf(anchorInitialScroll) }
     // Keyed on the collapsed grouping (not the display tiles) so expanding a burst - which also
     // reshapes the tiles - doesn't yank the scroll; the focus effect above keeps a burst in view.
     //
-    // "User scrolled" MUST come from a real scroll gesture (onPointerEvent below), NOT from the index
-    // moving: when grouping collapses many singles into fewer tiles the LazyGrid clamps its offset to
-    // the new, shorter end, which shifts firstVisibleItemIndex without any user input. Inferring
-    // "moved" from that delta made us abandon the anchor and leave the grid stuck at the end on every
-    // return once similarity grouping (heavy collapse, instant from cache) was in play.
-    //
-    // Invariant: this only fires while grouping settles, when no burst can be expanded - so the tile
-    // index space and the LazyGrid's render-item space coincide here, and it is safe to compare
-    // firstVisibleItemIndex (render) against tile-space targets and scrollToItem with a tile index.
-    // Only the cold first visit re-anchors: a warm return reuses the retained gridState, which already
-    // holds the exact scroll, so re-applying initialScrollIndex (stale on a return) would yank it.
-    var userScrolled by remember { mutableStateOf(false) }
+    // Invariant: this only fires while grouping settles or on a lens switch, when no burst is expanded
+    // (both clear expandedBurstId) - so the tile index space and the LazyGrid's render-item space
+    // coincide here, and it is safe to compare firstVisibleItemIndex (render) against tile-space
+    // targets and scrollToItem with a tile index.
     LaunchedEffect(baseGroups) {
-        if (!anchorInitialScroll || userScrolled) return@LaunchedEffect
-        val target = tileIndexForFlat(tileFlatStart, initialScrollIndex)
+        if (!reanchorArmed || userScrolled) return@LaunchedEffect
+        val target = tileIndexForFlat(tileFlatStart, anchorFlat)
         if (gridState.firstVisibleItemIndex != target) gridState.scrollToItem(target)
     }
+    // A toolbar lens switch reshapes the whole grid; capture the live top photo first and arm the
+    // re-anchor so the new tile layout keeps the user where they were rather than snapping to a tile
+    // index that now points elsewhere. Re-arming [userScrolled] = false lets the (possibly long, cold
+    // Similarity) regroup that follows pin this top - until the user scrolls during it and takes over.
+    // Remembered (not a bare lambda) so the toolbar keeps skipping through the hot path: keyed on the
+    // unstable renderItems / tileFlatStart it reads, exactly like [openTile] above, plus the wrapped
+    // callback. The state setters it writes are stable MutableState refs, so they need not be keys.
+    val onSelectGroupingModeAnchored: (GroupingMode) -> Unit =
+        remember(renderItems, tileFlatStart, onSelectGroupingMode) {
+            { mode ->
+                anchorFlat = flatIndexForRenderItem(renderItems, tileFlatStart, gridState.firstVisibleItemIndex)
+                userScrolled = false
+                reanchorArmed = true
+                onSelectGroupingMode(mode)
+            }
+        }
 
     Column(
         modifier
@@ -513,7 +533,7 @@ fun GridScreen(
                 onCopyToFolder = onCopyToFolder,
                 onChangeFolder = onChangeFolder,
                 groupingMode = state.groupingMode,
-                onSelectGroupingMode = onSelectGroupingMode,
+                onSelectGroupingMode = onSelectGroupingModeAnchored,
             )
         }
 

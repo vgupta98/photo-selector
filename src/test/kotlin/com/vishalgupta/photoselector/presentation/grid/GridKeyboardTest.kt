@@ -15,6 +15,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -26,6 +27,7 @@ import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoGroup
 import com.vishalgupta.photoselector.domain.model.PhotoId
+import com.vishalgupta.photoselector.presentation.common.GroupingMode
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import kotlinx.coroutines.CoroutineScope
@@ -602,6 +604,93 @@ class GridKeyboardTest {
         assertTrue(
             "warm return snapped to the ring (index ${gridStateRef.firstVisibleItemIndex}) instead of keeping the scroll",
             gridStateRef.firstVisibleItemIndex > 10,
+        )
+    }
+
+    // --- Switching the grouping lens must keep the scroll position ------------------------------
+    // The LazyGrid keys tiles by photo/group id, so a burst that EXPLODES back into singles keeps its
+    // top frame pinned for free (the key survives). The jump happens the other way: the top photo gets
+    // ABSORBED into a burst whose representative is a different frame, so the top tile's key VANISHES -
+    // the LazyGrid can't retain it and clamps to a random spot. The screen must pin the photo that was
+    // at the viewport top by identity, landing on whatever tile now contains it.
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun switchingGroupingLens_keepsTheTopPhotoPinnedInsteadOfJumping() {
+        val photos = (0 until 100).map { photoNamed("p$it") }
+        // Time grouping collapses two runs into bursts: p0..p49 (one big leading burst) and p55..p64.
+        // The top photo we park on, p60, is absorbed into the SECOND burst as a non-representative
+        // frame, so its single-tile key (p60) disappears - exactly the case the LazyGrid can't retain.
+        val timeGroups: List<PhotoGroup> = buildList {
+            add(PhotoGroup.Burst(photos.subList(0, 50)))
+            addAll(photos.subList(50, 55).map(PhotoGroup::Single))
+            add(PhotoGroup.Burst(photos.subList(55, 65)))
+            addAll(photos.subList(65, 100).map(PhotoGroup::Single))
+        }
+        val modeCalls = mutableListOf<GroupingMode>()
+        // The flat photo index reported at the viewport top (column-independent, unlike a tile index).
+        var reportedTopFlat = -1
+        rule.setContent {
+            AppTheme {
+                // Wide enough that the toolbar's segmented lens control lays out un-clipped and is hittable.
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    // Open in the Off lens (flat singles), parked at p60 - tile 60 == flat 60 here.
+                    val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = 60)
+                    var state by remember {
+                        mutableStateOf(
+                            GridUiState(
+                                photos = photos,
+                                groups = photos.map(PhotoGroup::Single),
+                                scope = CategoryScope.AllPhotos,
+                                groupingMode = GroupingMode.Off,
+                                focusedIndex = -1,
+                            ),
+                        )
+                    }
+                    GridScreen(
+                        state = state,
+                        initialScrollIndex = 0,
+                        retainedGridState = gridState,
+                        anchorInitialScroll = false, // already open: the retained scroll owns the position
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onSelectCategory = { _, _ -> },
+                        onCreateCategory = {},
+                        onRenameCategory = { _, _ -> },
+                        onDeleteCategory = {},
+                        onBack = null,
+                        onSetFocusedIndex = {},
+                        onToggleMembershipAtFocus = {},
+                        onToggleCustomCategoryAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        onFirstVisibleItemChanged = { reportedTopFlat = it },
+                        imageLoader = noOpImageLoader,
+                        // Mirror the view model: the Time lens collapses the two bursts, Off is flat singles.
+                        onSelectGroupingMode = { mode ->
+                            modeCalls += mode
+                            state = state.copy(
+                                groupingMode = mode,
+                                groups = if (mode == GroupingMode.Time) timeGroups else photos.map(PhotoGroup::Single),
+                            )
+                        },
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        assertTrue("retained scroll starts parked on ~p60", reportedTopFlat in 56..64)
+
+        // Flip the lens to Time (label "Bursts") via the toolbar's segmented control.
+        rule.onNodeWithContentDescription("Bursts").performClick()
+        rule.waitForIdle()
+        assertEquals("toolbar click switched the lens to Time", listOf(GroupingMode.Time), modeCalls)
+
+        // p60 is now inside the p55..p64 burst (reported by its first frame, p55). Pinning the top
+        // photo must keep the viewport on that run - NOT clamp to the far end of the shorter tile list.
+        assertTrue(
+            "lens switch jumped the grid (top flat $reportedTopFlat) instead of pinning the top photo's burst",
+            reportedTopFlat in 50..64,
         )
     }
 
