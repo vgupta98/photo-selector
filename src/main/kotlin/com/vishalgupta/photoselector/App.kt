@@ -1,6 +1,7 @@
 package com.vishalgupta.photoselector
 
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -16,6 +17,7 @@ import com.vishalgupta.photoselector.presentation.browser.BrowserScreen
 import com.vishalgupta.photoselector.presentation.compare.CompareScreen
 import com.vishalgupta.photoselector.presentation.grid.GridScreen
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
+import com.vishalgupta.photoselector.presentation.navigation.GridRetentionKey
 import com.vishalgupta.photoselector.presentation.navigation.Screen
 import com.vishalgupta.photoselector.presentation.rootpicker.RootFolderPickerScreen
 import com.vishalgupta.photoselector.presentation.survey.SurveyScreen
@@ -27,6 +29,12 @@ fun App(container: AppContainer) {
     val screen by container.currentScreen.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
+    // Scroll position retained per (root, scope) for the session, alongside the retained view models
+    // in the container. Held here (not inside the Grid branch, which leaves composition on every
+    // navigation away) so a Grid -> Browser -> Grid round trip returns to the exact same scroll.
+    // Cleared on a root change, in lock-step with the container dropping its retained grids.
+    val gridScrollStates = remember { mutableMapOf<GridRetentionKey, LazyGridState>() }
+
     AppTheme {
         Surface(Modifier.fillMaxSize()) {
             when (val s = screen) {
@@ -34,13 +42,21 @@ fun App(container: AppContainer) {
                     val vm = remember { container.rootPickerViewModel() }
                     RootFolderPickerScreen(vm)
                 }
-                is Screen.Grid -> key(s) {
+                is Screen.Grid -> key(GridRetentionKey(s.root.path, s.scope)) {
+                    val retentionKey = GridRetentionKey(s.root.path, s.scope)
+                    // Warm if this (root, scope) grid was shown before this visit: it then reuses its
+                    // retained scroll. Latched per visit (remember) so it can't flip mid-visit once the
+                    // getOrPut below inserts the key. A cold first visit re-anchors to initialScrollIndex.
+                    val anchorInitialScroll = remember { retentionKey !in gridScrollStates }
+                    val gridState = remember { gridScrollStates.getOrPut(retentionKey) { LazyGridState() } }
                     val vm = remember {
                         container.gridViewModel(s.root, s.scope, s.lastViewedPhotoId)
                     }
                     GridScreen(
                         viewModel = vm,
                         initialScrollIndex = s.initialScrollIndex,
+                        gridState = gridState,
+                        anchorInitialScroll = anchorInitialScroll,
                         onTileClick = { index ->
                             container.goTo(
                                 Screen.Browser(
@@ -54,6 +70,7 @@ fun App(container: AppContainer) {
                         onChangeFolder = {
                             coroutineScope.launch {
                                 container.resetForNewRoot()
+                                gridScrollStates.clear()
                                 container.goTo(Screen.RootPicker)
                             }
                         },
@@ -132,6 +149,7 @@ fun App(container: AppContainer) {
                         onChangeFolder = {
                             coroutineScope.launch {
                                 container.resetForNewRoot()
+                                gridScrollStates.clear()
                                 container.goTo(Screen.RootPicker)
                             }
                         },

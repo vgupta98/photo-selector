@@ -51,6 +51,21 @@ class SimilarityPhotoGrouperTest {
         assertEquals(3, decodeCount, "second pass is all cache hits, no re-decode")
     }
 
+    @Test fun `reports progress once per photo, ending at total`() = runBlocking {
+        val dir = Files.createTempDirectory("similarity-progress-test").also { it.toFile().deleteOnExit() }
+        val cache = EmbeddingCache(dir, modelId = "fake-v1")
+        val a = photo("A"); val b = photo("B"); val c = photo("C")
+        val decode: suspend (Photo) -> com.vishalgupta.photoselector.domain.model.DecodedImage? =
+            { ImageFixtures.solid(8, 8) }
+        val model = FakeEmbeddingModel(id = "fake-v1") { unit(1f, 0f) }
+        val grouper = SimilarityPhotoGrouper(PhotoFeatureExtractor(model, cache, decode))
+
+        val seen = mutableListOf<Pair<Int, Int>>()
+        grouper.group(listOf(a, b, c)) { processed, total -> seen += processed to total }
+
+        assertEquals(listOf(1 to 3, 2 to 3, 3 to 3), seen)
+    }
+
     private fun unit(vararg xs: Float): FloatArray {
         var norm = 0f
         for (x in xs) norm += x * x

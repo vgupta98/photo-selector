@@ -29,7 +29,6 @@ import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -40,9 +39,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isMetaPressed
@@ -94,8 +96,15 @@ fun GridScreen(
     onSelectCategory: (currentScrollIndex: Int, id: CategoryId) -> Unit,
     onCompareSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit,
     onBack: (() -> Unit)?,
+    // The scroll state retained for this (root, scope) across the session, supplied by the host so it
+    // survives a Grid -> Browser -> Grid round trip. [anchorInitialScroll] is true only on the first
+    // (cold) visit, where [initialScrollIndex] still needs to be applied as grouping settles; on a
+    // warm return the retained state already holds the exact position, so re-anchoring is skipped.
+    // The view model is retained too (it is NOT cleared here on navigate-away — the host evicts it on
+    // a root change), so the grid returns with its groups, focus and scroll intact.
+    gridState: LazyGridState,
+    anchorInitialScroll: Boolean,
 ) {
-    DisposableEffect(viewModel) { onDispose { viewModel.onClear() } }
     val state by viewModel.state.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
@@ -112,6 +121,8 @@ fun GridScreen(
     GridScreen(
         state = state,
         initialScrollIndex = initialScrollIndex,
+        retainedGridState = gridState,
+        anchorInitialScroll = anchorInitialScroll,
         categoryToast = categoryToast,
         onTileClick = onTileClick,
         onChangeFolder = onChangeFolder,
@@ -164,10 +175,17 @@ fun GridScreen(
     )
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun GridScreen(
     state: GridUiState,
     initialScrollIndex: Int,
+    // The host-retained scroll state for this (root, scope), or null for the stateless hosting (tests,
+    // previews) that owns no retention — then the grid makes its own, seeded from [initialScrollIndex].
+    retainedGridState: LazyGridState? = null,
+    // True only on a cold first visit, where [initialScrollIndex] is re-anchored as grouping settles;
+    // false on a warm return, where [retainedGridState] already holds the exact position.
+    anchorInitialScroll: Boolean = true,
     onTileClick: (index: Int) -> Unit,
     onChangeFolder: () -> Unit,
     onSelectCategory: (currentScrollIndex: Int, id: CategoryId) -> Unit,
@@ -226,9 +244,12 @@ fun GridScreen(
     }
     // initialScrollIndex is a FLAT photo index (which photo to reveal); convert to its tile, since a
     // burst makes the two diverge. Grouping settles asynchronously, so a later effect re-anchors.
-    val gridState = rememberLazyGridState(
+    // Prefer the host-retained scroll state (so a warm return keeps the exact position); fall back to
+    // a self-owned one seeded from initialScrollIndex for the stateless hosting that has no retention.
+    val ownGridState = rememberLazyGridState(
         initialFirstVisibleItemIndex = tileIndexForFlat(tileFlatStart, initialScrollIndex),
     )
+    val gridState = retainedGridState ?: ownGridState
     // What we hand back to the browser / Compare / Survey / persistence is a FLAT photo index, so no
     // caller needs to know tiles exist. firstVisibleItemIndex is a renderItems index (header/footer
     // included when a burst is open), so map it through the tile space before the flat lookup.
@@ -308,22 +329,27 @@ fun GridScreen(
 
     // Re-anchor the photo we returned on (initialScrollIndex, a FLAT index) as burst grouping
     // settles: the view model emits singles first, then collapses bursts a frame later, which
-    // shifts tile indices under us. We map the flat photo to its tile and scroll there, but back off
-    // the moment the user scrolls away from our anchor so we never fight their own scrolling. Keyed
-    // on the collapsed grouping (not the display tiles) so expanding a burst - which also reshapes
-    // the tiles - doesn't yank the scroll; the focus effect above handles keeping a burst in view.
+    // shifts tile indices under us. We map the flat photo to its tile and scroll there each time the
+    // grouping reshapes, but stop the moment the user has scrolled themselves so we never fight them.
+    // Keyed on the collapsed grouping (not the display tiles) so expanding a burst - which also
+    // reshapes the tiles - doesn't yank the scroll; the focus effect above keeps a burst in view.
+    //
+    // "User scrolled" MUST come from a real scroll gesture (onPointerEvent below), NOT from the index
+    // moving: when grouping collapses many singles into fewer tiles the LazyGrid clamps its offset to
+    // the new, shorter end, which shifts firstVisibleItemIndex without any user input. Inferring
+    // "moved" from that delta made us abandon the anchor and leave the grid stuck at the end on every
+    // return once similarity grouping (heavy collapse, instant from cache) was in play.
     //
     // Invariant: this only fires while grouping settles, when no burst can be expanded - so the tile
     // index space and the LazyGrid's render-item space coincide here, and it is safe to compare
     // firstVisibleItemIndex (render) against tile-space targets and scrollToItem with a tile index.
-    var anchoredTile by remember { mutableStateOf(-1) }
+    // Only the cold first visit re-anchors: a warm return reuses the retained gridState, which already
+    // holds the exact scroll, so re-applying initialScrollIndex (stale on a return) would yank it.
+    var userScrolled by remember { mutableStateOf(false) }
     LaunchedEffect(baseGroups) {
+        if (!anchorInitialScroll || userScrolled) return@LaunchedEffect
         val target = tileIndexForFlat(tileFlatStart, initialScrollIndex)
-        val userMoved = anchoredTile != -1 && gridState.firstVisibleItemIndex != anchoredTile
-        if (!userMoved) {
-            if (gridState.firstVisibleItemIndex != target) gridState.scrollToItem(target)
-            anchoredTile = target
-        }
+        if (gridState.firstVisibleItemIndex != target) gridState.scrollToItem(target)
     }
 
     Column(
@@ -331,8 +357,22 @@ fun GridScreen(
             .fillMaxSize()
             .focusRequester(focusRequester)
             .focusable()
+            // A two-finger / wheel scroll (the app's scroll gestures) is the only thing that should
+            // release the return-anchor above; a programmatic scroll or a grouping reshape doesn't
+            // emit this, so they can't be mistaken for the user taking over.
+            .onPointerEvent(PointerEventType.Scroll) { userScrolled = true }
             .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (event.type != KeyEventType.KeyDown) {
+                    // A tile's `Modifier.clickable` activates on the Enter / Space KEY-UP, and a mouse
+                    // click leaves Compose focus on that tile - which differs from our keyboard cursor.
+                    // If we let the key-up through, the focused tile re-fires its onClick and re-opens
+                    // the mouse-clicked tile, undoing the cursor's action: the "Enter always re-expands
+                    // the burst I opened with the mouse" bug. The grid owns Enter/Space (handled on the
+                    // key-down below), so swallow their key-ups too and the tile clickable never sees them.
+                    return@onPreviewKeyEvent event.key == Key.Enter ||
+                        event.key == Key.NumPadEnter ||
+                        event.key == Key.Spacebar
+                }
                 val meta = event.isMetaPressed
                 val hasSelection = state.hasSelection
                 // Keyboard focus moves over tiles (groups), not the flat photo list — a collapsed
@@ -363,6 +403,9 @@ fun GridScreen(
                 }
                 val isArrow = event.key == Key.DirectionLeft || event.key == Key.DirectionRight ||
                     event.key == Key.DirectionUp || event.key == Key.DirectionDown
+                // Arrow navigation moves the cursor, so it counts as the user taking over the viewport -
+                // release the return-anchor the same as a scroll would.
+                if (isArrow) userScrolled = true
                 if (isArrow && state.focusedIndex < 0 && maxIndex >= 0) {
                     // Seed focus on the first visible TILE. firstVisibleItemIndex is render-item space
                     // (header/footer included when a burst is open), so map it into tile space first.
@@ -466,6 +509,16 @@ fun GridScreen(
 
         if (state.isBusy) {
             BusyBar(label = state.progressLabel ?: "Working…")
+        }
+
+        // Non-blocking determinate progress while a grouping lens computes (the cold Similarity pass
+        // is a ~minute-long wait). Unlike the busy bar above it doesn't lock the toolbar — the user
+        // can keep scrolling the singles grid while the model works.
+        state.grouping?.takeIf { it.total > 0 }?.let { g ->
+            BusyBar(
+                label = "Grouping ${g.processed} / ${g.total}",
+                progress = g.processed.toFloat() / g.total,
+            )
         }
 
         Box(Modifier.weight(1f).fillMaxWidth()) {

@@ -2,6 +2,16 @@ package com.vishalgupta.photoselector.presentation.navigation
 
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
+import java.nio.file.Path
+
+/**
+ * Identity of a retained grid: one live [com.vishalgupta.photoselector.presentation.grid.GridViewModel]
+ * and one scroll position are kept per (root, scope) for the session, so a Grid -> Browser -> Grid
+ * round trip returns to the grid exactly as it was left rather than rebuilding (and re-anchoring,
+ * which lost the precise offset and fought the regroup reshape). Keyed by [Path] (not [RootFolder])
+ * so it stays a stable value key across rescans.
+ */
+data class GridRetentionKey(val rootPath: Path, val scope: CategoryScope)
 
 sealed interface Screen {
     data object RootPicker : Screen

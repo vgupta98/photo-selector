@@ -43,6 +43,7 @@ import com.vishalgupta.photoselector.presentation.compare.CompareViewModel
 import com.vishalgupta.photoselector.presentation.grid.GridViewModel
 import com.vishalgupta.photoselector.presentation.survey.SurveyViewModel
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
+import com.vishalgupta.photoselector.presentation.navigation.GridRetentionKey
 import com.vishalgupta.photoselector.presentation.navigation.activeCategoryId
 import com.vishalgupta.photoselector.presentation.navigation.slice
 import com.vishalgupta.photoselector.presentation.common.GroupingMode
@@ -151,9 +152,14 @@ class AppContainer {
     private var scannedPhotos: List<Photo> = emptyList()
     private var scannedRoot: RootFolder? = null
 
-    // The grouping lens the user last picked, remembered for the session so a rebuilt grid (every
-    // Grid -> Browser -> Grid round trip makes a fresh view model) reopens in the same lens rather
-    // than snapping back to the default.
+    // Live grids kept alive per (root, scope) for the session. A Grid -> Browser -> Grid round trip
+    // reuses the retained view model (and the App keeps its scroll position) so the grid returns
+    // exactly as it was left, instead of rebuilding and re-anchoring. Cleared on a root change.
+    private val retainedGrids = mutableMapOf<GridRetentionKey, GridViewModel>()
+
+    // The grouping lens the user last picked, remembered for the session so the first grid built for
+    // each (root, scope) opens in that lens rather than the default. Retained grids keep their own
+    // lens across navigation; this seed only covers a freshly built one (a first visit, or a new scope).
     private var lastGroupingMode: GroupingMode = GroupingMode.Time
 
     private fun photosFor(root: RootFolder): List<Photo> =
@@ -174,6 +180,10 @@ class AppContainer {
     private fun removeScannedPhotos(ids: Set<PhotoId>) {
         if (ids.isEmpty()) return
         scannedPhotos = scannedPhotos.filterNot { it.id in ids }
+        // Keep every retained grid's own photo list in step: a delete from the browser must not
+        // reappear when the user returns to a grid that is now reused rather than rebuilt. The grid
+        // that originated the delete already pruned itself, so its own notification is a no-op.
+        retainedGrids.values.forEach { it.removePhotos(ids) }
     }
 
     fun goTo(screen: Screen) {
@@ -254,32 +264,49 @@ class AppContainer {
         return scope.slice(photosFor(root), members)
     }
 
+    /**
+     * The grid for (root, scope), reused across navigation for the session. A retained instance is
+     * returned as-is (only its last-viewed marker is refreshed); the first visit builds and caches
+     * one. Reuse is what makes the grid survive a Grid -> Browser -> Grid round trip with its groups,
+     * focus and (via the App's held scroll state) scroll position intact.
+     */
     fun gridViewModel(
         root: RootFolder,
         scope: CategoryScope,
         lastViewedPhotoId: PhotoId? = null,
-    ): GridViewModel = GridViewModel(
-        root = root,
-        allPhotos = photosFor(root),
-        categoryScope = scope,
-        lastViewedPhotoId = lastViewedPhotoId,
-        categories = categoriesRepository,
-        exportTxt = exportTxtUseCase,
-        copyToFolder = copyPhotosUseCase,
-        moveToTrash = movePhotosToTrashUseCase,
-        imageLoader = imageLoader,
-        captureMetadataSource = captureMetadataSource,
-        similarityGrouper = similarityGrouper,
-        initialGroupingMode = lastGroupingMode,
-        parentJob = folderJob,
-        onScrollIndexChanged = { index ->
-            appScope.launch { browsePositionRepository.saveIndex(root, index) }
-        },
-        onGroupingModeChanged = { lastGroupingMode = it },
-        onPhotosDeleted = { ids -> removeScannedPhotos(ids) },
-    )
+    ): GridViewModel {
+        val key = GridRetentionKey(root.path, scope)
+        retainedGrids[key]?.let { retained ->
+            retained.setLastViewed(lastViewedPhotoId)
+            return retained
+        }
+        return GridViewModel(
+            root = root,
+            allPhotos = photosFor(root),
+            categoryScope = scope,
+            lastViewedPhotoId = lastViewedPhotoId,
+            categories = categoriesRepository,
+            exportTxt = exportTxtUseCase,
+            copyToFolder = copyPhotosUseCase,
+            moveToTrash = movePhotosToTrashUseCase,
+            imageLoader = imageLoader,
+            captureMetadataSource = captureMetadataSource,
+            similarityGrouper = similarityGrouper,
+            initialGroupingMode = lastGroupingMode,
+            parentJob = folderJob,
+            onScrollIndexChanged = { index ->
+                appScope.launch { browsePositionRepository.saveIndex(root, index) }
+            },
+            onGroupingModeChanged = { lastGroupingMode = it },
+            onPhotosDeleted = { ids -> removeScannedPhotos(ids) },
+        ).also { retainedGrids[key] = it }
+    }
 
     suspend fun resetForNewRoot() {
+        // Flush each retained grid's pending scroll save, then drop them: a new root means a new set
+        // of grids, and folderJob.cancel below tears their scopes down anyway.
+        retainedGrids.values.forEach { it.onClear() }
+        retainedGrids.clear()
         _folderJob.cancel()
         _folderJob = SupervisorJob(appScope.coroutineContext[Job])
         categoriesRepository.clearContext()

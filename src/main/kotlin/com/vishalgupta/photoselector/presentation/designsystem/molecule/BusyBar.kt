@@ -12,11 +12,12 @@ import androidx.compose.ui.Modifier
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 
 /**
- * An inline busy row: a determinate-looking progress bar with a trailing
- * [label]. Used while a long-running operation (scan, copy) is in flight.
+ * An inline busy row: a horizontal progress bar with a trailing [label]. Used while a long-running
+ * operation (scan, copy, grouping) is in flight. Pass [progress] in `0f..1f` for a determinate bar
+ * that fills as the work advances; leave it null for an indeterminate sweep when there's no count.
  */
 @Composable
-fun BusyBar(label: String, modifier: Modifier = Modifier) {
+fun BusyBar(label: String, modifier: Modifier = Modifier, progress: Float? = null) {
     Row(
         modifier
             .fillMaxWidth()
@@ -24,7 +25,11 @@ fun BusyBar(label: String, modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.md),
     ) {
-        LinearProgressIndicator(Modifier.weight(1f))
+        if (progress == null) {
+            LinearProgressIndicator(Modifier.weight(1f))
+        } else {
+            LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, modifier = Modifier.weight(1f))
+        }
         Text(label)
     }
 }

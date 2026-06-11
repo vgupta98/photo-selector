@@ -1,5 +1,6 @@
 package com.vishalgupta.photoselector.data.ai
 
+import com.vishalgupta.photoselector.domain.grouping.GroupingProgress
 import com.vishalgupta.photoselector.domain.grouping.PhotoGrouper
 import com.vishalgupta.photoselector.domain.grouping.SimilarityGrouper
 import com.vishalgupta.photoselector.domain.model.Photo
@@ -23,15 +24,20 @@ class SimilarityPhotoGrouper(
     private val threshold: Float = SimilarityGrouper.DEFAULT_THRESHOLD,
 ) : PhotoGrouper {
 
-    override suspend fun group(photos: List<Photo>): List<PhotoGroup> {
+    override suspend fun group(photos: List<Photo>, onProgress: GroupingProgress): List<PhotoGroup> {
         if (photos.isEmpty()) return emptyList()
-        val embeddings = HashMap<PhotoId, FloatArray>(photos.size)
-        val sharpness = HashMap<PhotoId, Float>(photos.size)
-        for (photo in photos) {
+        val total = photos.size
+        val embeddings = HashMap<PhotoId, FloatArray>(total)
+        val sharpness = HashMap<PhotoId, Float>(total)
+        photos.forEachIndexed { i, photo ->
             coroutineContext.ensureActive()
-            val features = extractor.featuresFor(photo) ?: continue
-            embeddings[photo.id] = features.embedding
-            sharpness[photo.id] = features.sharpness
+            // The (cached) decode + embedding is the cost; report after each so a cold first pass
+            // drives a determinate bar rather than leaving the grid looking frozen for a minute.
+            extractor.featuresFor(photo)?.let { features ->
+                embeddings[photo.id] = features.embedding
+                sharpness[photo.id] = features.sharpness
+            }
+            onProgress(i + 1, total)
         }
         return SimilarityGrouper.group(photos, embeddings, sharpness, threshold)
     }

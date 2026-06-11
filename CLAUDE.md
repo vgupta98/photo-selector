@@ -12,7 +12,8 @@ Clean architecture, single Gradle module, package
 - `domain/` — entities (`Photo`, `RootFolder`, `PhotoId`, `Category`,
   `CategoryId`, `PhotoGroup`), repository interfaces, use cases. No framework
   dependencies. `grouping/` holds grouping behind one `PhotoGrouper` seam
-  (`suspend (List<Photo>) -> List<PhotoGroup>` of `Single | Burst`): the
+  (`suspend (List<Photo>, onProgress) -> List<PhotoGroup>` of `Single | Burst`,
+  the callback reporting per-photo progress for the grid's bar): the
   pure `BurstGrouper` (time + camera, over a `CaptureMetadataSource`) and
   the pure `SimilarityGrouper` (visual, over precomputed embeddings +
   sharpness) both feed it, so the heuristic swaps without touching the grid.
@@ -66,7 +67,13 @@ Clean architecture, single Gradle module, package
   (`GridUiState.groupingMode`: `Off | Time | Similarity` — flat grid,
   time-based bursts (default), or on-device visual similarity); the view
   model resolves each non-`Off` mode to one `PhotoGrouper` and regroups
-  off-thread with a mode-aware staleness guard. Grouping is grid-only presentation: focus,
+  off-thread with a mode-aware staleness guard, surfacing a non-blocking
+  determinate progress bar (`GridUiState.grouping`) while the cold,
+  minute-long similarity pass runs. That regroup renumbers tiles under the
+  cursor, so **focus is re-anchored by photo identity** across every reshape
+  (`GridViewModel.refocus`), never left as a bare index — otherwise the cursor
+  silently slides onto a different burst (and `Enter` expands the wrong one).
+  Grouping is grid-only presentation: focus,
   multi-select and keyboard filing operate over `displayGroups` (the tile
   index space, shared by the view model and the renderer via
   `GridDisplayModel`), while the **flat photo list** stays the index
