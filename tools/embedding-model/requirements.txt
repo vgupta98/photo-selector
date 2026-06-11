@@ -1,0 +1,6 @@
+# Pinned toolchain for reproducing src/main/resources/models/mobilenetv3-small.onnx.
+# CPU-only; no GPU/CUDA needed. See README.md for the command and expected sha256.
+# These versions ship CPython 3.13 wheels.
+torch==2.6.0
+timm==1.0.15
+onnx==1.18.0

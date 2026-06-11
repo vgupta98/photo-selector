@@ -35,9 +35,14 @@ object BurstGrouper {
         photos: List<Photo>,
         metadataSource: CaptureMetadataSource,
         maxGapMs: Long = DEFAULT_MAX_GAP_MS,
+        onProgress: GroupingProgress = NoGroupingProgress,
     ): List<PhotoGroup> {
         if (photos.isEmpty()) return emptyList()
-        val metas = photos.map(metadataSource::metadataFor)
+        // The metadata read is the per-photo cost here, so report progress as each one resolves.
+        val total = photos.size
+        val metas = photos.mapIndexed { i, photo ->
+            metadataSource.metadataFor(photo).also { onProgress(i + 1, total) }
+        }
 
         val groups = ArrayList<PhotoGroup>()
         var runStart = 0

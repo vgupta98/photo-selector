@@ -113,6 +113,9 @@ Dependency rule: `presentation → domain`, `data → domain`. `domain` depends 
 - Gradle 8.10.2 (wrapper)
 - kotlinx-coroutines 1.9.0, kotlinx-serialization 1.7.3
 - Skiko `Image.makeFromEncoded` for decode + hand-rolled LRU bitmap cache
+- ONNX Runtime 1.20 for the on-device visual-similarity lens (a bundled
+  MobileNetV3-Small embedding model; nothing is downloaded and no pixels leave
+  the machine)
 
 ## License
 

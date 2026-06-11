@@ -15,6 +15,14 @@ class BurstGrouperTest {
         assertTrue(BurstGrouper.group(emptyList(), source(emptyMap())).isEmpty())
     }
 
+    @Test fun `reports progress once per photo, ending at total`() {
+        val photos = (1..4).map { photo("IMG_$it") }
+        val metas = photos.associate { it.id to meta(takenAtMs = 0) }
+        val seen = mutableListOf<Pair<Int, Int>>()
+        BurstGrouper.group(photos, source(metas)) { processed, total -> seen += processed to total }
+        assertEquals(listOf(1 to 4, 2 to 4, 3 to 4, 4 to 4), seen)
+    }
+
     @Test fun `a lone photo is a single`() {
         val p = photo("IMG_1")
         val groups = BurstGrouper.group(listOf(p), source(mapOf(p.id to meta(takenAtMs = 0))))

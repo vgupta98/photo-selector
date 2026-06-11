@@ -1,20 +1,30 @@
 package com.vishalgupta.photoselector.presentation.grid
 
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.withKeyDown
 import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.model.Photo
+import com.vishalgupta.photoselector.domain.model.PhotoGroup
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
@@ -363,4 +373,244 @@ class GridKeyboardTest {
         assertEquals("13 selected is over the cap, so nothing opens", 0, opens)
         assertEquals("it declines with feedback instead", 1, declines)
     }
+
+    // --- Mouse-then-keyboard: Enter must not re-fire the mouse-focused tile -----------------------
+    // Expanding a burst with the MOUSE leaves Compose focus on that tile. A tile's `clickable`
+    // activates on the Enter/Space KEY-UP, so if the key-up leaks past the grid's handler the
+    // mouse-focused tile re-opens itself - undoing the keyboard cursor's action. Concretely: open
+    // burst A with the mouse, arrow the cursor to burst B, press Enter; without the key-up swallow
+    // B opens and then A immediately re-opens ([a0, b0, a0]), so A always wins. The grid owns
+    // Enter/Space, so it must swallow their key-ups too.
+
+    // A loader that yields a real (1x1) bitmap, so each tile's Image carries a contentDescription
+    // (the file name) and can be located + clicked like a real mouse interaction.
+    private val bitmapImageLoader = object : ImageLoader {
+        private val onePx = ImageBitmap(1, 1)
+        override suspend fun load(photo: Photo, viewportLongEdgePx: Int): ImageBitmap = onePx
+        override fun prefetch(photos: List<Photo>, viewportLongEdgePx: Int, scope: CoroutineScope) {}
+        override fun evictAll() {}
+        override fun pin(id: PhotoId) {}
+        override fun unpinAllExcept(id: PhotoId?) {}
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun mouseExpandedBurst_thenArrowToAnother_enterOpensTheCursorTileNotTheMouseTile() {
+        val burstA = PhotoGroup.Burst(listOf(photoNamed("a0"), photoNamed("a1"), photoNamed("a2")))
+        val burstB = PhotoGroup.Burst(listOf(photoNamed("b0"), photoNamed("b1"), photoNamed("b2")))
+        val groups = listOf(burstA, burstB)
+        val toggles = mutableListOf<String>()
+
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(1000.dp, 800.dp)) {
+                    // Stateful host mirroring GridViewModel.toggleBurstExpansion, so the expand actually
+                    // reshapes the tiles the way the real screen does.
+                    var state by remember {
+                        mutableStateOf(
+                            GridUiState(
+                                photos = burstA.photos + burstB.photos,
+                                groups = groups,
+                                scope = CategoryScope.AllPhotos,
+                                focusedIndex = -1,
+                            ),
+                        )
+                    }
+                    GridScreen(
+                        state = state,
+                        initialScrollIndex = 0,
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onSelectCategory = { _, _ -> },
+                        onCreateCategory = {},
+                        onRenameCategory = { _, _ -> },
+                        onDeleteCategory = {},
+                        onBack = null,
+                        onSetFocusedIndex = { idx ->
+                            val max = state.displayGroups.size - 1
+                            state = state.copy(focusedIndex = idx.coerceIn(-1, max.coerceAtLeast(-1)))
+                        },
+                        onToggleMembershipAtFocus = {},
+                        onToggleCustomCategoryAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        imageLoader = bitmapImageLoader,
+                        onToggleBurstExpansion = { id ->
+                            toggles += id.value
+                            val open = if (state.expandedBurstId == id) null else id
+                            val display = displayGroupsFor(state.groups, open)
+                            val focus = display.indexOfFirst { it.groupId == id }.takeIf { it >= 0 }
+                                ?: state.focusedIndex
+                            state = state.copy(
+                                expandedBurstId = open,
+                                focusedIndex = focus.coerceIn(-1, (display.size - 1).coerceAtLeast(-1)),
+                            )
+                        },
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        // Mouse-click burst A's key frame (a1, the middle frame of a 3-burst) to expand it.
+        rule.onAllNodesWithContentDescription("a1.jpg")[0].performClick()
+        rule.waitForIdle()
+        assertEquals("the mouse click expands burst A", listOf("a0"), toggles)
+
+        // displayGroups is now [a0, a1, a2, (B)] - arrow the cursor right from a0 to the B tile (index 3).
+        repeat(3) {
+            rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
+            rule.waitForIdle()
+        }
+        rule.onRoot().performKeyInput { pressKey(Key.Enter) }
+        rule.waitForIdle()
+
+        // Exactly one further toggle - on B (the cursor tile). No spurious re-open of A from the
+        // mouse-focused tile's key-up.
+        assertEquals("Enter opens the cursor's burst B once, not the mouse-focused A", listOf("a0", "b0"), toggles)
+    }
+
+    // --- Delete must not orphan keyboard focus ---------------------------------------------------
+    // A Cmd-click moves Compose's actual focus onto the clicked tile. Deleting that tile removes the
+    // focused node, and Compose does not fall focus back to the grid - it orphans, so arrows/Enter
+    // stop reaching the grid's key handler. The grid must reclaim focus when the selection clears.
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun deletingTheMouseFocusedTile_keepsArrowKeysWorking() {
+        val photos = (0 until 4).map { photoNamed("p$it") }
+        val movedTo = mutableListOf<Int>()
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(1000.dp, 800.dp)) {
+                    // Stateful host: p1 is pre-selected (the tile we mouse-focus and then delete), and
+                    // onDeleteSelection mirrors the view model - drop the selected photo, clear the
+                    // selection, reset the cursor.
+                    var state by remember {
+                        mutableStateOf(
+                            GridUiState(
+                                photos = photos,
+                                groups = photos.map(PhotoGroup::Single),
+                                scope = CategoryScope.AllPhotos,
+                                focusedIndex = -1,
+                                selection = setOf(photos[1].id),
+                            ),
+                        )
+                    }
+                    GridScreen(
+                        state = state,
+                        initialScrollIndex = 0,
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onSelectCategory = { _, _ -> },
+                        onCreateCategory = {},
+                        onRenameCategory = { _, _ -> },
+                        onDeleteCategory = {},
+                        onBack = null,
+                        onSetFocusedIndex = { idx ->
+                            movedTo += idx
+                            state = state.copy(focusedIndex = idx.coerceIn(-1, (state.displayGroups.size - 1).coerceAtLeast(-1)))
+                        },
+                        onToggleMembershipAtFocus = {},
+                        onToggleCustomCategoryAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        imageLoader = bitmapImageLoader,
+                        onClearSelection = { state = state.copy(selection = emptySet()) },
+                        onDeleteSelection = {
+                            val remaining = state.photos.filterNot { it.id in state.selection }
+                            state = state.copy(
+                                photos = remaining,
+                                groups = remaining.map(PhotoGroup::Single),
+                                selection = emptySet(),
+                                focusedIndex = -1,
+                            )
+                        },
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        // Mouse-click p1's tile so Compose focus lands on the tile that's about to be deleted.
+        rule.onAllNodesWithContentDescription("p1.jpg")[0].performClick()
+        rule.waitForIdle()
+
+        // Cmd+Delete arms the move-to-Trash confirm; confirming performs the delete (removing p1).
+        rule.onRoot().performKeyInput { withKeyDown(Key.MetaLeft) { pressKey(Key.Delete) } }
+        rule.waitForIdle()
+        rule.onNodeWithText("Move to Trash").performClick()
+        rule.waitForIdle()
+
+        // The mouse-focused tile is gone. Without reclaiming focus the grid would be deaf to keys;
+        // a first arrow press must still reach the handler and seed the cursor.
+        movedTo.clear()
+        rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
+        rule.waitForIdle()
+
+        assertTrue("arrow key reached the grid after the focused tile was deleted", movedTo.isNotEmpty())
+    }
+
+    // --- Warm return must keep the scrolled position, not snap to the ring -----------------------
+    // After arrowing the ring to a tile, then trackpad-scrolling away and opening a tile, returning
+    // to the grid (a warm re-entry) must honour the retained scroll - NOT yank the viewport back to
+    // the (off-screen) ring. The focus-into-view scroll reacts to cursor moves, not to mounting.
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun warmReturnWithOffscreenRing_keepsRetainedScrollInsteadOfSnappingToRing() {
+        val manyPhotos = (0 until 60).map { photoNamed("p$it") }
+        lateinit var gridStateRef: LazyGridState
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(400.dp, 400.dp)) {
+                    // A retained scroll parked well down the grid (the position the user opened from),
+                    // hosted exactly as the real screen does on a warm return.
+                    val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = 36)
+                    gridStateRef = gridState
+                    GridScreen(
+                        state = GridUiState(
+                            photos = manyPhotos,
+                            groups = manyPhotos.map(PhotoGroup::Single),
+                            scope = CategoryScope.AllPhotos,
+                            focusedIndex = 0, // the ring sits at the top, far above the retained scroll
+                        ),
+                        initialScrollIndex = 0,
+                        retainedGridState = gridState,
+                        anchorInitialScroll = false, // warm return: the retained state owns the position
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onSelectCategory = { _, _ -> },
+                        onCreateCategory = {},
+                        onRenameCategory = { _, _ -> },
+                        onDeleteCategory = {},
+                        onBack = null,
+                        onSetFocusedIndex = {},
+                        onToggleMembershipAtFocus = {},
+                        onToggleCustomCategoryAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        imageLoader = noOpImageLoader,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        // The retained scroll stands: it must not have snapped up to the ring at index 0.
+        assertTrue(
+            "warm return snapped to the ring (index ${gridStateRef.firstVisibleItemIndex}) instead of keeping the scroll",
+            gridStateRef.firstVisibleItemIndex > 10,
+        )
+    }
+
+    private fun photoNamed(id: String) = Photo(
+        id = PhotoId(id),
+        absolutePath = Path.of("/photos/$id.jpg"),
+        relativePath = "$id.jpg",
+        fileName = "$id.jpg",
+        sizeBytes = 1,
+        lastModifiedEpochMs = 0,
+    )
 }

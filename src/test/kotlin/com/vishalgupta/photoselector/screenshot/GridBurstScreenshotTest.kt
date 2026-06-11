@@ -17,6 +17,7 @@ import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.presentation.common.GroupingMode
 import com.vishalgupta.photoselector.presentation.grid.GridScreen
 import com.vishalgupta.photoselector.presentation.grid.GridUiState
+import com.vishalgupta.photoselector.presentation.grid.GroupingStatus
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import kotlinx.coroutines.CoroutineScope
@@ -152,6 +153,23 @@ class GridBurstScreenshotTest {
             ),
         )
         rule.dumpScreenshot("grid-similarity-collapsed")
+    }
+
+    @Test fun `a grouping pass shows a non-blocking determinate progress bar`() {
+        // The AI lens is mid-pass: the singles grid stays interactive while a determinate bar under
+        // the toolbar reports "Grouping 18 / 60". Eyeball build/screenshots/grid-grouping-progress.png
+        // - the toolbar reads "Similar", the bar is part-filled, and the tiles below are untouched.
+        renderGrid(
+            GridUiState(
+                photos = photos,
+                groups = photos.map(PhotoGroup::Single),
+                groupingMode = GroupingMode.Similarity,
+                grouping = GroupingStatus(processed = 18, total = 60),
+                scope = CategoryScope.AllPhotos,
+                categories = listOf(Category.favourites()),
+            ),
+        )
+        rule.dumpScreenshot("grid-grouping-progress")
     }
 
     private fun renderGrid(state: GridUiState) {

@@ -24,7 +24,9 @@ import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.testing.FakeCategoriesRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
@@ -460,6 +462,145 @@ class GridSelectionTest {
         assertTrue("the failed photo stays put", st.photos.any { it.id == photos[0].id })
         assertTrue("toast reports the failure, got: ${st.toast}", st.toast!!.contains("failed"))
 
+        vm.onClear()
+    }
+
+    @Test
+    fun deleteSelection_keepsFocusOnTheSamePhotoByIdentity() = runBlocking {
+        // Lens Off, so no regroup runs after the delete to fix up a bare-index focus. Deleting a photo
+        // *before* the cursor renumbers the tiles, and focus must follow the photo it was on - not stay
+        // a coerced index that now points at a neighbour (the identity-refocus invariant removePhotos
+        // already honours; the in-grid delete must match it).
+        val vm = viewModel(FakeCategoriesRepository(categories), initialGroupingMode = GroupingMode.Off)
+        vm.awaitPhotos()
+        withTimeout(2_000) { vm.state.first { it.groups.size == photos.size } } // six singles
+
+        vm.setFocusedIndex(4) // cursor on p4
+        assertEquals(photos[4].id, vm.state.value.displayGroups[4].keyPhoto.id)
+
+        vm.toggleSelection(1) // select p1, an earlier tile
+        vm.deleteSelection()
+        withTimeout(2_000) { vm.state.first { it.toast != null && !it.isBusy } }
+
+        val st = vm.state.value
+        assertEquals(listOf("p0", "p2", "p3", "p4", "p5"), st.photos.map { it.id.value })
+        assertEquals("focus stays on p4, now one tile earlier", photos[4].id, st.displayGroups[st.focusedIndex].keyPhoto.id)
+
+        vm.onClear()
+    }
+
+    @Test
+    fun removePhotos_dropsExternallyTrashedFramesAndKeepsFocusByIdentity() = runBlocking {
+        // The grid is now retained across navigation, so a delete made in the browser (which used to
+        // be picked up by rebuilding the grid) is instead pushed in via removePhotos. The trashed
+        // frame must leave the list and focus must stay on the *photo* it was on, not a bare index.
+        val vm = viewModel(FakeCategoriesRepository(categories))
+        vm.awaitPhotos()
+        vm.setFocusedIndex(3) // every photo is its own tile, so focus sits on p3
+        assertEquals(photos[3].id, vm.state.value.displayGroups[vm.state.value.focusedIndex].keyPhoto.id)
+
+        vm.removePhotos(setOf(photos[1].id)) // a browser delete of p1, propagated to this retained grid
+
+        val st = vm.state.value
+        assertEquals(listOf("p0", "p2", "p3", "p4", "p5"), st.photos.map { it.id.value })
+        assertEquals("focus stays on p3, now one tile earlier", photos[3].id, st.displayGroups[st.focusedIndex].keyPhoto.id)
+
+        // A no-op when the ids aren't present (the grid that performed the delete already pruned itself).
+        vm.removePhotos(setOf(photos[1].id))
+        assertEquals(5, vm.state.value.photos.size)
+
+        vm.onClear()
+    }
+
+    @Test
+    fun regroupCollapsing_keepsFocusOnTheSamePhotosTile() = runBlocking {
+        // The user's bug: focus a photo, switch to a grouping lens, and when grouping lands ~a beat
+        // (or a minute) later the tiles renumber under the cursor. Focus must follow the *photo*, not
+        // stay a bare index that now points at a different burst (which made Enter expand the wrong one).
+        val vm = viewModel(
+            FakeCategoriesRepository(categories),
+            metadata = singleBurstSingleMetadata,
+            initialGroupingMode = GroupingMode.Off,
+        )
+        vm.awaitPhotos()
+        // Off: one tile per photo. Focus p2 (tile 2), which will fold *into* the burst.
+        vm.setFocusedIndex(2)
+        assertEquals(photos[2].id, vm.state.value.displayGroups[2].keyPhoto.id)
+
+        // Switch to Time: p1..p4 collapse to one burst -> [p0, burst(p1..p4), p5] = 3 tiles.
+        vm.setGroupingMode(GroupingMode.Time)
+        withTimeout(2_000) { vm.state.first { it.groups.size == 3 } }
+
+        // Focus rode the reshape onto the burst tile (index 1) that now contains p2 - not the bare,
+        // coerced old index 2 (which would be p5, a different tile entirely).
+        assertEquals(1, vm.state.value.focusedIndex)
+        assertTrue(vm.state.value.displayGroups[1].photos.any { it.id == photos[2].id })
+
+        vm.onClear()
+    }
+
+    @Test
+    fun switchingLensOff_keepsFocusOnTheSamePhotosTile() = runBlocking {
+        // The other direction: from a collapsed view, turning grouping off unfolds bursts back to
+        // singles and renumbers tiles *upward*. Focus on a tile past the burst must track its photo.
+        val vm = viewModel(FakeCategoriesRepository(categories), metadata = singleBurstSingleMetadata)
+        vm.awaitPhotos()
+        // Time (default): [p0, burst(p1..p4), p5] -> 3 tiles. Focus p5 (the last tile, index 2).
+        withTimeout(2_000) { vm.state.first { it.groups.size == 3 } }
+        vm.setFocusedIndex(2)
+        assertEquals(photos[5].id, vm.state.value.displayGroups[2].keyPhoto.id)
+
+        // Off: back to six singles. p5 is now tile 5, not the coerced old index 2 (which would be p2).
+        vm.setGroupingMode(GroupingMode.Off)
+        assertEquals(photos.size, vm.state.value.displayGroups.size)
+        assertEquals(5, vm.state.value.focusedIndex)
+        assertEquals(photos[5].id, vm.state.value.displayGroups[5].keyPhoto.id)
+
+        vm.onClear()
+    }
+
+    @Test
+    fun grouping_seedsThenClearsProgress() = runBlocking {
+        // A grouping pass exposes determinate progress that the grid surfaces as a non-blocking bar,
+        // and clears it when done. Gate the metadata read so the pass is provably in flight first.
+        val gate = java.util.concurrent.CountDownLatch(1)
+        val gatedMetadata = CaptureMetadataSource { photo ->
+            gate.await()
+            val i = photo.id.value.removePrefix("p").toInt()
+            CaptureMetadata(takenAtEpochMs = i * 1_000L, cameraId = "cam", orientation = 1)
+        }
+        val vm = viewModel(FakeCategoriesRepository(categories), metadata = gatedMetadata)
+        vm.awaitPhotos()
+
+        // Grouping is on by default, so a pass is launched and blocked on the gate: progress is seeded.
+        withTimeout(2_000) { vm.state.first { it.grouping != null } }
+        assertEquals(photos.size, vm.state.value.grouping!!.total)
+
+        // Let it finish: the bursts land and progress clears.
+        gate.countDown()
+        withTimeout(2_000) { vm.state.first { it.groups.size == 1 } }
+        withTimeout(2_000) { vm.state.first { it.grouping == null } }
+
+        vm.onClear()
+    }
+
+    @Test
+    fun grouping_warmPassDoesNotFlashTheProgressBar() = runBlocking {
+        // A warm pass (instant metadata, e.g. a memoized Time re-slice) finishes inside the grace
+        // window, so the determinate bar must never appear - a flashed-then-gone bar is just noise.
+        val vm = viewModel(FakeCategoriesRepository(categories), metadata = oneBurstMetadata, initialGroupingMode = GroupingMode.Off)
+        vm.awaitPhotos()
+        withTimeout(2_000) { vm.state.first { it.groups.size == photos.size } } // Off: six singles
+
+        var flashed = false
+        val watcher = launch { vm.state.collect { if (it.grouping != null) flashed = true } }
+
+        vm.setGroupingMode(GroupingMode.Time) // instant metadata -> a sub-grace pass
+        withTimeout(2_000) { vm.state.first { it.groups.size == 1 } } // the burst landed
+        delay(GROUPING_BAR_GRACE_MS + 150) // give a grace-armed bar its chance to (wrongly) fire
+        watcher.cancel()
+
+        assertTrue("a warm regroup flashed the progress bar", !flashed)
         vm.onClear()
     }
 
