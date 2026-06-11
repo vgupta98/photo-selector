@@ -27,6 +27,7 @@ import com.vishalgupta.photoselector.presentation.navigation.activeCategoryId
 import com.vishalgupta.photoselector.presentation.navigation.slice
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -92,6 +93,11 @@ data class GridUiState(
 
 /** Progress of an in-flight regroup: [processed] of [total] photos handled so far. */
 data class GroupingStatus(val processed: Int, val total: Int)
+
+// How long a regroup must run before its progress bar appears. A warm pass (memoized Time metadata)
+// finishes well inside this window and shows nothing; a cold Similarity pass blows past it and surfaces
+// the bar. Tuned to swallow sub-perceptible flicker without delaying a genuinely long pass noticeably.
+internal const val GROUPING_BAR_GRACE_MS = 200L
 
 class GridViewModel(
     private val root: RootFolder,
@@ -251,20 +257,37 @@ class GridViewModel(
             return
         }
         val generation = ++groupingGeneration
-        // Show the bar immediately (an empty slice has nothing to group, so skip it). The first
-        // progress callback may be a beat away; seeding 0/total avoids a flash of no indicator.
-        _state.update { it.copy(grouping = if (photos.isEmpty()) null else GroupingStatus(0, photos.size)) }
+        // Clear any stale bar from a just-cancelled pass, but do NOT seed a fresh one synchronously:
+        // a warm pass (memoized Time metadata on a re-slice) finishes within a frame, so an eagerly
+        // seeded bar would flash on and off as noise. The bar is armed after a grace delay instead.
+        _state.update { it.copy(grouping = null) }
+        val total = photos.size
         groupingJob = scope.launch(Dispatchers.IO) {
+            // Only surface the bar once a pass has run longer than the grace window - long enough that
+            // a cold Similarity pass (or a first Time pass over a big folder) shows it, while a warm
+            // regroup completes and cancels this before it ever arms.
+            val barJob = launch {
+                if (total > 0) {
+                    delay(GROUPING_BAR_GRACE_MS)
+                    _state.update { if (generation == groupingGeneration) it.copy(grouping = GroupingStatus(0, total)) else it }
+                }
+            }
             // Coalesce per-photo callbacks to whole-percent ticks: ~100 state updates over a minute,
             // not one per photo, while the count still reads as live.
             var lastPercent = -1
-            val groups = grouper.group(photos) { processed, total ->
-                val percent = if (total <= 0) 100 else processed * 100 / total
+            val groups = grouper.group(photos) { processed, t ->
+                val percent = if (t <= 0) 100 else processed * 100 / t
                 if (percent != lastPercent) {
                     lastPercent = percent
-                    _state.update { if (generation == groupingGeneration) it.copy(grouping = GroupingStatus(processed, total)) else it }
+                    // Refresh only once the grace-delayed bar is actually showing; before then the
+                    // pass is still inside the grace window and must stay invisible.
+                    _state.update {
+                        if (generation == groupingGeneration && it.grouping != null) it.copy(grouping = GroupingStatus(processed, t)) else it
+                    }
                 }
             }
+            // Stop the timer before clearing, so a bar can't arm after the pass has already finished.
+            barJob.cancelAndJoin()
             _state.update { st ->
                 // Bail if the slice moved under us, OR the lens changed while this ran: cancel() is
                 // cooperative, so a regroup that finished computing just as the user switched modes
@@ -528,15 +551,21 @@ class GridViewModel(
             val ids = photos.map { it.id }
             _state.update { st ->
                 val validIds = photos.mapTo(HashSet()) { it.id }
+                val anchorId = st.focusedAnchorId()
+                val singles = photos.map(PhotoGroup::Single)
                 st.copy(
                     isBusy = false,
                     progressLabel = null,
                     photos = photos,
-                    groups = photos.map(PhotoGroup::Single),
+                    groups = singles,
                     expandedBurstId = null,
                     selection = st.selection.intersect(validIds),
                     anchorIndex = null,
-                    focusedIndex = st.focusedIndex.coerceIn(-1, (photos.size - 1).coerceAtLeast(-1)),
+                    // Re-anchor by identity, not a bare index: deleting a photo before the cursor
+                    // renumbers the tiles, and with the lens Off no regroup runs afterward to fix a
+                    // coerced index, so focus would silently slide onto a different photo. Mirrors
+                    // removePhotos exactly (its docstring promises this path behaves the same).
+                    focusedIndex = refocus(singles, anchorId, st.focusedIndex),
                     toast = deleteToast(report),
                 )
             }

@@ -298,7 +298,17 @@ fun GridScreen(
         }
     }
 
+    // The focus-into-view scroll must react only to *cursor movement*, never to the screen mounting.
+    // On a warm return the retained gridState already holds the position the user scrolled to, but
+    // focusedIndex still carries the ring's old tile - so scrolling to it on entry would yank the
+    // viewport back to the ring, discarding the scroll the user opened the tile from. LaunchedEffect
+    // always runs once on (re-)entry, so swallow that first run; only later focus changes scroll.
+    var focusScrollPrimed by remember { mutableStateOf(false) }
     LaunchedEffect(state.focusedIndex) {
+        if (!focusScrollPrimed) {
+            focusScrollPrimed = true
+            return@LaunchedEffect
+        }
         val idx = state.focusedIndex
         if (idx < 0) return@LaunchedEffect
         // focusedIndex is a TILE index; the LazyGrid (visibleItemsInfo.index, animateScrollToItem)
@@ -646,10 +656,18 @@ fun GridScreen(
         }
     }
 
-    // If the selection clears out from under an open dialog, drop the latch rather than leave a
-    // confirm hanging over nothing. Done in an effect (not composition) to avoid a back-write.
+    // When a selection clears, two cleanups: drop the delete-confirm latch so it can't hang over
+    // nothing, and reclaim keyboard focus for the grid. A Cmd-click moves Compose's *actual* focus
+    // onto the clicked tile (distinct from our keyboard cursor); deleting that tile removes the
+    // focused node, and Compose does NOT fall focus back to the grid - it orphans, so arrows and
+    // Enter stop reaching onPreviewKeyEvent until something re-grabs focus. Clearing a selection is
+    // the discrete moment after which the grid should own focus again, so re-request it here. Done
+    // in an effect (not composition) to avoid a back-write.
     LaunchedEffect(state.hasSelection) {
-        if (!state.hasSelection) confirmingDelete = false
+        if (!state.hasSelection) {
+            confirmingDelete = false
+            focusRequester.requestFocus()
+        }
     }
 
     // Destructive speed bump in front of the move-to-Trash.

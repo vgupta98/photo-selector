@@ -15,7 +15,9 @@ import kotlin.io.path.exists
  * A persistent, content-keyed, size-capped on-disk cache of per-photo [PhotoFeatures]. The exact
  * shape and discipline of [com.vishalgupta.photoselector.data.image.DiskThumbnailCache]: a
  * `(path|size|mtime|modelId|version)` SHA key (so a source edit, a model swap or a format bump all
- * miss automatically), 256-way sharding, atomic writes, and best-effort LRU eviction by mtime.
+ * miss automatically), 256-way sharding, atomic writes, and best-effort eviction by file mtime. A
+ * read doesn't touch mtime, so eviction is least-recently-*written*, not strictly LRU - acceptable
+ * here (entries are a few KB against a 256 MB cap), and it matches DiskThumbnailCache.
  *
  * Embedding a folder of photos is the feature's one expensive step; caching it is what lets the
  * cost be paid once and survive a restart (the brief's "cached to disk, survives a restart without

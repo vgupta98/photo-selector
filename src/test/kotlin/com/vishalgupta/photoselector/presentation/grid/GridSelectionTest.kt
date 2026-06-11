@@ -24,7 +24,9 @@ import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.testing.FakeCategoriesRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
@@ -464,6 +466,30 @@ class GridSelectionTest {
     }
 
     @Test
+    fun deleteSelection_keepsFocusOnTheSamePhotoByIdentity() = runBlocking {
+        // Lens Off, so no regroup runs after the delete to fix up a bare-index focus. Deleting a photo
+        // *before* the cursor renumbers the tiles, and focus must follow the photo it was on - not stay
+        // a coerced index that now points at a neighbour (the identity-refocus invariant removePhotos
+        // already honours; the in-grid delete must match it).
+        val vm = viewModel(FakeCategoriesRepository(categories), initialGroupingMode = GroupingMode.Off)
+        vm.awaitPhotos()
+        withTimeout(2_000) { vm.state.first { it.groups.size == photos.size } } // six singles
+
+        vm.setFocusedIndex(4) // cursor on p4
+        assertEquals(photos[4].id, vm.state.value.displayGroups[4].keyPhoto.id)
+
+        vm.toggleSelection(1) // select p1, an earlier tile
+        vm.deleteSelection()
+        withTimeout(2_000) { vm.state.first { it.toast != null && !it.isBusy } }
+
+        val st = vm.state.value
+        assertEquals(listOf("p0", "p2", "p3", "p4", "p5"), st.photos.map { it.id.value })
+        assertEquals("focus stays on p4, now one tile earlier", photos[4].id, st.displayGroups[st.focusedIndex].keyPhoto.id)
+
+        vm.onClear()
+    }
+
+    @Test
     fun removePhotos_dropsExternallyTrashedFramesAndKeepsFocusByIdentity() = runBlocking {
         // The grid is now retained across navigation, so a delete made in the browser (which used to
         // be picked up by rebuilding the grid) is instead pushed in via removePhotos. The trashed
@@ -555,6 +581,26 @@ class GridSelectionTest {
         withTimeout(2_000) { vm.state.first { it.groups.size == 1 } }
         withTimeout(2_000) { vm.state.first { it.grouping == null } }
 
+        vm.onClear()
+    }
+
+    @Test
+    fun grouping_warmPassDoesNotFlashTheProgressBar() = runBlocking {
+        // A warm pass (instant metadata, e.g. a memoized Time re-slice) finishes inside the grace
+        // window, so the determinate bar must never appear - a flashed-then-gone bar is just noise.
+        val vm = viewModel(FakeCategoriesRepository(categories), metadata = oneBurstMetadata, initialGroupingMode = GroupingMode.Off)
+        vm.awaitPhotos()
+        withTimeout(2_000) { vm.state.first { it.groups.size == photos.size } } // Off: six singles
+
+        var flashed = false
+        val watcher = launch { vm.state.collect { if (it.grouping != null) flashed = true } }
+
+        vm.setGroupingMode(GroupingMode.Time) // instant metadata -> a sub-grace pass
+        withTimeout(2_000) { vm.state.first { it.groups.size == 1 } } // the burst landed
+        delay(GROUPING_BAR_GRACE_MS + 150) // give a grace-armed bar its chance to (wrongly) fire
+        watcher.cancel()
+
+        assertTrue("a warm regroup flashed the progress bar", !flashed)
         vm.onClear()
     }
 
