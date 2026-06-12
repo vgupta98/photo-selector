@@ -177,7 +177,13 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   re-read `CLAUDE.md` and `README.md` end-to-end and propose updates
   for anything they now misrepresent. "Propose" means show the diff in
   chat and wait for go-ahead before staging. Stale docs are worse than
-  no docs because they actively mislead the next session.
+  no docs because they actively mislead the next session. Make this an
+  end-of-work self-check: whenever a change adds new source under
+  `src/main`, pause before wrapping up and confirm both halves — (1) you
+  *extended* an existing component/helper/parser/test-fake rather than
+  forking a near-twin, and (2) any package, public-API, or
+  navigation/state change is reflected in `CLAUDE.md` / `README.md` (and
+  `.agents/knowledge/code-map.md` when a file's purpose moves).
 - **Capturing a learning in `CLAUDE.md` has a high bar.** If the session
   surfaced something durable, team-relevant, and not derivable from the
   current code (a sharp edge, a workflow that has to happen in a
