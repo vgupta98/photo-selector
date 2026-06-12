@@ -182,8 +182,10 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   `src/main`, pause before wrapping up and confirm both halves — (1) you
   *extended* an existing component/helper/parser/test-fake rather than
   forking a near-twin, and (2) any package, public-API, or
-  navigation/state change is reflected in `CLAUDE.md` / `README.md` (and
-  `.agents/knowledge/code-map.md` when a file's purpose moves).
+  navigation/state change is reflected in `CLAUDE.md` / `README.md`.
+  Likewise refresh `.agents/knowledge/code-map.md` whenever a file under
+  `src/main` is added, renamed, moved, or repurposed, so the map stays in
+  step with the tree.
 - **Capturing a learning in `CLAUDE.md` has a high bar.** If the session
   surfaced something durable, team-relevant, and not derivable from the
   current code (a sharp edge, a workflow that has to happen in a

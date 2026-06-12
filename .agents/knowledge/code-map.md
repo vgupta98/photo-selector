@@ -5,6 +5,10 @@
   right two files instead of grepping the tree. Paths are from repo root; line
   numbers are deliberately omitted (they rot fastest). The behavioural rules,
   gotchas, and the grid invariants live in /CLAUDE.md, not here.
+
+  KEEP THIS CURRENT: when a file under src/main is added, deleted, renamed, or
+  repurposed, refresh this map so it doesn't drift from the tree. See CLAUDE.md
+  -> Conventions.
 -->
 
 Source root: `src/main/kotlin/com/vishalgupta/photoselector/`. Clean
