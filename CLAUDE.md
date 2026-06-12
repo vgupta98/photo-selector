@@ -4,6 +4,17 @@ A Kotlin Compose Desktop app (macOS-targeted) for browsing, favouriting and
 exporting photos from a local folder. This file captures the non-obvious
 context. Read the source for everything else.
 
+## Knowledge base
+
+The rules you must follow, and the non-obvious *why*, live in this file. The
+explorable *reference* — a file-by-file code map, the release machinery, and the
+test harnesses — lives in `.agents/knowledge/`, read on demand:
+
+- **`.agents/knowledge/code-map.md`** — read this *before* grepping the tree: a
+  package/file/symbol index plus a by-task "open these files first" table.
+- `.agents/knowledge/testing.md` — the screenshot + recomposition test harnesses.
+- `.agents/knowledge/release.md` — the full release workflow and its recovery steps.
+
 ## Architecture
 
 Clean architecture, single Gradle module, package
@@ -24,12 +35,12 @@ Clean architecture, single Gradle module, package
   holds the JNA→ImageIO bridge for HEIC; `ExifReader` also backs
   `ExifCaptureMetadataSource` — capture time + camera for burst grouping,
   memoized per session by `CachingCaptureMetadataSource`), `ai/` (on-device
-  visual-similarity grouping: the `EmbeddingModel` seam with two
-  implementations — the learned `OnnxEmbeddingModel` (a MobileNetV3-Small
-  ONNX backbone run via ONNX Runtime, the default) and the classical,
-  dependency-free `DownscaleGrayEmbeddingModel` (the load-failure fallback) —
-  plus `SharpnessScorer`, an `EmbeddingCache` that mirrors `DiskThumbnailCache`,
-  `PhotoFeatureExtractor`, and the `SimilarityPhotoGrouper` adapter), `export/`,
+  visual-similarity grouping: the `EmbeddingModel` seam — the learned
+  `OnnxEmbeddingModel` (MobileNetV3-Small via ONNX Runtime, default) and the
+  classical, dependency-free `DownscaleGrayEmbeddingModel` (load-failure
+  fallback) — plus `SharpnessScorer`, an `EmbeddingCache` mirroring
+  `DiskThumbnailCache`, `PhotoFeatureExtractor`, and the `SimilarityPhotoGrouper`
+  adapter; see **Known gotchas**), `export/`,
   `trash/` (move-to-Trash via `java.awt.Desktop.moveToTrash`), plus `io/`
   (the shared `AtomicJsonWriter`).
 - `presentation/` — Compose UI + view models, organised by screen
@@ -43,56 +54,40 @@ Clean architecture, single Gradle module, package
   tokens/components here rather than inlining literals in screens.
 - `di/AppContainer.kt` — manual DI container. **No DI framework.** Add new
   wiring here.
-- Navigation is a sealed `Screen` interface (`RootPicker | Grid |
-  Browser | Compare | Survey`). `Screen.Grid` carries a `CategoryScope`
-  (`AllPhotos | Category(id)`). `Screen.Compare` is the two-up side-by-side
-  view: it carries two indices into the scoped photo list (its two panes), is
-  reached from the browser with `C` (current + next) or from a two-tile grid
-  selection (also `C`), and shares one `ZoomState` across both panes so pan/zoom
-  stay synchronized. A grid `C` over three-plus selected tiles instead opens
-  `Screen.Survey` — an overview-pick grid (`presentation/survey/`) carrying the
-  selected indices: one tile is active, arrows/`Tab` move it, `F`/`1`-`9` file
-  it, no zoom. The side-by-side action is capped at `MAX_SURVEY_PHOTOS` (the
-  survey grid is non-lazy and pins every tile's decode); a larger selection is
-  declined at the grid with a toast rather than opened. The grid also
-  collapses adjacent burst frames into one `PhotoGroup.Burst` tile (a
-  stacked-frames count badge); clicking that tile **expands the burst in
-  place** — `GridDisplayModel` explodes the open burst (`expandedBurstId`)
-  into one tile per frame, bracketed by a full-width header and footer that
-  fence the run off from the rest of the grid, so the same per-tile
-  filing/selection acts on a single frame while it is open (collapsed
-  `F` files the whole burst, expanded `F` files the focused frame). One
-  burst expands at a time; `Esc` peels selection → collapse → grid-back.
-  The toolbar's segmented control picks the grouping lens
-  (`GridUiState.groupingMode`: `Off | Time | Similarity` — flat grid,
-  time-based bursts (default), or on-device visual similarity); the view
-  model resolves each non-`Off` mode to one `PhotoGrouper` and regroups
-  off-thread with a mode-aware staleness guard, surfacing a non-blocking
-  determinate progress bar (`GridUiState.grouping`) while the cold,
-  minute-long similarity pass runs. That regroup renumbers tiles under the
-  cursor, so **focus is re-anchored by photo identity** across every reshape
-  (`GridViewModel.refocus`), never left as a bare index — otherwise the cursor
-  silently slides onto a different burst (and `Enter` expands the wrong one).
-  Grouping is grid-only presentation: focus,
-  multi-select and keyboard filing operate over `displayGroups` (the tile
-  index space, shared by the view model and the renderer via
-  `GridDisplayModel`), while the **flat photo list** stays the index
-  source for browser/Compare/Survey nav — and the grid is the *sole*
-  translator between the two (`tileIndexForFlat`), so every scroll
-  index/position on the wire (browser return, Compare/Survey return,
-  persisted `BrowsePosition.lastIndex`) is a flat photo index. Grid-originated
-  Compare/Survey return to the grid on `Esc`
-  (`Compare.returnToGrid`, `Survey.returnScrollIndex`); browser-originated
-  Compare still returns to the browser. Photos live in N flat per-root categories;
-  **Favourites** is the built-in one (fixed id `favourites`, cannot be
-  renamed or deleted). Each category is pushed as its own `Screen.Grid`
-  instance from the All Photos categories dropdown, not toggled in place,
-  so each view has its own scroll state. Memberships persist to
-  `<root>/.photo-selector-categories.json` (v2); a legacy
-  `.photo-selector-favourites.json` migrates into the built-in category
-  on first read and is renamed `.bak`. `CategoriesRepository` exposes
-  membership as one `observeMemberships` map flow (a future smart category
-  resolves behind it — the scope and `slice()` stay predicate-blind).
+- Navigation is a sealed `Screen` interface (`RootPicker | Grid | Browser |
+  Compare | Survey`). `Screen.Grid` carries a `CategoryScope` (`AllPhotos |
+  Category(id)`); each category opens as its *own* `Screen.Grid` (own scroll
+  state) from the All Photos dropdown, never toggled in place. `Screen.Compare`
+  is the two-up side-by-side view (two indices, one shared `ZoomState`);
+  `Screen.Survey` is the overview-pick grid for a 3+ tile selection (capped at
+  `MAX_SURVEY_PHOTOS`; larger is declined with a toast). Both open from the grid
+  or browser via `C`; grid-originated Compare/Survey return to the grid on `Esc`
+  (`Compare.returnToGrid`, `Survey.returnScrollIndex`), browser-originated
+  Compare returns to the browser.
+- **The grid is grouping/presentation only — mind the three index spaces.** The
+  toolbar's segmented control picks a lens (`GridUiState.groupingMode`: `Off |
+  Time | Similarity`, Time default); a non-`Off` mode resolves to one
+  `PhotoGrouper` and regroups off-thread behind a determinate progress bar
+  (`GridUiState.grouping`) for the cold, minute-long similarity pass. Adjacent
+  burst frames collapse into one `PhotoGroup.Burst` tile; clicking expands it in
+  place (`GridDisplayModel` explodes `expandedBurstId` into per-frame tiles
+  fenced by a header/footer — one burst open at a time, `Esc` peels selection →
+  collapse → grid-back; collapsed `F` files the whole burst, expanded `F` the
+  focused frame). Two invariants here are recurring bug sources:
+  - Focus, multi-select and keyboard filing run over `displayGroups` (tile-index
+    space, shared via `GridDisplayModel`); browser/Compare/Survey nav and every
+    persisted scroll index (`BrowsePosition.lastIndex`) stay **flat photo
+    indices**. The grid is the *sole* translator (`tileIndexForFlat`) — never put
+    a tile index on the nav wire or a flat index into grid focus.
+  - Re-anchor focus by **photo identity** on every reshape
+    (`GridViewModel.refocus`), never a bare index — a regroup renumbers tiles
+    under the cursor, so an index silently slides onto a different burst.
+- Photos live in N flat per-root categories; **Favourites** is the built-in one
+  (fixed id `favourites`, not renamable/deletable). Memberships persist to
+  `<root>/.photo-selector-categories.json` (v2; a legacy
+  `.photo-selector-favourites.json` migrates in on first read, renamed `.bak`).
+  `CategoriesRepository` exposes one `observeMemberships` map flow — scope and
+  `slice()` stay predicate-blind for a future smart category.
 - State plumbing: `StateFlow` for screen state, `SharedFlow` / `Channel`
   for one-shot events (toasts etc).
 
@@ -117,100 +112,26 @@ JDK 17 (Zulu or JBR — either works). Gradle wrapper checked in.
 `run` is the fastest signal for UI work. `compileKotlin` is enough when you
 just want to verify a refactor builds.
 
-### Headless screenshot tests
+### Test harnesses
 
-`src/test/kotlin/.../screenshot/` runs Compose Desktop UIs headlessly via
-`createComposeRule()` and dumps PNGs under `build/screenshots/<name>.png`
-(gitignored). Use `ComposeContentTestRule.dumpScreenshot("foo")` from
-`ScreenshotSupport.kt`. The PNGs are inspectable — open them, diff them
-against a golden, or have an LLM session read them back. This is the
-preferred way to verify UI changes that don't require the real app window
-(theming, layout, simple interactions). For things that need a live window
-(native file picker, DMG packaging), fall back to `./gradlew run`.
-
-### Checking for unnecessary recompositions
-
-Two complementary tools, both desktop-friendly (no Layout Inspector here):
-
-- **Compiler stability reports (static).** `./gradlew compileKotlin
-  -PcomposeReports=true --rerun-tasks` dumps `*-composables.txt` /
-  `*-classes.txt` under `build/compose_compiler/`. Read them to spot a
-  composable that can't skip or a param/class that turned unstable. Off by
-  default (zero build cost). `--rerun-tasks` is required — an up-to-date
-  `compileKotlin` won't regenerate them.
-- **Recomposition-count tests (dynamic).** `RecompositionTracker` +
-  `GridRecompositionTest` assert that flipping one tile's favourite/focus
-  recomposes only that tile. Three gotchas baked into that test, learned
-  the hard way: (1) `record()` must sit directly in the body of the
-  restartable composable you measure — a `@Composable () -> Unit` wrapper
-  gets its own restart scope and measures the wrong thing; (2) drive state
-  via `runOnIdle { }`, a bare test-thread write isn't observed; (3) use a
-  plain layout, not a Lazy one, to isolate component skipping from the lazy
-  grid's own item subcomposition.
+Two desktop-friendly harnesses (no Layout Inspector here): **headless screenshot
+tests** (`dumpScreenshot()` → inspectable PNGs, the preferred way to verify a UI
+change without a live window) and **recomposition checks** (compiler stability
+reports + `RecompositionTracker`/`GridRecompositionTest`). Mechanics, the exact
+Gradle invocations, and the hard-won gotchas: `.agents/knowledge/testing.md`.
 
 ## Release process
 
-Three workflows in `.github/workflows/`:
+Three workflows in `.github/workflows/` drive it: **`draft-release.yml`**
+(manual; derives the SemVer bump from `main..develop` Conventional Commits and
+opens the `release/vX.Y.Z` PR), **`release-perf.yml`** (posts a JMH cross-branch
+diff on the release PR), and **`release.yml`** (tags + builds the DMG + publishes
+the GitHub Release on merge). The `version` in `build.gradle.kts` is the single
+source of truth, and after every release you must back-merge `main` into
+`develop` or the next draft refuses the version.
 
-1. **`draft-release.yml`** — manual (`workflow_dispatch`).
-   - Reads `version = "X.Y.Z"` from `build.gradle.kts` (single source of
-     truth — don't put the version anywhere else).
-   - Walks `main..develop` Conventional Commit subjects and derives the
-     bump:
-     - `<type>(scope)?!:` or `BREAKING CHANGE:` in body → **major**
-     - `feat(...):` → **minor**
-     - everything else → **patch**
-   - `bump_override` input (`auto|patch|minor|major`) forces a specific
-     bump.
-   - Creates `release/vX.Y.Z` off develop, commits
-     `chore(release): bump version to X.Y.Z`, opens a PR titled
-     `release: vX.Y.Z` against `main` with a grouped changelog.
-2. **`release-perf.yml`** — fires on `pull_request: opened/synchronize`
-   against `main` when the head branch starts with `release/`.
-   - Runs JMH benchmarks on both the release branch and `main`, diffs
-     the JSON outputs via `tools/perf/diff.sh`, and posts a sticky
-     comment on the release PR.
-   - Runs on `ubuntu-latest` (cheap shared runner; absolute scores are
-     not comparable to local-Mac JMH runs but the cross-branch delta
-     is). Treat deltas under ~10% as noise.
-   - First release after the harness lands has no baseline on `main`;
-     the workflow detects this and posts release-branch numbers only.
-3. **`release.yml`** — fires on `pull_request: closed` against `main` when
-   the head branch starts with `release/`.
-   - Runs on `macos-latest` (required for `packageDmg`).
-   - Tags `vX.Y.Z`, builds the DMG, publishes a GitHub Release with the
-     DMG attached.
-
-### Required repo setting
-
-Settings → Actions → General → Workflow permissions → **Allow GitHub
-Actions to create and approve pull requests** must be ON. Without it,
-`draft-release.yml` fails at the `gh pr create` step.
-
-### After every release: back-merge into develop
-
-The release workflow only updates `main`. `develop` keeps its old version
-string until you sync it back, and the next Draft Release will refuse to
-re-use the same version. Run after each release:
-
-```bash
-git checkout develop
-git pull --no-ff origin main
-git push
-```
-
-### Local dry-run
-
-`scripts/dry-run-release.sh [auto|patch|minor|major]` prints exactly what
-Draft Release would do (version, branch name, PR body) without touching
-git state. Use this to sanity-check before triggering the real workflow.
-
-### Recovering a failed release run
-
-If `draft-release.yml` fails partway, the `release/vX.Y.Z` branch may
-already be on origin. Don't finish the job manually — delete the branch
-(`git push origin --delete release/vX.Y.Z`) and re-run the workflow. The
-workflow's fail-fast "branch already exists" check is intentional.
+Full mechanics — bump rules, the required repo setting, the local dry-run, and
+recovering a half-finished run — are in `.agents/knowledge/release.md`.
 
 ## Conventions
 
@@ -248,7 +169,7 @@ workflow's fail-fast "branch already exists" check is intentional.
   the Compose pipeline. The only carve-out is features that genuinely
   need a live window (native file dialogs, DMG packaging) — say so
   explicitly and fall back to `./gradlew run`. See
-  **Build & Run → Headless screenshot tests** for the mechanics.
+  `.agents/knowledge/testing.md` for the mechanics.
 - **Structural changes mean re-reading the docs.** Adding or removing a
   top-level package, changing the DI wiring shape, renaming a public
   API, splitting a screen, changing how navigation/state is plumbed,
@@ -284,9 +205,6 @@ workflow's fail-fast "branch already exists" check is intentional.
   classes were tried and abandoned — don't reintroduce them.
 - **`packageDmg` only runs on macOS.** CI uses `macos-latest`; locally you
   need to be on a Mac.
-- **There is a pre-existing `v1.0.0` tag** on the remote from before the
-  release pipeline existed. It is treated as the "previous release" for
-  notes generation; harmless.
 - **skiko cannot decode HEIC/HEIF.** Verified by probe on the bundled
   skiko (`Image.makeFromEncoded` throws). There is no maintained
   cross-platform JVM HEIC library on Maven (`org.bytedeco:libheif` does
@@ -309,26 +227,18 @@ workflow's fail-fast "branch already exists" check is intentional.
   (`GridUiState.groupingMode`), and is recomputed off-thread on every
   re-slice, which is why `CachingCaptureMetadataSource` exists — keep it
   in the wiring.
-- **Similarity grouping only merges *adjacent* frames, and persists nothing
-  but the embeddings.** Like `BurstGrouper`, `SimilarityGrouper` forms
-  contiguous runs in scan order — the grid's expand-in-place burst UI fences
-  a contiguous run, so a cluster must be contiguous — meaning it groups
-  visually-alike *neighbours*, not arbitrary matches scattered across a
-  folder. It never groups across a folder boundary (a folder is an event
-  boundary, same as `BurstGrouper`). Per-photo embeddings + sharpness are
-  cached to disk (`EmbeddingCache`, keyed by content + model id, invalidated
-  on source edit or model swap); the *grouping* itself is recomputed, never
-  persisted. The shipped embedder is the learned `OnnxEmbeddingModel` — a
-  MobileNetV3-Small backbone (ImageNet, classifier stripped so the output is
-  the pooled feature vector) bundled as a classpath resource
-  (`src/main/resources/models/mobilenetv3-small.onnx`, ~6 MB) and run via ONNX
-  Runtime. `dimensions` (1024) is *probed from the graph at load*, so a model
-  swap needs no caller change; the classical, dependency-free
-  `DownscaleGrayEmbeddingModel` stays wired as the load-failure fallback. The
-  blob is regenerated by the reproducible export in `tools/embedding-model/`
-  (pinned timm/torch, Apache-2.0 weights) — bump `OnnxEmbeddingModel`'s `id`
-  whenever the produced vectors change so the on-disk cache re-keys, and don't
-  bake model assumptions into callers.
+- **Similarity grouping merges only *adjacent* frames and never crosses a folder
+  boundary** (same contiguity rule as `BurstGrouper`; the expand-in-place burst
+  UI fences a contiguous run, and a folder is an event boundary). Per-photo
+  embeddings + sharpness are cached to disk (`EmbeddingCache`, keyed by content +
+  model id, invalidated on source edit or model swap); the *grouping* itself is
+  recomputed, never persisted. The shipped embedder is `OnnxEmbeddingModel` — a
+  MobileNetV3-Small backbone (classifier stripped) bundled at
+  `src/main/resources/models/mobilenetv3-small.onnx` (~6 MB); `dimensions` (1024)
+  is probed from the graph at load, so a model swap needs no caller change.
+  Regenerate the blob via `tools/embedding-model/` (pinned timm/torch,
+  Apache-2.0) and **bump `OnnxEmbeddingModel`'s `id` whenever the vectors change**
+  so the on-disk cache re-keys. Don't bake model assumptions into callers.
 - **ONNX Runtime is a bundled native dependency.** The
   `com.microsoft.onnxruntime:onnxruntime` JAR ships a JNI `.dylib` (and the
   win/linux equivalents) that jpackage rolls into the DMG. Unlike the HEIC
@@ -340,15 +250,10 @@ workflow's fail-fast "branch already exists" check is intentional.
 
 ## Files worth knowing
 
-- `build.gradle.kts` — version, Compose Desktop config, DMG packaging.
-- `.github/workflows/draft-release.yml` — release PR workflow.
-- `.github/workflows/release.yml` — tag + DMG + GitHub Release workflow.
-- `scripts/dry-run-release.sh` — local dry-run of the release logic.
-- `tools/embedding-model/` — reproducible export of the bundled similarity
-  ONNX model (pinned `requirements.txt`, `export_mobilenetv3.py`, expected
-  SHA-256 in its `README.md`).
-- `src/main/kotlin/com/vishalgupta/photoselector/di/AppContainer.kt` —
-  central wiring; start here when adding a new screen or repository.
+The file-by-file index lives in `.agents/knowledge/code-map.md` (package map +
+by-task table). The two you'll reach for most: `build.gradle.kts` (version,
+Compose Desktop config, DMG packaging) and
+`di/AppContainer.kt` (all DI wiring — start here for a new screen or repository).
 
 ## Agent skills
 
