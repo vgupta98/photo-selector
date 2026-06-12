@@ -45,10 +45,11 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 - `browse/` — `JsonBrowsePositionRepository` (persists last scroll position).
 - `image/` — decode + cache: `SkikoImageLoader`, `ImageLoader`/`ImageCache`,
   `DiskThumbnailCache`.
-- `format/` — per-format decoders (`JpegDecoder`, `PngDecoder`, `HeicDecoder`),
-  `DefaultPhotoFormatRegistry`, `SkiaImageDecoding`; `ExifReader` (JPEG-only)
-  backs `ExifCaptureMetadataSource`, memoised by `CachingCaptureMetadataSource`.
-- `format/macos/` — `MacImageIO` (JNA→ImageIO bridge for HEIC; macOS only).
+- `format/` — per-format decoders (`JpegDecoder`, `PngDecoder`, `HeicDecoder`,
+  `RawDecoder`), `DefaultPhotoFormatRegistry`, `SkiaImageDecoding`; `ExifReader`
+  (JPEG-only) backs `ExifCaptureMetadataSource`, memoised by
+  `CachingCaptureMetadataSource`.
+- `format/macos/` — `MacImageIO` (JNA→ImageIO bridge for HEIC *and* RAW; macOS only).
 - `ai/` — similarity pipeline: `EmbeddingModel` seam → `OnnxEmbeddingModel`
   (default) / `DownscaleGrayEmbeddingModel` (fallback), `GrayBuffer`,
   `SharpnessScorer`, `PhotoFeatureExtractor` (+ `PhotoFeatures`), `EmbeddingCache`,
@@ -99,7 +100,7 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 | Scroll position / index translation | `grid/GridScreen.kt` (`tileIndexForFlat`), `grid/GridViewportAnchor.kt`, `grid/GridDisplayModel.kt`, `data/browse/` |
 | Categories / Favourites | `data/categories/`, `domain/repository/CategoriesRepository.kt`, `common/CategoryHotkeys.kt` |
 | Decoding a new format | `domain/format/PhotoDecoder.kt`, `data/format/DefaultPhotoFormatRegistry.kt`, register in `di/AppContainer.kt` |
-| HEIC specifics | `data/format/HeicDecoder.kt`, `data/format/macos/MacImageIO.kt` |
+| HEIC / RAW specifics | `data/format/HeicDecoder.kt`, `data/format/RawDecoder.kt`, `data/format/macos/MacImageIO.kt` |
 | Similarity embeddings / model swap | `data/ai/OnnxEmbeddingModel.kt`, `data/ai/EmbeddingCache.kt`, `tools/embedding-model/` |
 | Compare / Survey views | `presentation/compare/`, `presentation/survey/` |
 | Adding a screen | `presentation/navigation/Screen.kt`, `App.kt`, `di/AppContainer.kt` |

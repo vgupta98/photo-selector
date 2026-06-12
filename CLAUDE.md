@@ -32,7 +32,8 @@ Clean architecture, single Gradle module, package
   the suggested-sharpest for a similarity cluster.
 - `data/` — repository implementations: `filesystem/`, `categories/`,
   `image/` (decoding), `format/` (per-format `PhotoDecoder`s; `macos/`
-  holds the JNA→ImageIO bridge for HEIC; `ExifReader` also backs
+  holds the JNA→ImageIO bridge that backs both `HeicDecoder` and
+  `RawDecoder` — see **Known gotchas**; `ExifReader` also backs
   `ExifCaptureMetadataSource` — capture time + camera for burst grouping,
   memoized per session by `CachingCaptureMetadataSource`), `ai/` (on-device
   visual-similarity grouping: the `EmbeddingModel` seam — the learned
@@ -222,6 +223,22 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   **only on macOS**, behind the `PhotoDecoder` interface. A future
   Windows build adds its own decoder there — don't reintroduce a search
   for a cross-platform lib without re-checking Maven first.
+- **Camera RAW rides the same ImageIO bridge — don't reach for libraw.**
+  macOS ImageIO has a built-in RAW codec for every format we care about
+  (Canon CR2/CR3, Sony ARW, Nikon NEF/NRW, Fuji RAF, Adobe DNG, Panasonic
+  RW2, Olympus ORF — confirmed via `CGImageSourceCopyTypeIdentifiers`), so
+  `RawDecoder` just delegates to `MacImageIO.decodeToBgra` exactly like
+  `HeicDecoder` — **macOS-only**, no new dependency, nothing bundled.
+  ImageIO returns the camera's embedded preview with orientation baked in;
+  this is *preview-only* by design (no demosaic / white-balance / true RAW
+  pipeline — that stays out of scope). The original "bundle libraw via
+  JavaCPP" idea was dropped: it would add a multi-MB native binary per arch
+  plus signing/notarization burden for zero benefit on macOS. A future
+  Windows build adds its own RAW decoder behind `PhotoDecoder`, same as
+  HEIC. No RAW fixture can be synthesised at test time (`sips` writes HEIC
+  but not RAW), so `RawDecoderTest`'s real-decode case self-skips unless a
+  sample RAW is dropped at `build/raw-probe/`; the decode/orientation path
+  itself is identical to (and covered by) the HEIC tests.
 - **Burst grouping reads capture time from JPEG EXIF only, and never
   falls back to mtime.** `ExifReader` is JPEG-only, so HEIC (and any
   EXIF-less file) has no `DateTimeOriginal`. `BurstGrouper` deliberately
