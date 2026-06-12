@@ -341,19 +341,13 @@ fun GridScreen(
             .collect { index -> onFirstVisibleItemChanged(flatIndexForRenderItem(latestRenderItems, latestTileFlatStart, index)) }
     }
 
-    // Re-pin the viewport to the anchor across a grouping reshape. Keyed on the collapsed grouping (not the
-    // display tiles) so merely expanding a burst doesn't yank the scroll - that case is handled by the
-    // focus effect and the LazyGrid's own key retention.
-    LaunchedEffect(baseGroups) {
-        anchor.repin(renderItems, tiles, tileFlatStart)
-    }
-
-    // Bring the focused tile on-screen after a real cursor move. Keyed on the tile index, but the holder
-    // only scrolls when an arrow armed it (see [GridViewportAnchor.onCursorMove]) - so the screen mount, a
-    // warm return, and a reshape's identity re-anchor all change focusedIndex without scrolling here, and
-    // this never fights the re-pin above.
-    LaunchedEffect(state.focusedIndex) {
-        anchor.scrollFocusIntoView(renderItems, state.focusedIndex)
+    // Every programmatic viewport move goes through the anchor's single [reconcile], keyed on BOTH the
+    // collapsed grouping (a reshape) and the focused tile (a cursor move) so it is the lone decision point:
+    // exactly one of re-pin / focus-into-view runs per change, and the two can no longer race. Keyed on
+    // baseGroups (not the display tiles), so merely expanding a burst - which changes neither key - doesn't
+    // reconcile; that case is left to the LazyGrid's own key retention.
+    LaunchedEffect(baseGroups, state.focusedIndex) {
+        anchor.reconcile(renderItems, tiles, tileFlatStart, state.focusedIndex, baseGroups)
     }
 
     // A toolbar lens switch reshapes the whole grid: capture the photo at the live top before the reshape,

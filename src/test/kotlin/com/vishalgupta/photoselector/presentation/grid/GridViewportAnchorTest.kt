@@ -44,11 +44,11 @@ class GridViewportAnchorTest {
         coldFlatFallback = null,
     )
 
-    @Test fun `onUserScroll marks the viewport user-owned`() {
+    @Test fun `onUserScroll marks the viewport user-held`() {
         val anchor = anchorAt(topIndex = 0, initial = null)
-        assertTrue(!anchor.userOwned)
+        assertTrue(!anchor.userHeldViewport)
         anchor.onUserScroll()
-        assertTrue("a real scroll gesture takes the viewport over", anchor.userOwned)
+        assertTrue("a real scroll gesture takes the viewport over", anchor.userHeldViewport)
     }
 
     @Test fun `captureTop with no anchor reads the top tile's first photo`() {
@@ -65,12 +65,12 @@ class GridViewportAnchorTest {
         assertEquals("a switch with no user scroll keeps the precise anchor", PhotoId("p6"), anchor.anchoredPhotoId)
     }
 
-    @Test fun `captureTop re-reads the top after the user scrolled, and clears user-owned`() {
+    @Test fun `captureTop re-reads the top after the user scrolled, and clears the hold`() {
         val anchor = anchorAt(topIndex = 2, initial = PhotoId("p6")) // user scrolled up to single p2
         anchor.onUserScroll()
         anchor.captureTop(renderItems, tiles)
         assertEquals("after a user scroll the anchor follows the new top", PhotoId("p2"), anchor.anchoredPhotoId)
-        assertTrue("capture clears user-owned so the regroup re-pins", !anchor.userOwned)
+        assertTrue("capture clears the hold so the regroup re-pins", !anchor.userHeldViewport)
     }
 
     @Test fun `captureTop on an empty top resolves to null rather than throwing`() {
@@ -88,23 +88,23 @@ class GridViewportAnchorTest {
         val anchor = anchorAt(topIndex = 0, initial = null)
         // A coerced no-op at a grid edge: the user is still driving, but nothing should arm the scroll.
         anchor.onCursorMove(focusChanged = false)
-        assertTrue("any arrow counts as the user taking the viewport over", anchor.userOwned)
+        assertTrue("any arrow counts as the user taking the viewport over", anchor.userHeldViewport)
         assertTrue("a no-op edge move must not arm the focus scroll", !anchor.pendingFocusScroll)
         // An actual move arms focus-into-view.
         anchor.onCursorMove(focusChanged = true)
         assertTrue("an actual cursor move arms the focus-into-view scroll", anchor.pendingFocusScroll)
     }
 
-    @Test fun `scrollFocusIntoView stays inert until a cursor move arms it`() = runBlocking {
+    @Test fun `reconcile consumes the focus arm only when a cursor move set it`() = runBlocking {
         val anchor = anchorAt(topIndex = 0, initial = null)
-        // Unarmed - this is the reshape case (focus re-anchored to a new index without a user move): it
-        // must NOT consume or scroll, leaving the re-pin as the sole viewport owner.
-        anchor.scrollFocusIntoView(renderItems, focusedIndex = 3)
-        assertTrue("an unarmed focus change does nothing", !anchor.pendingFocusScroll)
-        // Armed but focus unset: it consumes the flag and returns before addressing the grid (so a real
-        // scroll, which needs a live layout, is never attempted here).
+        // First reconcile is the initial reshape (lastReconciledGroups is null) with no anchor and nothing
+        // armed: it takes the re-pin branch, which no-ops on a null anchor - so it neither scrolls nor arms.
+        anchor.reconcile(renderItems, tiles, emptyList(), focusedIndex = 3, groups = groups)
+        assertTrue("an unarmed reconcile does not arm a focus scroll", !anchor.pendingFocusScroll)
+        // Arm via a real cursor move, then reconcile on the SAME grouping instance (no reshape): the focus
+        // branch runs and consumes the flag; focus is unset so it returns before any real scroll.
         anchor.onCursorMove(focusChanged = true)
-        anchor.scrollFocusIntoView(renderItems, focusedIndex = -1)
-        assertTrue("the pending flag is consumed even when focus is unset", !anchor.pendingFocusScroll)
+        anchor.reconcile(renderItems, tiles, emptyList(), focusedIndex = -1, groups = groups)
+        assertTrue("the pending focus flag is consumed", !anchor.pendingFocusScroll)
     }
 }

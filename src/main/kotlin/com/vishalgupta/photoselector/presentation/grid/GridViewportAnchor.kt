@@ -11,13 +11,14 @@ import com.vishalgupta.photoselector.domain.model.PhotoGroup
 import com.vishalgupta.photoselector.domain.model.PhotoId
 
 /**
- * The grid's SINGLE programmatic owner of the viewport scroll. Two distinct programmatic intents move
- * `gridState` - "keep me on this photo across a grouping reshape" (the re-pin) and "bring the focused tile
- * on-screen" (focus-into-view) - and they used to live in two effects that fought over the scroll
- * MutatorMutex (the intermittent-jump bug). Both now route through this one holder, which arbitrates them
- * with its own state, so there is exactly one place that scrolls and the decision is unit-testable. (The
- * user and the framework remain co-writers of `gridState` through the scrollable; this owns only the
- * programmatic side and yields to a real gesture via [onUserScroll].)
+ * The grid's SINGLE owner of every programmatic viewport scroll. Two distinct intents move `gridState` -
+ * "keep me on this photo across a grouping reshape" (the re-pin) and "bring the focused tile on-screen"
+ * (focus-into-view) - and they used to live in two effects that fought over the scroll MutatorMutex (the
+ * intermittent-jump bug). Both now flow through one [reconcile] called from one effect, which decides with
+ * an explicit priority so exactly one of them runs per change: they can no longer race because the choice is
+ * a single `when`, not two effects trusting a shared flag. (The user and the framework remain co-writers of
+ * `gridState` through the scrollable; this owns only the programmatic side and yields to a real gesture via
+ * [onUserScroll].)
  *
  * Re-pin job, learned the hard way over several bug rounds (see the
  * `project_burst_grid_index_and_identity_traps` note, Class E): a reshape renumbers the tile space, so the
@@ -30,9 +31,9 @@ import com.vishalgupta.photoselector.domain.model.PhotoId
  *
  * Focus-into-view job: bring the focused tile on-screen, but ONLY after a real cursor move ([onCursorMove]
  * arms [pendingFocusScroll]). A reshape re-anchors focus to the same photo's new index *without* arming the
- * flag, so [scrollFocusIntoView] no-ops there and the re-pin alone owns the viewport - that is why the two
- * never race. A bare index, or even the photo identity (which still shifts when a focused single is absorbed
- * into a burst), would fire on that reshape; the explicit user-intent flag is the only clean exclusion.
+ * flag, so [reconcile] takes the re-pin branch there, never the focus one - that is why the two never race.
+ * A bare index, or even the photo identity (which still shifts when a focused single is absorbed into a
+ * burst), would look like a move on that reshape; the explicit user-intent flag is the only clean exclusion.
  *
  * Composition-owned (created by [rememberGridViewportAnchor]); takes the host-retained [gridState] as a
  * collaborator, since the host owns its lifecycle across navigation. State is read only inside effects, so
@@ -51,60 +52,93 @@ internal class GridViewportAnchor(
     var anchoredPhotoId: PhotoId? by mutableStateOf(initialAnchor)
         private set
 
-    // The user has taken the viewport over (a scroll gesture, an arrow, or a scrollbar drag), so a pending
-    // re-pin stands down and leaves them where they are. Cleared by [captureTop] at the next lens switch,
-    // which re-reads the fresh top.
-    var userOwned: Boolean by mutableStateOf(false)
+    // The user has taken the viewport over (a wheel/two-finger scroll, an arrow, or a scrollbar drag) and
+    // HOLDS it until the next lens switch: set by [onUserScroll] / [onCursorMove], cleared ONLY by
+    // [captureTop]. While it is held, [reconcile] leaves a reshape's re-pin alone so the user stays put.
+    // Named for that lifetime, not the instant - it does NOT mean "currently scrolling".
+    var userHeldViewport: Boolean by mutableStateOf(false)
         private set
 
-    // Armed only by a real cursor move (an arrow); the next [scrollFocusIntoView] consumes it. A reshape
-    // that re-anchors focus to the same photo's new index must NOT arm it, or focus-into-view fights the
-    // re-pin (the intermittent jump).
+    // Armed only by a real cursor move (an arrow); the next [reconcile] consumes it to bring the focused
+    // tile on-screen. A reshape re-anchors focus without arming it, so focus-into-view never fires on a
+    // reshape and can't fight the re-pin.
     var pendingFocusScroll: Boolean by mutableStateOf(false)
         private set
 
-    /** A wheel / two-finger / scrollbar drag: the user owns the viewport now, so a pending re-pin stands down. */
+    // The grouping last seen by [reconcile], compared by REFERENCE. The grid's `baseGroups` keeps its
+    // instance across a focus-only change and gets a fresh one on a reshape, so "instance changed" is
+    // exactly "a reshape happened" - the gate that stops a bare focus change from triggering a re-pin.
+    private var lastReconciledGroups: List<PhotoGroup>? = null
+
+    /** A wheel / two-finger / scrollbar drag: the user holds the viewport now, so a reshape's re-pin stands down. */
     fun onUserScroll() {
-        userOwned = true
+        userHeldViewport = true
     }
 
     /**
-     * An arrow keypress moved the cursor: the user owns the viewport (release the re-pin), and on an ACTUAL
-     * focus change ([focusChanged]) arm the focus-into-view scroll. A coerced no-op at a grid edge passes
-     * [focusChanged] = false so the flag can't linger and fire on a later reshape.
+     * An arrow keypress moved the cursor: the user holds the viewport (a reshape's re-pin stands down), and
+     * on an ACTUAL focus change ([focusChanged]) arm the focus-into-view scroll. A coerced no-op at a grid
+     * edge passes [focusChanged] = false so the flag can't linger and fire on a later reshape.
      */
     fun onCursorMove(focusChanged: Boolean) {
-        userOwned = true
+        userHeldViewport = true
         if (focusChanged) pendingFocusScroll = true
     }
 
     /**
      * At a lens switch: re-read the live top into the anchor ONLY when the user has scrolled since it was
-     * last set (or there is none yet), else keep the held anchor; then clear [userOwned] so the regroup
-     * that follows re-pins this top until the user takes over again. Re-reading unconditionally is the
-     * drift bug; the keep is the fix. [renderItems] / [tiles] are the current (post-recomposition) lists.
+     * last set (or there is none yet), else keep the held anchor; then clear [userHeldViewport] so the
+     * regroup that follows re-pins this top until the user takes over again. Re-reading unconditionally is
+     * the drift bug; the keep is the fix. [renderItems] / [tiles] are the current (post-recomposition) lists.
      */
     fun captureTop(renderItems: List<GridRenderItem>, tiles: List<PhotoGroup>) {
-        if (userOwned || anchoredPhotoId == null) {
+        if (userHeldViewport || anchoredPhotoId == null) {
             anchoredPhotoId = tileDisplayIndexForRenderItem(renderItems, gridState.firstVisibleItemIndex)
                 ?.let { tiles.getOrNull(it) }
                 ?.photos?.firstOrNull()?.id
         }
-        userOwned = false
+        userHeldViewport = false
     }
 
     /**
-     * Pin the viewport to [anchoredPhotoId]'s tile after a reshape (or the cold flat fallback while no
-     * identity anchor exists yet), unless the user owns the viewport. Resolves through [renderIndexForTile]
-     * so it stays correct even with a burst expanded; the "already at the target" guard preserves the
-     * retained pixel offset. Call from a `LaunchedEffect` keyed on the collapsed grouping.
+     * The single decision point for every programmatic viewport move. Call from ONE `LaunchedEffect` keyed
+     * on BOTH the collapsed [groups] (a reshape) and the focused tile (a cursor move). Exactly one thing
+     * happens per call, in priority order:
+     *  - a real cursor move scrolls the focused tile on-screen (it wins over a coincident reshape, since the
+     *    user's explicit move should land where they navigated), consuming [pendingFocusScroll];
+     *  - otherwise a reshape ([groups] is a new instance) re-pins the anchored photo;
+     *  - a bare focus change with nothing armed does nothing.
+     * Because the two intents are branches of one `when`, they can never both scroll in the same pass.
      */
-    suspend fun repin(
+    suspend fun reconcile(
+        renderItems: List<GridRenderItem>,
+        tiles: List<PhotoGroup>,
+        tileFlatStart: List<Int>,
+        focusedIndex: Int,
+        groups: List<PhotoGroup>,
+    ) {
+        val reshaped = groups !== lastReconciledGroups
+        lastReconciledGroups = groups
+        when {
+            pendingFocusScroll -> {
+                pendingFocusScroll = false
+                scrollFocusedTileIntoView(renderItems, focusedIndex)
+            }
+            reshaped -> repinToAnchor(renderItems, tiles, tileFlatStart)
+        }
+    }
+
+    /**
+     * Pin the viewport to [anchoredPhotoId]'s tile (or the cold flat fallback while no identity anchor exists
+     * yet), unless the user holds the viewport. Resolves through [renderIndexForTile] so it stays correct
+     * even with a burst expanded; the "already at the target" guard preserves the retained pixel offset.
+     */
+    private suspend fun repinToAnchor(
         renderItems: List<GridRenderItem>,
         tiles: List<PhotoGroup>,
         tileFlatStart: List<Int>,
     ) {
-        if (userOwned) return
+        if (userHeldViewport) return
         val tile = anchoredPhotoId
             ?.let { id -> tiles.indexOfFirst { group -> group.photos.any { it.id == id } }.takeIf { it >= 0 } }
             ?: coldFlatFallback?.let { tileIndexForFlat(tileFlatStart, it) }
@@ -114,17 +148,12 @@ internal class GridViewportAnchor(
     }
 
     /**
-     * Bring the focused tile on-screen - but ONLY right after a real cursor move ([pendingFocusScroll]),
-     * which it consumes. Called from a `LaunchedEffect` keyed on the focused tile index; a reshape changes
-     * that index without arming the flag, so this no-ops there and the re-pin alone owns the viewport (the
-     * two never race). [focusedIndex] is a TILE index; the LazyGrid (visibleItemsInfo.index,
-     * animateScrollToItem) speaks RENDER-ITEM space, which gains header/footer rows when a burst is open -
-     * so convert before addressing it, or we'd mis-detect visibility and scroll to the wrong row. Already
-     * fully visible: nothing to do.
+     * Bring the focused tile on-screen if it isn't already. [focusedIndex] is a TILE index; the LazyGrid
+     * (visibleItemsInfo.index, animateScrollToItem) speaks RENDER-ITEM space, which gains header/footer rows
+     * when a burst is open - so convert before addressing it, or we'd mis-detect visibility and scroll to the
+     * wrong row.
      */
-    suspend fun scrollFocusIntoView(renderItems: List<GridRenderItem>, focusedIndex: Int) {
-        if (!pendingFocusScroll) return
-        pendingFocusScroll = false
+    private suspend fun scrollFocusedTileIntoView(renderItems: List<GridRenderItem>, focusedIndex: Int) {
         if (focusedIndex < 0) return
         val renderIdx = renderIndexForTile(renderItems, focusedIndex) ?: return
         val layout = gridState.layoutInfo
