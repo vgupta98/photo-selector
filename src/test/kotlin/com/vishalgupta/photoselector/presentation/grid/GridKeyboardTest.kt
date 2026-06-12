@@ -610,6 +610,110 @@ class GridKeyboardTest {
         )
     }
 
+    // --- Returning from the viewer resumes the ring at the photo you left on ---------------------
+    // Mouse-open a photo and come back: an existing ring follows to that photo (the view model re-seats
+    // it via setLastViewed). If that photo is off-screen - you paged far away in the viewer - the grid
+    // scrolls to it so you resume there with the ring in view. This drives the UI half: a warm return
+    // whose ring sits on the (off-screen) last-viewed photo must scroll it on-screen.
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun warmReturnWithRingOnLastViewed_scrollsThatPhotoIntoView() {
+        val photos = (0 until 80).map { photoNamed("p$it") }
+        lateinit var gridStateRef: LazyGridState
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(400.dp, 400.dp)) {
+                    // Retained scroll parked at the top; the ring + last-viewed photo are far below, off-screen.
+                    val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = 0)
+                    gridStateRef = gridState
+                    GridScreen(
+                        state = GridUiState(
+                            photos = photos,
+                            groups = photos.map(PhotoGroup::Single),
+                            scope = CategoryScope.AllPhotos,
+                            focusedIndex = 60, // ring re-seated onto the returned photo
+                            lastViewedPhotoId = photos[60].id,
+                        ),
+                        initialScrollIndex = 0,
+                        retainedGridState = gridState,
+                        anchorInitialScroll = false, // warm return
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onSelectCategory = { _, _ -> },
+                        onCreateCategory = {},
+                        onRenameCategory = { _, _ -> },
+                        onDeleteCategory = {},
+                        onBack = null,
+                        onSetFocusedIndex = {},
+                        onToggleMembershipAtFocus = {},
+                        onToggleCustomCategoryAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        imageLoader = noOpImageLoader,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        // The ring's photo (tile 60) was below the fold; the resume must have scrolled it into view.
+        assertTrue(
+            "the off-screen ring at p60 should have scrolled into view, got ${gridStateRef.firstVisibleItemIndex}",
+            gridStateRef.firstVisibleItemIndex > 30,
+        )
+    }
+
+    // The "(if present)" half: a pure-mouse user has no ring, so a warm return must NOT resume-scroll -
+    // it keeps the retained scroll, even though the underline marker points at an off-screen photo.
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun warmReturnWithNoRing_keepsTheScrollInsteadOfResuming() {
+        val photos = (0 until 80).map { photoNamed("p$it") }
+        lateinit var gridStateRef: LazyGridState
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(400.dp, 400.dp)) {
+                    val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = 0)
+                    gridStateRef = gridState
+                    GridScreen(
+                        state = GridUiState(
+                            photos = photos,
+                            groups = photos.map(PhotoGroup::Single),
+                            scope = CategoryScope.AllPhotos,
+                            focusedIndex = -1, // pure-mouse user, no ring
+                            lastViewedPhotoId = photos[60].id,
+                        ),
+                        initialScrollIndex = 0,
+                        retainedGridState = gridState,
+                        anchorInitialScroll = false,
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onSelectCategory = { _, _ -> },
+                        onCreateCategory = {},
+                        onRenameCategory = { _, _ -> },
+                        onDeleteCategory = {},
+                        onBack = null,
+                        onSetFocusedIndex = {},
+                        onToggleMembershipAtFocus = {},
+                        onToggleCustomCategoryAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        imageLoader = noOpImageLoader,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        // No ring -> no resume; the retained scroll at the top stands.
+        assertTrue(
+            "with no ring the warm return must keep its scroll, got ${gridStateRef.firstVisibleItemIndex}",
+            gridStateRef.firstVisibleItemIndex < 10,
+        )
+    }
+
     // --- Cold start restores the persisted scroll even though photos load AFTER mount ------------
     // On a real cold launch the host hands the grid a bare LazyGridState (index 0) and the view model
     // loads photos asynchronously, so at first composition state.photos is EMPTY - the identity anchor

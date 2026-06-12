@@ -30,7 +30,8 @@ import com.vishalgupta.photoselector.domain.model.PhotoId
  * Tying the re-read to a real scroll gesture keeps a switch-only sequence pinned to one photo end to end.
  *
  * Focus-into-view job: bring the focused tile on-screen, but ONLY after a real cursor move ([onCursorMove]
- * arms [pendingFocusScroll]). A reshape re-anchors focus to the same photo's new index *without* arming the
+ * arms [pendingFocusScroll]) - or a viewer-return resume seeds it once. A reshape re-anchors focus to the
+ * same photo's new index *without* arming the
  * flag, so [reconcile] takes the re-pin branch there, never the focus one - that is why the two never race.
  * A bare index, or even the photo identity (which still shifts when a focused single is absorbed into a
  * burst), would look like a move on that reshape; the explicit user-intent flag is the only clean exclusion.
@@ -48,6 +49,9 @@ internal class GridViewportAnchor(
     // The returned FLAT scroll index to fall back to on a cold start while no identity anchor exists yet
     // (on a real cold launch photos arrive after mount, so [initialAnchor] is null); null on a warm return.
     private val coldFlatFallback: Int?,
+    // True on a warm return from the viewer when an existing ring was re-seated onto the photo the browser
+    // left on: seed [pendingFocusScroll] so the first [reconcile] scrolls that ring on-screen (resume there).
+    resumeFocusIntoView: Boolean = false,
 ) {
     var anchoredPhotoId: PhotoId? by mutableStateOf(initialAnchor)
         private set
@@ -59,10 +63,10 @@ internal class GridViewportAnchor(
     var userHeldViewport: Boolean by mutableStateOf(false)
         private set
 
-    // Armed only by a real cursor move (an arrow); the next [reconcile] consumes it to bring the focused
-    // tile on-screen. A reshape re-anchors focus without arming it, so focus-into-view never fires on a
-    // reshape and can't fight the re-pin.
-    var pendingFocusScroll: Boolean by mutableStateOf(false)
+    // Armed by a real cursor move (an arrow), or seeded once by a viewer-return resume; the next
+    // [reconcile] consumes it to bring the focused tile on-screen. A reshape re-anchors focus without
+    // arming it, so focus-into-view never fires on a reshape and can't fight the re-pin.
+    var pendingFocusScroll: Boolean by mutableStateOf(resumeFocusIntoView)
         private set
 
     // The grouping last seen by [reconcile], compared by REFERENCE. The grid's `baseGroups` keeps its
@@ -177,6 +181,7 @@ internal fun rememberGridViewportAnchor(
     gridState: LazyGridState,
     initialAnchor: PhotoId?,
     coldFlatFallback: Int?,
+    resumeFocusIntoView: Boolean = false,
 ): GridViewportAnchor = remember(gridState) {
-    GridViewportAnchor(gridState, initialAnchor, coldFlatFallback)
+    GridViewportAnchor(gridState, initialAnchor, coldFlatFallback, resumeFocusIntoView)
 }

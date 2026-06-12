@@ -310,10 +310,21 @@ fun GridScreen(
     // photo's id *if the photos are already loaded* - on a real cold launch they arrive after mount, so
     // this is null and [coldFlatFallback] (the flat index) carries the restore until an identity anchor
     // exists; on a warm return both are null so the retained pixel position is left untouched.
+    // On a warm return from the viewer the view model has re-seated an existing ring onto the photo the
+    // browser left on (GridViewModel.setLastViewed). If that photo is off-screen, resume there: seed the
+    // anchor's focus-into-view so the first reconcile scrolls the ring on-screen. Evaluated once at mount
+    // and gated so it can't fire on a cold first visit, with no ring, or on a stale ring that is NOT on the
+    // last-viewed photo (the warm-return-keeps-scroll case) - only a ring that tracks the returned photo.
+    val resumeFocusIntoView = remember {
+        !anchorInitialScroll &&
+            state.focusedIndex >= 0 &&
+            tiles.getOrNull(state.focusedIndex)?.photos?.any { it.id == state.lastViewedPhotoId } == true
+    }
     val anchor = rememberGridViewportAnchor(
         gridState = gridState,
         initialAnchor = if (anchorInitialScroll) state.photos.getOrNull(initialScrollIndex)?.id else null,
         coldFlatFallback = initialScrollIndex.takeIf { anchorInitialScroll },
+        resumeFocusIntoView = resumeFocusIntoView,
     )
     // Moves the keyboard cursor: tells the anchor the user took the viewport over (releases the re-pin) and,
     // on an actual change, arms the focus-into-view scroll. The no-op-at-edge guard lives here because the
