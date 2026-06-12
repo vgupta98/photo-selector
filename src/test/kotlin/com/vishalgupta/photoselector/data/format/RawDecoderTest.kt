@@ -50,30 +50,47 @@ class RawDecoderTest {
     }
 
     @Test
-    fun `decodes a real RAW fixture to oriented sRGB BGRA when present`() = runBlocking {
+    fun `decodes every real RAW fixture to oriented sRGB BGRA when present`() = runBlocking {
         assumeTrue("macOS-only RAW decode", Platform.isMac())
-        val fixture = locateFixture()
-        assumeTrue("drop a sample RAW at build/raw-probe/fixture.<ext> to exercise this", fixture != null)
-        requireNotNull(fixture)
+        val fixtures = locateFixtures()
+        assumeTrue("drop sample RAW files in build/raw-probe/ to exercise this", fixtures.isNotEmpty())
 
-        val decoded = RawDecoder().decode(fixture, targetMaxDimensionPx = 512)
+        fixtures.forEach { fixture ->
+            val decoded = RawDecoder().decode(fixture, targetMaxDimensionPx = 512)
+            val name = fixture.fileName
 
-        assertTrue("decoded width should be positive", decoded.width > 0)
-        assertTrue("decoded height should be positive", decoded.height > 0)
-        assertEquals(decoded.width * decoded.height * 4, decoded.bgraBytes.size)
-        assertTrue("longer edge capped to the 512px target", maxOf(decoded.width, decoded.height) <= 512)
-        assertTrue("decoded pixels should not be all zero", decoded.bgraBytes.any { it.toInt() != 0 })
+            assertTrue("$name: width should be positive", decoded.width > 0)
+            assertTrue("$name: height should be positive", decoded.height > 0)
+            assertEquals("$name: buffer size matches dimensions", decoded.width * decoded.height * 4, decoded.bgraBytes.size)
+            assertTrue("$name: longer edge capped to the 512px target", maxOf(decoded.width, decoded.height) <= 512)
+            assertTrue("$name: decoded pixels should not be all zero", decoded.bgraBytes.any { it.toInt() != 0 })
+        }
     }
 
-    /** First file under build/raw-probe/ whose extension RawDecoder claims, or null. */
-    private fun locateFixture(): Path? {
+    @Test
+    fun `full-resolution request decodes a real RAW fixture when present`() = runBlocking {
+        assumeTrue("macOS-only RAW decode", Platform.isMac())
+        val fixture = locateFixtures().firstOrNull()
+        assumeTrue("drop a sample RAW in build/raw-probe/ to exercise this", fixture != null)
+        requireNotNull(fixture)
+
+        // null target exercises the no-cap path that returns null for RAW unless the bridge supplies
+        // a sentinel max — the bug a 512px-only test would miss.
+        val decoded = RawDecoder().decode(fixture, targetMaxDimensionPx = null)
+
+        assertTrue("full-res longer edge should exceed the 512 thumbnail size", maxOf(decoded.width, decoded.height) > 512)
+        assertEquals(decoded.width * decoded.height * 4, decoded.bgraBytes.size)
+    }
+
+    /** Every file under build/raw-probe/ whose extension RawDecoder claims. */
+    private fun locateFixtures(): List<Path> {
         val dir = Path.of("build/raw-probe")
-        if (!Files.isDirectory(dir)) return null
+        if (!Files.isDirectory(dir)) return emptyList()
         return Files.list(dir).use { stream ->
             stream.filter { Files.isRegularFile(it) }
                 .filter { it.fileName.toString().substringAfterLast('.', "").lowercase() in format.extensions }
-                .findFirst()
-                .orElse(null)
+                .sorted()
+                .toList()
         }
     }
 }

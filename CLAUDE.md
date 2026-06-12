@@ -223,22 +223,31 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   **only on macOS**, behind the `PhotoDecoder` interface. A future
   Windows build adds its own decoder there — don't reintroduce a search
   for a cross-platform lib without re-checking Maven first.
-- **Camera RAW rides the same ImageIO bridge — don't reach for libraw.**
-  macOS ImageIO has a built-in RAW codec for every format we care about
-  (Canon CR2/CR3, Sony ARW, Nikon NEF/NRW, Fuji RAF, Adobe DNG, Panasonic
-  RW2, Olympus ORF — confirmed via `CGImageSourceCopyTypeIdentifiers`), so
-  `RawDecoder` just delegates to `MacImageIO.decodeToBgra` exactly like
-  `HeicDecoder` — **macOS-only**, no new dependency, nothing bundled.
-  ImageIO returns the camera's embedded preview with orientation baked in;
-  this is *preview-only* by design (no demosaic / white-balance / true RAW
-  pipeline — that stays out of scope). The original "bundle libraw via
-  JavaCPP" idea was dropped: it would add a multi-MB native binary per arch
-  plus signing/notarization burden for zero benefit on macOS. A future
-  Windows build adds its own RAW decoder behind `PhotoDecoder`, same as
-  HEIC. No RAW fixture can be synthesised at test time (`sips` writes HEIC
-  but not RAW), so `RawDecoderTest`'s real-decode case self-skips unless a
-  sample RAW is dropped at `build/raw-probe/`; the decode/orientation path
-  itself is identical to (and covered by) the HEIC tests.
+- **Camera RAW rides the ImageIO bridge — don't reach for libraw — but
+  ImageIO must read the file itself, not be handed the bytes.** macOS ImageIO
+  has a built-in RAW codec for every format we care about (Canon CR2/CR3,
+  Sony ARW, Nikon NEF/NRW, Fuji RAF, Adobe DNG, Panasonic RW2, Olympus ORF —
+  confirmed via `CGImageSourceCopyTypeIdentifiers`), so `RawDecoder` reuses
+  `MacImageIO` rather than a bundled lib — **macOS-only**, no new dependency,
+  nothing bundled. The catch that cost a debugging round: unlike HEIC, RAW
+  will *not* decode through the byte-buffer path (`CGImageSourceCreateWithData`
+  on the file's bytes) — Sony ARW comes back as an empty source
+  (`count == 0`) and Nikon NEF silently downgrades to its tiny embedded
+  thumbnail. RAW needs the file-path path (`CGImageSourceCreateWithURL` on a
+  `file://` `CFURL` — a *local* path reference, not a network URL; this is
+  `MacImageIO.decodeFileToBgra`), so ImageIO opens the on-disk file itself.
+  It also returns a *null* thumbnail unless a `MaxPixelSize` is set (so the
+  full-res request passes a large sentinel). HEIC keeps using the bytes path;
+  don't "unify" the two onto `decodeToBgra`. Output is the camera's embedded
+  preview with orientation baked in — *preview-only* by design (no demosaic /
+  white-balance / true RAW pipeline; that stays out of scope). The original
+  "bundle libraw via JavaCPP" idea was dropped: a multi-MB native binary per
+  arch plus signing/notarization burden for zero benefit on macOS. A future
+  Windows build adds its own RAW decoder behind `PhotoDecoder`, same as HEIC.
+  No RAW fixture can be synthesised at test time (`sips` writes HEIC but not
+  RAW), so `RawDecoderTest` / `RawDecodeScreenshotTest` self-skip unless real
+  samples are dropped in `build/raw-probe/` — when present they decode and
+  render every brand end-to-end.
 - **Burst grouping reads capture time from JPEG EXIF only, and never
   falls back to mtime.** `ExifReader` is JPEG-only, so HEIC (and any
   EXIF-less file) has no `DateTimeOriginal`. `BurstGrouper` deliberately

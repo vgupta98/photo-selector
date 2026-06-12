@@ -8,11 +8,12 @@ import com.sun.jna.Platform
 import com.sun.jna.Pointer
 import com.sun.jna.Structure
 import com.vishalgupta.photoselector.domain.model.DecodedImage
+import java.nio.file.Path
 
 /**
  * Thin JNA bridge into the macOS ImageIO / CoreGraphics / CoreFoundation system frameworks, used to
- * decode formats skiko can't (HEIC/HEIF). Nothing is bundled — these frameworks ship with macOS and
- * are loaded by name; JNA provides its own dispatch native.
+ * decode formats skiko can't (HEIC/HEIF) and camera RAW. Nothing is bundled — these frameworks ship
+ * with macOS and are loaded by name; JNA provides its own dispatch native.
  *
  * The decode goes through `CGImageSourceCreateThumbnailAtIndex` with `WithTransform = true` so EXIF
  * orientation is baked in by the OS (the same decoder Finder/Preview use), and `MaxPixelSize` so the
@@ -20,12 +21,70 @@ import com.vishalgupta.photoselector.domain.model.DecodedImage
  * matches [DecodedImage]'s contract exactly (wide-gamut P3 sources are colour-converted to sRGB by
  * drawing into the sRGB context).
  *
+ * There are two entry points because RAW and HEIC need different *source* creation. Both decode a
+ * file that's already local — the difference is only whether ImageIO is handed the bytes or the
+ * on-disk location:
+ * - [decodeToBgra] reads the file into an in-memory byte buffer and decodes that
+ *   ([CGImageSourceCreateWithData]). Fine for HEIC.
+ * - [decodeFileToBgra] points ImageIO at the local file's path and lets it read the file itself
+ *   ([CGImageSourceCreateWithURL] — a `file://` `CFURL`, i.e. a local path reference, not a network
+ *   URL). RAW **requires** this: the macOS RAW codec returns an empty source (`count == 0`) for
+ *   several makers — notably Sony ARW — when handed bytes, and silently downgrades Nikon NEF to its
+ *   tiny embedded thumbnail; given the file path it decodes the full preview for every maker (the
+ *   codec seems to want the file on disk, likely memory-mapping or reading regions lazily). RAW also
+ *   returns a null thumbnail unless a `MaxPixelSize` is set, so the full-resolution request passes a
+ *   large sentinel.
+ *
  * All JNA wiring is initialised lazily so this class loads on any platform; only an actual decode
  * call touches the frameworks, and it fails fast with a clear message off macOS.
  */
 internal object MacImageIO {
 
     fun isAvailable(): Boolean = Platform.isMac()
+
+    /**
+     * Decodes the local file at [path] into oriented sRGB BGRA-premultiplied pixels, letting ImageIO
+     * read the file itself rather than handing it the bytes. Required for camera RAW (see the class
+     * doc). [targetMaxDimensionPx], when non-null and positive, caps the longer output edge; when
+     * null the full resolution is decoded (a large sentinel `MaxPixelSize`, since RAW yields a null
+     * thumbnail with no cap). Throws [IllegalStateException] if any framework call returns null.
+     */
+    fun decodeFileToBgra(path: Path, targetMaxDimensionPx: Int?): DecodedImage {
+        check(Platform.isMac()) { "MacImageIO is only available on macOS" }
+        val fsBytes = path.toString().toByteArray(Charsets.UTF_8)
+        require(fsBytes.isNotEmpty()) { "Empty path" }
+
+        // Wrap the local path in a file:// CFURL (a path reference, not a network URL) so ImageIO
+        // opens the file directly — the RAW codec only decodes fully when it owns the file handle.
+        val fileUrl = cf.CFURLCreateFromFileSystemRepresentation(null, fsBytes, fsBytes.size.toLong(), false)
+            ?: error("CFURLCreateFromFileSystemRepresentation returned null")
+        try {
+            val source = imageIO.CGImageSourceCreateWithURL(fileUrl, null)
+                ?: error("CGImageSourceCreateWithURL returned null (not a decodable image?)")
+            try {
+                // RAW codecs return a null thumbnail unless a max is set; for a full-res request we
+                // ask for a size large enough to never downscale (ImageIO caps to the source).
+                val effectiveMax = targetMaxDimensionPx?.takeIf { it > 0 } ?: RAW_FULL_RES_MAX
+                val (options, maxPixelNumber) = buildThumbnailOptions(effectiveMax)
+                try {
+                    val image = imageIO.CGImageSourceCreateThumbnailAtIndex(source, 0L, options)
+                        ?: error("CGImageSourceCreateThumbnailAtIndex returned null")
+                    try {
+                        return renderToBgra(image)
+                    } finally {
+                        cg.CGImageRelease(image)
+                    }
+                } finally {
+                    cf.CFRelease(options)
+                    maxPixelNumber?.let { cf.CFRelease(it) }
+                }
+            } finally {
+                cf.CFRelease(source)
+            }
+        } finally {
+            cf.CFRelease(fileUrl)
+        }
+    }
 
     /**
      * Decodes [bytes] (an encoded HEIC/HEIF image) into oriented sRGB BGRA-premultiplied pixels.
@@ -127,6 +186,11 @@ internal object MacImageIO {
     private const val BGRA_PREMUL_LE: Int = 2 or (2 shl 12)
     private const val K_CF_NUMBER_INT_TYPE: Int = 9 // kCFNumberIntType
 
+    // Sentinel MaxPixelSize for a full-resolution RAW decode: larger than any current sensor's long
+    // edge, so ImageIO caps to the source rather than upscaling. RAW needs *some* cap or the
+    // thumbnail comes back null.
+    private const val RAW_FULL_RES_MAX: Int = 1_000_000
+
     // --- Lazy framework wiring (so the class loads on any platform) ---
 
     private val cf: CoreFoundation by lazy { Native.load("CoreFoundation", CoreFoundation::class.java) }
@@ -160,6 +224,12 @@ internal object MacImageIO {
         fun CFDataCreate(allocator: Pointer?, bytes: ByteArray, length: Long): Pointer?
         fun CFRelease(cf: Pointer)
         fun CFNumberCreate(allocator: Pointer?, theType: Int, valuePtr: Pointer): Pointer?
+        fun CFURLCreateFromFileSystemRepresentation(
+            allocator: Pointer?,
+            buffer: ByteArray,
+            bufLen: Long,
+            isDirectory: Boolean,
+        ): Pointer?
         fun CFDictionaryCreate(
             allocator: Pointer?,
             keys: Array<Pointer>,
@@ -172,6 +242,7 @@ internal object MacImageIO {
 
     private interface ImageIO : Library {
         fun CGImageSourceCreateWithData(data: Pointer, options: Pointer?): Pointer?
+        fun CGImageSourceCreateWithURL(url: Pointer, options: Pointer?): Pointer?
         fun CGImageSourceCreateThumbnailAtIndex(source: Pointer, index: Long, options: Pointer?): Pointer?
     }
 
