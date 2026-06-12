@@ -353,10 +353,21 @@ class GridViewModel(
      * Updates the last-viewed underline marker. A Grid -> Browser -> Grid round trip now reuses this
      * retained view model rather than rebuilding it, so the marker would otherwise stay on whatever
      * photo the grid was first built around; this re-points it at the frame the browser left on.
+     *
+     * Also re-seats the keyboard ring onto that frame so a mouse-driven open moves the cursor the way an
+     * arrow does - keeping ring, scroll and marker on the same photo when the user mixes trackpad and
+     * keyboard. Only an *existing* ring is moved (a pure-mouse user has `focusedIndex == -1`, and we
+     * never spawn a ring); it re-finds the frame by identity via [refocus], so the cursor lands on
+     * whatever tile now holds it (and stays put if that photo is outside the current slice).
      */
     fun setLastViewed(id: PhotoId?) {
         if (id == null) return
-        _state.update { it.copy(lastViewedPhotoId = id) }
+        _state.update { st ->
+            st.copy(
+                lastViewedPhotoId = id,
+                focusedIndex = if (st.focusedIndex >= 0) refocus(st.displayGroups, id, st.focusedIndex) else st.focusedIndex,
+            )
+        }
     }
 
     /** The frame the focused tile currently represents, the anchor [refocus] re-finds after a reshape. */

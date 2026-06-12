@@ -6,6 +6,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,14 +45,14 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.CategoryId
@@ -217,6 +219,9 @@ fun GridScreen(
     onCopySelection: (ConflictPolicy) -> Unit = {},
     onCompareSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit = { _, _ -> },
     onSelectionTooLargeToCompare: () -> Unit = {},
+    // The scrollbar's drag interactions, hoisted so a test can drive a scrollbar-drag-during-settle
+    // (emit DragInteraction.Start) without a real thin-scrollbar gesture; production uses the default.
+    scrollbarInteraction: MutableInteractionSource = remember { MutableInteractionSource() },
     modifier: Modifier = Modifier,
 ) {
     // The collapsed grouping. The view model populates [GridUiState.groups] (singles, then bursts
@@ -298,38 +303,48 @@ fun GridScreen(
         }
     }
 
-    // The focus-into-view scroll must react only to *cursor movement*, never to the screen mounting.
-    // On a warm return the retained gridState already holds the position the user scrolled to, but
-    // focusedIndex still carries the ring's old tile - so scrolling to it on entry would yank the
-    // viewport back to the ring, discarding the scroll the user opened the tile from. LaunchedEffect
-    // always runs once on (re-)entry, so swallow that first run; only later focus changes scroll.
-    var focusScrollPrimed by remember { mutableStateOf(false) }
-    LaunchedEffect(state.focusedIndex) {
-        if (!focusScrollPrimed) {
-            focusScrollPrimed = true
-            return@LaunchedEffect
-        }
-        val idx = state.focusedIndex
-        if (idx < 0) return@LaunchedEffect
-        // focusedIndex is a TILE index; the LazyGrid (visibleItemsInfo.index, animateScrollToItem)
-        // speaks RENDER-ITEM space, which gains header/footer rows when a burst is open - so convert
-        // before addressing it, or we'd mis-detect visibility and scroll to the wrong row.
-        val renderIdx = renderIndexForTile(renderItems, idx) ?: return@LaunchedEffect
-        val layout = gridState.layoutInfo
-        val item = layout.visibleItemsInfo.firstOrNull { it.index == renderIdx }
-        val isFullyVisible = item != null &&
-            item.offset.y >= layout.viewportStartOffset &&
-            item.offset.y + item.size.height <= layout.viewportEndOffset
-        if (!isFullyVisible) {
-            gridState.animateScrollToItem(renderIdx)
-        }
+    // The viewport re-pin across a grouping reshape - the cold settle and a lens switch - lives in one
+    // holder (see [GridViewportAnchor]). It keeps the viewport on one photo by IDENTITY, re-read from the
+    // live top only when the user has actually scrolled (re-deriving it every reshape degrades a collapsed
+    // burst to its first frame and walks the viewport upward across switches). Cold seed: the returned
+    // photo's id *if the photos are already loaded* - on a real cold launch they arrive after mount, so
+    // this is null and [coldFlatFallback] (the flat index) carries the restore until an identity anchor
+    // exists; on a warm return both are null so the retained pixel position is left untouched.
+    // On a warm return from the viewer the view model has re-seated an existing ring onto the photo the
+    // browser left on (GridViewModel.setLastViewed). If that photo is off-screen, resume there: seed the
+    // anchor's focus-into-view so the first reconcile scrolls the ring on-screen. Evaluated once at mount
+    // and gated so it can't fire on a cold first visit, with no ring, or on a stale ring that is NOT on the
+    // last-viewed photo (the warm-return-keeps-scroll case) - only a ring that tracks the returned photo.
+    val resumeFocusIntoView = remember {
+        !anchorInitialScroll &&
+            state.focusedIndex >= 0 &&
+            tiles.getOrNull(state.focusedIndex)?.photos?.any { it.id == state.lastViewedPhotoId } == true
+    }
+    val anchor = rememberGridViewportAnchor(
+        gridState = gridState,
+        initialAnchor = if (anchorInitialScroll) state.photos.getOrNull(initialScrollIndex)?.id else null,
+        coldFlatFallback = initialScrollIndex.takeIf { anchorInitialScroll },
+        resumeFocusIntoView = resumeFocusIntoView,
+    )
+    // Moves the keyboard cursor: tells the anchor the user took the viewport over (releases the re-pin) and,
+    // on an actual change, arms the focus-into-view scroll. The no-op-at-edge guard lives here because the
+    // change is relative to the current focus; the holder owns the flag and the scroll itself.
+    val moveFocus: (Int) -> Unit = { target ->
+        anchor.onCursorMove(focusChanged = target != state.focusedIndex)
+        onSetFocusedIndex(target)
+    }
+    // A scrollbar drag reaches [gridState] through the scrollable, NOT the Column's pointer modifier
+    // below, so observe the scrollbar's own drag interactions to release the re-pin too (the gap that
+    // used to let a scrollbar-drag-during-settle get yanked back). Distinct from gridState.isScrollInProgress,
+    // which a programmatic re-pin also trips - this fires only on a real user drag.
+    LaunchedEffect(scrollbarInteraction) {
+        scrollbarInteraction.interactions.collect { if (it is DragInteraction.Start) anchor.onUserScroll() }
     }
 
-    // Persisted scroll position is a FLAT photo index, so map the first visible render item through
-    // the tile space and [tileFlatStart]. The subscription is start-once (gridState is stable), but
-    // renderItems / tileFlatStart change on every regroup/expansion - so read the latest via
-    // rememberUpdatedState rather than capture a stale snapshot that would persist a wrong position
-    // after a burst expands (and the render index would then mis-index a tile-keyed map).
+    // Persisted scroll position is a FLAT photo index - the 50k-photo resume point, written on every
+    // scroll. The subscription is start-once (gridState is stable), but renderItems / tileFlatStart
+    // change on every regroup/expansion - so read the latest via rememberUpdatedState rather than
+    // capture a stale snapshot that would persist a wrong position after a burst expands.
     val latestRenderItems by rememberUpdatedState(renderItems)
     val latestTileFlatStart by rememberUpdatedState(tileFlatStart)
     LaunchedEffect(gridState) {
@@ -337,40 +352,36 @@ fun GridScreen(
             .collect { index -> onFirstVisibleItemChanged(flatIndexForRenderItem(latestRenderItems, latestTileFlatStart, index)) }
     }
 
-    // Re-anchor the photo we returned on (initialScrollIndex, a FLAT index) as burst grouping
-    // settles: the view model emits singles first, then collapses bursts a frame later, which
-    // shifts tile indices under us. We map the flat photo to its tile and scroll there each time the
-    // grouping reshapes, but stop the moment the user has scrolled themselves so we never fight them.
-    // Keyed on the collapsed grouping (not the display tiles) so expanding a burst - which also
-    // reshapes the tiles - doesn't yank the scroll; the focus effect above keeps a burst in view.
-    //
-    // "User scrolled" MUST come from a real scroll gesture (onPointerEvent below), NOT from the index
-    // moving: when grouping collapses many singles into fewer tiles the LazyGrid clamps its offset to
-    // the new, shorter end, which shifts firstVisibleItemIndex without any user input. Inferring
-    // "moved" from that delta made us abandon the anchor and leave the grid stuck at the end on every
-    // return once similarity grouping (heavy collapse, instant from cache) was in play.
-    //
-    // Invariant: this only fires while grouping settles, when no burst can be expanded - so the tile
-    // index space and the LazyGrid's render-item space coincide here, and it is safe to compare
-    // firstVisibleItemIndex (render) against tile-space targets and scrollToItem with a tile index.
-    // Only the cold first visit re-anchors: a warm return reuses the retained gridState, which already
-    // holds the exact scroll, so re-applying initialScrollIndex (stale on a return) would yank it.
-    var userScrolled by remember { mutableStateOf(false) }
-    LaunchedEffect(baseGroups) {
-        if (!anchorInitialScroll || userScrolled) return@LaunchedEffect
-        val target = tileIndexForFlat(tileFlatStart, initialScrollIndex)
-        if (gridState.firstVisibleItemIndex != target) gridState.scrollToItem(target)
+    // Every programmatic viewport move goes through the anchor's single [reconcile], keyed on BOTH the
+    // collapsed grouping (a reshape) and the focused tile (a cursor move) so it is the lone decision point:
+    // exactly one of re-pin / focus-into-view runs per change, and the two can no longer race. Keyed on
+    // baseGroups (not the display tiles), so merely expanding a burst - which changes neither key - doesn't
+    // reconcile; that case is left to the LazyGrid's own key retention.
+    LaunchedEffect(baseGroups, state.focusedIndex) {
+        anchor.reconcile(renderItems, tiles, tileFlatStart, state.focusedIndex, baseGroups)
     }
+
+    // A toolbar lens switch reshapes the whole grid: capture the photo at the live top before the reshape,
+    // then re-pin to it after. Remembered (not a bare lambda), keyed on the unstable renderItems / tiles it
+    // reads plus the wrapped callback, so the toolbar keeps skipping through the hot path - like [openTile].
+    val onSelectGroupingModeAnchored: (GroupingMode) -> Unit =
+        remember(renderItems, tiles, onSelectGroupingMode) {
+            { mode ->
+                anchor.captureTop(renderItems, tiles)
+                onSelectGroupingMode(mode)
+            }
+        }
 
     Column(
         modifier
             .fillMaxSize()
             .focusRequester(focusRequester)
             .focusable()
-            // A two-finger / wheel scroll (the app's scroll gestures) is the only thing that should
-            // release the return-anchor above; a programmatic scroll or a grouping reshape doesn't
-            // emit this, so they can't be mistaken for the user taking over.
-            .onPointerEvent(PointerEventType.Scroll) { userScrolled = true }
+            // A two-finger / wheel scroll (the app's scroll gestures) releases the re-pin: a programmatic
+            // scroll or a grouping reshape doesn't emit this, so neither is mistaken for the user taking
+            // over. (Scrollbar drags reach the grid through the scrollable, not here - those are caught via
+            // the scrollbar's interactionSource above.)
+            .onPointerEvent(PointerEventType.Scroll) { anchor.onUserScroll() }
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) {
                     // A tile's `Modifier.clickable` activates on the Enter / Space KEY-UP, and a mouse
@@ -413,14 +424,11 @@ fun GridScreen(
                 }
                 val isArrow = event.key == Key.DirectionLeft || event.key == Key.DirectionRight ||
                     event.key == Key.DirectionUp || event.key == Key.DirectionDown
-                // Arrow navigation moves the cursor, so it counts as the user taking over the viewport -
-                // release the return-anchor the same as a scroll would.
-                if (isArrow) userScrolled = true
                 if (isArrow && state.focusedIndex < 0 && maxIndex >= 0) {
                     // Seed focus on the first visible TILE. firstVisibleItemIndex is render-item space
                     // (header/footer included when a burst is open), so map it into tile space first.
                     val seed = tileDisplayIndexForRenderItem(renderItems, gridState.firstVisibleItemIndex) ?: 0
-                    onSetFocusedIndex(seed.coerceIn(0, maxIndex))
+                    moveFocus(seed.coerceIn(0, maxIndex))
                     return@onPreviewKeyEvent true
                 }
                 // Bare 1..9 files into the Nth custom category: the whole selection when one is
@@ -437,19 +445,19 @@ fun GridScreen(
                 }
                 when (event.key) {
                     Key.DirectionLeft -> {
-                        onSetFocusedIndex((state.focusedIndex - 1).coerceAtLeast(0))
+                        moveFocus((state.focusedIndex - 1).coerceAtLeast(0))
                         true
                     }
                     Key.DirectionRight -> {
-                        onSetFocusedIndex((state.focusedIndex + 1).coerceAtMost(maxIndex))
+                        moveFocus((state.focusedIndex + 1).coerceAtMost(maxIndex))
                         true
                     }
                     Key.DirectionUp -> {
-                        onSetFocusedIndex(verticalNavTarget(gridState, renderItems, state.focusedIndex, maxIndex, down = false))
+                        moveFocus(verticalNavTarget(gridState, renderItems, state.focusedIndex, maxIndex, down = false))
                         true
                     }
                     Key.DirectionDown -> {
-                        onSetFocusedIndex(verticalNavTarget(gridState, renderItems, state.focusedIndex, maxIndex, down = true))
+                        moveFocus(verticalNavTarget(gridState, renderItems, state.focusedIndex, maxIndex, down = true))
                         true
                     }
                     Key.Enter -> {
@@ -513,7 +521,7 @@ fun GridScreen(
                 onCopyToFolder = onCopyToFolder,
                 onChangeFolder = onChangeFolder,
                 groupingMode = state.groupingMode,
-                onSelectGroupingMode = onSelectGroupingMode,
+                onSelectGroupingMode = onSelectGroupingModeAnchored,
             )
         }
 
@@ -610,6 +618,7 @@ fun GridScreen(
                 }
                 VerticalScrollbar(
                     adapter = rememberScrollbarAdapter(gridState),
+                    interactionSource = scrollbarInteraction,
                     modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().padding(end = AppTheme.spacing.xs),
                     style = ScrollbarStyle(
                         minimalHeight = AppTheme.dimens.scrollbarMinHeight,

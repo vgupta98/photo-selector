@@ -1,9 +1,12 @@
 package com.vishalgupta.photoselector.presentation.grid
 
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -15,6 +18,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -26,6 +30,7 @@ import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoGroup
 import com.vishalgupta.photoselector.domain.model.PhotoId
+import com.vishalgupta.photoselector.presentation.common.GroupingMode
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import kotlinx.coroutines.CoroutineScope
@@ -602,6 +607,546 @@ class GridKeyboardTest {
         assertTrue(
             "warm return snapped to the ring (index ${gridStateRef.firstVisibleItemIndex}) instead of keeping the scroll",
             gridStateRef.firstVisibleItemIndex > 10,
+        )
+    }
+
+    // --- Returning from the viewer resumes the ring at the photo you left on ---------------------
+    // Mouse-open a photo and come back: an existing ring follows to that photo (the view model re-seats
+    // it via setLastViewed). If that photo is off-screen - you paged far away in the viewer - the grid
+    // scrolls to it so you resume there with the ring in view. This drives the UI half: a warm return
+    // whose ring sits on the (off-screen) last-viewed photo must scroll it on-screen.
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun warmReturnWithRingOnLastViewed_scrollsThatPhotoIntoView() {
+        val photos = (0 until 80).map { photoNamed("p$it") }
+        lateinit var gridStateRef: LazyGridState
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(400.dp, 400.dp)) {
+                    // Retained scroll parked at the top; the ring + last-viewed photo are far below, off-screen.
+                    val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = 0)
+                    gridStateRef = gridState
+                    GridScreen(
+                        state = GridUiState(
+                            photos = photos,
+                            groups = photos.map(PhotoGroup::Single),
+                            scope = CategoryScope.AllPhotos,
+                            focusedIndex = 60, // ring re-seated onto the returned photo
+                            lastViewedPhotoId = photos[60].id,
+                        ),
+                        initialScrollIndex = 0,
+                        retainedGridState = gridState,
+                        anchorInitialScroll = false, // warm return
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onSelectCategory = { _, _ -> },
+                        onCreateCategory = {},
+                        onRenameCategory = { _, _ -> },
+                        onDeleteCategory = {},
+                        onBack = null,
+                        onSetFocusedIndex = {},
+                        onToggleMembershipAtFocus = {},
+                        onToggleCustomCategoryAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        imageLoader = noOpImageLoader,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        // The ring's photo (tile 60) was below the fold; the resume must have scrolled it into view.
+        assertTrue(
+            "the off-screen ring at p60 should have scrolled into view, got ${gridStateRef.firstVisibleItemIndex}",
+            gridStateRef.firstVisibleItemIndex > 30,
+        )
+    }
+
+    // The "(if present)" half: a pure-mouse user has no ring, so a warm return must NOT resume-scroll -
+    // it keeps the retained scroll, even though the underline marker points at an off-screen photo.
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun warmReturnWithNoRing_keepsTheScrollInsteadOfResuming() {
+        val photos = (0 until 80).map { photoNamed("p$it") }
+        lateinit var gridStateRef: LazyGridState
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(400.dp, 400.dp)) {
+                    val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = 0)
+                    gridStateRef = gridState
+                    GridScreen(
+                        state = GridUiState(
+                            photos = photos,
+                            groups = photos.map(PhotoGroup::Single),
+                            scope = CategoryScope.AllPhotos,
+                            focusedIndex = -1, // pure-mouse user, no ring
+                            lastViewedPhotoId = photos[60].id,
+                        ),
+                        initialScrollIndex = 0,
+                        retainedGridState = gridState,
+                        anchorInitialScroll = false,
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onSelectCategory = { _, _ -> },
+                        onCreateCategory = {},
+                        onRenameCategory = { _, _ -> },
+                        onDeleteCategory = {},
+                        onBack = null,
+                        onSetFocusedIndex = {},
+                        onToggleMembershipAtFocus = {},
+                        onToggleCustomCategoryAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        imageLoader = noOpImageLoader,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        // No ring -> no resume; the retained scroll at the top stands.
+        assertTrue(
+            "with no ring the warm return must keep its scroll, got ${gridStateRef.firstVisibleItemIndex}",
+            gridStateRef.firstVisibleItemIndex < 10,
+        )
+    }
+
+    // --- Cold start restores the persisted scroll even though photos load AFTER mount ------------
+    // On a real cold launch the host hands the grid a bare LazyGridState (index 0) and the view model
+    // loads photos asynchronously, so at first composition state.photos is EMPTY - the identity anchor
+    // can't be seeded from initialScrollIndex. The grid must still scroll to the restored position once
+    // the photos arrive (via the flat fallback), or it sits at index 0 and then PERSISTS 0, wiping the
+    // saved resume point. The earlier tests all pre-loaded photos in the initial state, hiding this.
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun coldStartWithPhotosLoadingAfterMount_scrollsToTheRestoredIndex() {
+        val photos = (0 until 80).map { photoNamed("p$it") }
+        lateinit var gridStateRef: LazyGridState
+        val reported = mutableListOf<Int>()
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    // The host's retained state starts at 0 (exactly App.kt's `LazyGridState()`).
+                    val gridState = rememberLazyGridState()
+                    gridStateRef = gridState
+                    // Photos arrive on a later frame, mirroring the async view-model load.
+                    var photosLoaded by remember { mutableStateOf(false) }
+                    LaunchedEffect(Unit) { photosLoaded = true }
+                    GridScreen(
+                        state = GridUiState(
+                            photos = if (photosLoaded) photos else emptyList(),
+                            groups = if (photosLoaded) photos.map(PhotoGroup::Single) else emptyList(),
+                            scope = CategoryScope.AllPhotos,
+                            focusedIndex = -1,
+                        ),
+                        initialScrollIndex = 50, // the persisted resume point
+                        retainedGridState = gridState,
+                        anchorInitialScroll = true, // cold first visit
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onSelectCategory = { _, _ -> },
+                        onCreateCategory = {},
+                        onRenameCategory = { _, _ -> },
+                        onDeleteCategory = {},
+                        onBack = null,
+                        onSetFocusedIndex = {},
+                        onToggleMembershipAtFocus = {},
+                        onToggleCustomCategoryAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        onFirstVisibleItemChanged = { reported += it },
+                        imageLoader = noOpImageLoader,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        // The grid landed on the restored region, not index 0.
+        assertTrue(
+            "cold start stayed at the top (index ${gridStateRef.firstVisibleItemIndex}) instead of restoring ~50",
+            gridStateRef.firstVisibleItemIndex in 44..56,
+        )
+        // And it must NOT have persisted 0 as its final reported position (the resume-point wipe).
+        assertTrue(
+            "cold start persisted 0, wiping the saved resume point (reported=$reported)",
+            reported.lastOrNull()?.let { it in 44..56 } == true,
+        )
+    }
+
+    // --- Switching the grouping lens must keep the scroll position ------------------------------
+    // The LazyGrid keys tiles by photo/group id, so a burst that EXPLODES back into singles keeps its
+    // top frame pinned for free (the key survives). The jump happens the other way: the top photo gets
+    // ABSORBED into a burst whose representative is a different frame, so the top tile's key VANISHES -
+    // the LazyGrid can't retain it and clamps to a random spot. The screen must pin the photo that was
+    // at the viewport top by identity, landing on whatever tile now contains it.
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun switchingGroupingLens_keepsTheTopPhotoPinnedInsteadOfJumping() {
+        val photos = (0 until 100).map { photoNamed("p$it") }
+        // Time grouping collapses two runs into bursts: p0..p49 (one big leading burst) and p55..p64.
+        // The top photo we park on, p60, is absorbed into the SECOND burst as a non-representative
+        // frame, so its single-tile key (p60) disappears - exactly the case the LazyGrid can't retain.
+        val timeGroups: List<PhotoGroup> = buildList {
+            add(PhotoGroup.Burst(photos.subList(0, 50)))
+            addAll(photos.subList(50, 55).map(PhotoGroup::Single))
+            add(PhotoGroup.Burst(photos.subList(55, 65)))
+            addAll(photos.subList(65, 100).map(PhotoGroup::Single))
+        }
+        val modeCalls = mutableListOf<GroupingMode>()
+        // The flat photo index reported at the viewport top (column-independent, unlike a tile index).
+        var reportedTopFlat = -1
+        rule.setContent {
+            AppTheme {
+                // Wide enough that the toolbar's segmented lens control lays out un-clipped and is hittable.
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    // Open in the Off lens (flat singles), parked at p60 - tile 60 == flat 60 here.
+                    val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = 60)
+                    var state by remember {
+                        mutableStateOf(
+                            GridUiState(
+                                photos = photos,
+                                groups = photos.map(PhotoGroup::Single),
+                                scope = CategoryScope.AllPhotos,
+                                groupingMode = GroupingMode.Off,
+                                focusedIndex = -1,
+                            ),
+                        )
+                    }
+                    GridScreen(
+                        state = state,
+                        initialScrollIndex = 0,
+                        retainedGridState = gridState,
+                        anchorInitialScroll = false, // already open: the retained scroll owns the position
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onSelectCategory = { _, _ -> },
+                        onCreateCategory = {},
+                        onRenameCategory = { _, _ -> },
+                        onDeleteCategory = {},
+                        onBack = null,
+                        onSetFocusedIndex = {},
+                        onToggleMembershipAtFocus = {},
+                        onToggleCustomCategoryAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        onFirstVisibleItemChanged = { reportedTopFlat = it },
+                        imageLoader = noOpImageLoader,
+                        // Mirror the view model: the Time lens collapses the two bursts, Off is flat singles.
+                        onSelectGroupingMode = { mode ->
+                            modeCalls += mode
+                            state = state.copy(
+                                groupingMode = mode,
+                                groups = if (mode == GroupingMode.Time) timeGroups else photos.map(PhotoGroup::Single),
+                            )
+                        },
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        assertTrue("retained scroll starts parked on ~p60", reportedTopFlat in 56..64)
+
+        // Flip the lens to Time (label "Bursts") via the toolbar's segmented control.
+        rule.onNodeWithContentDescription("Bursts").performClick()
+        rule.waitForIdle()
+        assertEquals("toolbar click switched the lens to Time", listOf(GroupingMode.Time), modeCalls)
+
+        // p60 is now inside the p55..p64 burst (reported by its first frame, p55). Pinning the top
+        // photo must keep the viewport on that run - NOT clamp to the far end of the shorter tile list.
+        assertTrue(
+            "lens switch jumped the grid (top flat $reportedTopFlat) instead of pinning the top photo's burst",
+            reportedTopFlat in 50..64,
+        )
+    }
+
+    // --- A reshape must NOT let the focus ring yank the viewport (the intermittent jump) -----------
+    // The subtle case behind the lens-switch jump: the viewport top photo is in a region the reshape
+    // leaves UNCHANGED (so the re-pin is a no-op and can't counteract anything), while a focus ring
+    // sits far OFF-SCREEN on a photo the reshape moves a long way (the user arrowed there earlier, then
+    // mouse-scrolled away). The old focus-into-view effect, keyed on the tile index, fired when the view
+    // model re-anchored that ring to its new index and animated the viewport down to it - a jump nothing
+    // counteracts. The fix gates focus-into-view on an actual user key move, so a reshape never moves
+    // the viewport via focus. This isolates that gate: the re-pin is deliberately inert here.
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun lensSwitchWithOffscreenRing_doesNotScrollToTheReanchoredRing() {
+        val photos = (0 until 100).map { photoNamed("p$it") }
+        // Time grouping leaves the leading singles p0..p49 untouched (the viewport top lives here, so
+        // the re-pin no-ops), collapses p50..p89 into ONE burst tile, and keeps p90..p99 as singles -
+        // so the ring's photo p95 leaps from tile 95 up to tile 56.
+        val timeGroups: List<PhotoGroup> = buildList {
+            addAll(photos.subList(0, 50).map(PhotoGroup::Single))
+            add(PhotoGroup.Burst(photos.subList(50, 90)))
+            addAll(photos.subList(90, 100).map(PhotoGroup::Single))
+        }
+        var reportedTopFlat = -1
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    // Parked well inside the unchanged leading singles; the ring is far below, off-screen.
+                    val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = 20)
+                    var state by remember {
+                        mutableStateOf(
+                            GridUiState(
+                                photos = photos,
+                                groups = photos.map(PhotoGroup::Single),
+                                scope = CategoryScope.AllPhotos,
+                                groupingMode = GroupingMode.Off,
+                                focusedIndex = 95,
+                            ),
+                        )
+                    }
+                    GridScreen(
+                        state = state,
+                        initialScrollIndex = 0,
+                        retainedGridState = gridState,
+                        anchorInitialScroll = false, // already open: the retained scroll owns the position
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onSelectCategory = { _, _ -> },
+                        onCreateCategory = {},
+                        onRenameCategory = { _, _ -> },
+                        onDeleteCategory = {},
+                        onBack = null,
+                        onSetFocusedIndex = { state = state.copy(focusedIndex = it) },
+                        onToggleMembershipAtFocus = {},
+                        onToggleCustomCategoryAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        onFirstVisibleItemChanged = { reportedTopFlat = it },
+                        imageLoader = noOpImageLoader,
+                        onSelectGroupingMode = { mode ->
+                            val newGroups = if (mode == GroupingMode.Time) timeGroups else photos.map(PhotoGroup::Single)
+                            // Mimic GridViewModel.refocus: keep the cursor on the same photo's frame,
+                            // whose tile index leaps once p50..p89 collapse into one burst.
+                            val anchorId = state.displayGroups.getOrNull(state.focusedIndex)?.keyPhoto?.id
+                            val newFocus = newGroups.indexOfFirst { g -> g.photos.any { it.id == anchorId } }
+                            state = state.copy(
+                                groupingMode = mode,
+                                groups = newGroups,
+                                focusedIndex = if (newFocus >= 0) newFocus else state.focusedIndex,
+                            )
+                        },
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        assertTrue("retained scroll starts parked in the leading singles", reportedTopFlat in 10..30)
+
+        // Flip the lens to Time. The ring (p95) is re-anchored to a tile far up the list; the old code
+        // animated the viewport down to it. The viewport must stay put in the leading singles instead.
+        rule.onNodeWithContentDescription("Bursts").performClick()
+        rule.waitForIdle()
+        assertTrue(
+            "the focus ring yanked the viewport (top flat $reportedTopFlat) off the unchanged top region",
+            reportedTopFlat < 40,
+        )
+    }
+
+    // --- A SEQUENCE of lens switches must not let the viewport drift -----------------------------
+    // The single-switch case pins fine, but repeated switches used to walk the viewport upward: each
+    // switch re-derived the anchor from the live top, and a collapsed burst reports only its FIRST
+    // frame, so a precise anchor (p60) degraded to a burst's first frame (p55, then p53...) one step
+    // per switch. Going Off -> Time -> Similarity -> Off, the user lands well above where they started.
+    // The fix holds the anchor by identity and KEEPS it whenever it is still inside the top tile, so a
+    // round trip through grouping lenses returns to the same photo.
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun cyclingGroupingLenses_returnsToTheSameTopPhotoInsteadOfDrifting() {
+        val photos = (0 until 100).map { photoNamed("p$it") }
+        // Time absorbs p60 into a burst as a non-first frame (its first frame is p55).
+        val timeGroups: List<PhotoGroup> = buildList {
+            addAll(photos.subList(0, 55).map(PhotoGroup::Single))
+            add(PhotoGroup.Burst(photos.subList(55, 65)))
+            addAll(photos.subList(65, 100).map(PhotoGroup::Single))
+        }
+        // Similarity absorbs p60 into a DIFFERENT burst (first frame p53) - so a re-derived anchor would
+        // degrade a second time, compounding the drift; an identity anchor that is kept does not.
+        val similarityGroups: List<PhotoGroup> = buildList {
+            addAll(photos.subList(0, 53).map(PhotoGroup::Single))
+            add(PhotoGroup.Burst(photos.subList(53, 63)))
+            addAll(photos.subList(63, 100).map(PhotoGroup::Single))
+        }
+        var reportedTopFlat = -1
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    // Open in Off (flat singles), parked at p60 - tile 60 == flat 60 here.
+                    val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = 60)
+                    var state by remember {
+                        mutableStateOf(
+                            GridUiState(
+                                photos = photos,
+                                groups = photos.map(PhotoGroup::Single),
+                                scope = CategoryScope.AllPhotos,
+                                groupingMode = GroupingMode.Off,
+                                focusedIndex = -1,
+                            ),
+                        )
+                    }
+                    GridScreen(
+                        state = state,
+                        initialScrollIndex = 0,
+                        retainedGridState = gridState,
+                        anchorInitialScroll = false, // already open: the retained scroll owns the position
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onSelectCategory = { _, _ -> },
+                        onCreateCategory = {},
+                        onRenameCategory = { _, _ -> },
+                        onDeleteCategory = {},
+                        onBack = null,
+                        onSetFocusedIndex = {},
+                        onToggleMembershipAtFocus = {},
+                        onToggleCustomCategoryAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        onFirstVisibleItemChanged = { reportedTopFlat = it },
+                        imageLoader = noOpImageLoader,
+                        onSelectGroupingMode = { mode ->
+                            state = state.copy(
+                                groupingMode = mode,
+                                groups = when (mode) {
+                                    GroupingMode.Time -> timeGroups
+                                    GroupingMode.Similarity -> similarityGroups
+                                    GroupingMode.Off -> photos.map(PhotoGroup::Single)
+                                },
+                            )
+                        },
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        assertTrue("retained scroll starts parked on ~p60", reportedTopFlat in 56..64)
+
+        // Cycle through every lens and back to Off without ever touching the scroll.
+        rule.onNodeWithContentDescription("Bursts").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithContentDescription("Similar").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithContentDescription("Off").performClick()
+        rule.waitForIdle()
+
+        // Back in Off, the viewport must be on p60's run again - not drifted up to ~p53 by the
+        // burst-first-frame degradation the old re-derive-every-switch path produced.
+        assertTrue(
+            "cycling the lenses drifted the viewport (top flat $reportedTopFlat) off the start photo",
+            reportedTopFlat in 56..64,
+        )
+    }
+
+    // --- A scrollbar drag DURING a settle must win, not get re-pinned away -------------------------
+    // A scrollbar drag reaches the grid through the scrollable, NOT the Column's pointer modifier, so it
+    // emits no PointerEventType.Scroll - the only signal that the user grabbed the scrollbar is the
+    // scrollbar's own DragInteraction. If a grouping settle (the cold similarity pass completing) lands
+    // while the user is mid-drag, the re-pin must stand down and leave them where they dragged - the gap
+    // that used to yank a scrollbar-drag-during-settle back to the anchor. A real thin-scrollbar drag
+    // isn't hittable headlessly, so this drives that interaction source directly and asserts the drag holds.
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun scrollbarDragDuringSettle_keepsTheUsersScrollInsteadOfRepinning() {
+        val photos = (0 until 100).map { photoNamed("p$it") }
+        // Two settle arrangements that both absorb p60 into a burst, so a live re-pin (anchor = p60)
+        // would pull the viewport back toward p60's tile if it ever fired.
+        val timeGroups: List<PhotoGroup> = buildList {
+            addAll(photos.subList(0, 55).map(PhotoGroup::Single))
+            add(PhotoGroup.Burst(photos.subList(55, 65)))
+            addAll(photos.subList(65, 100).map(PhotoGroup::Single))
+        }
+        val similarityGroups: List<PhotoGroup> = buildList {
+            addAll(photos.subList(0, 53).map(PhotoGroup::Single))
+            add(PhotoGroup.Burst(photos.subList(53, 63)))
+            addAll(photos.subList(63, 100).map(PhotoGroup::Single))
+        }
+        lateinit var scrollbarSource: MutableInteractionSource
+        lateinit var dragScrollAway: () -> Unit
+        lateinit var landSettle: () -> Unit
+        var reportedTopFlat = -1
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    // Open in Off (flat singles), parked at p60 - tile 60 == flat 60 here.
+                    val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = 60)
+                    val source = remember { MutableInteractionSource() }
+                    scrollbarSource = source
+                    var groups by remember { mutableStateOf<List<PhotoGroup>>(photos.map(PhotoGroup::Single)) }
+                    var mode by remember { mutableStateOf(GroupingMode.Off) }
+                    // A programmatic scroll stands in for where the user's scrollbar drag LANDS; the drag
+                    // INTENT is the DragInteraction emitted separately. Like a real scrollToItem it emits
+                    // no user-scroll signal of its own - so only the scrollbar wiring can mark user-owned.
+                    var scrollAwayTo by remember { mutableStateOf<Int?>(null) }
+                    LaunchedEffect(scrollAwayTo) { scrollAwayTo?.let { gridState.scrollToItem(it) } }
+                    dragScrollAway = { scrollAwayTo = 5 }
+                    // A background settle (the cold similarity pass completing) reshapes the grid WITHOUT a
+                    // toolbar switch - so captureTop never runs and the held anchor stays p60.
+                    landSettle = { groups = similarityGroups }
+                    GridScreen(
+                        state = GridUiState(
+                            photos = photos,
+                            groups = groups,
+                            scope = CategoryScope.AllPhotos,
+                            groupingMode = mode,
+                            focusedIndex = -1,
+                        ),
+                        initialScrollIndex = 0,
+                        retainedGridState = gridState,
+                        anchorInitialScroll = false, // already open: the retained scroll owns the position
+                        scrollbarInteraction = source,
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onSelectCategory = { _, _ -> },
+                        onCreateCategory = {},
+                        onRenameCategory = { _, _ -> },
+                        onDeleteCategory = {},
+                        onBack = null,
+                        onSetFocusedIndex = {},
+                        onToggleMembershipAtFocus = {},
+                        onToggleCustomCategoryAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        onFirstVisibleItemChanged = { reportedTopFlat = it },
+                        imageLoader = noOpImageLoader,
+                        onSelectGroupingMode = { m ->
+                            mode = m
+                            groups = if (m == GroupingMode.Time) timeGroups else photos.map(PhotoGroup::Single)
+                        },
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        assertTrue("retained scroll starts parked on ~p60", reportedTopFlat in 56..64)
+
+        // Establish the identity anchor on p60 the real way: a toolbar lens switch captures the live top
+        // (p60) and re-pins to it. After this the held anchor is p60.
+        rule.onNodeWithContentDescription("Bursts").performClick()
+        rule.waitForIdle()
+
+        // The user grabs the scrollbar (DragInteraction.Start) and drags up to the top of the list.
+        rule.runOnIdle { scrollbarSource.tryEmit(DragInteraction.Start()) }
+        rule.runOnIdle { dragScrollAway() }
+        rule.waitForIdle()
+        assertTrue("the scrollbar drag moved the viewport up the list", reportedTopFlat < 30)
+
+        // The settle lands while the drag is in progress. The re-pin must stand down: the viewport stays
+        // where the user dragged, NOT yanked back down to p60's burst (~tile 53) the way it would without
+        // the scrollbar's DragInteraction releasing the re-pin.
+        rule.runOnIdle { landSettle() }
+        rule.waitForIdle()
+        assertTrue(
+            "a settle during a scrollbar drag yanked the viewport back to the anchor (top flat $reportedTopFlat)",
+            reportedTopFlat < 30,
         )
     }
 

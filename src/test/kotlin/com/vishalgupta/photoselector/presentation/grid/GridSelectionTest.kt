@@ -160,6 +160,32 @@ class GridSelectionTest {
     }
 
     @Test
+    fun setLastViewed_reseatsAnExistingRingOntoThatPhoto() = runBlocking {
+        // Off keeps one tile per photo, so a tile index equals a photo index here.
+        val vm = viewModel(FakeCategoriesRepository(categories), initialGroupingMode = GroupingMode.Off)
+        vm.awaitPhotos()
+        vm.setFocusedIndex(1) // a ring is showing at tile 1
+
+        vm.setLastViewed(photos[4].id) // returned from the viewer on p4
+
+        assertEquals("the ring follows the mouse-driven open to p4", 4, vm.state.value.focusedIndex)
+        assertEquals(photos[4].id, vm.state.value.lastViewedPhotoId)
+        vm.onClear()
+    }
+
+    @Test
+    fun setLastViewed_doesNotSpawnARingForAPureMouseUser() = runBlocking {
+        val vm = viewModel(FakeCategoriesRepository(categories), initialGroupingMode = GroupingMode.Off)
+        vm.awaitPhotos() // no ring: focusedIndex stays at its -1 default
+
+        vm.setLastViewed(photos[4].id)
+
+        assertEquals("no ring present, so none is spawned", -1, vm.state.value.focusedIndex)
+        assertEquals("the underline marker still moves", photos[4].id, vm.state.value.lastViewedPhotoId)
+        vm.onClear()
+    }
+
+    @Test
     fun shiftClick_selectsContiguousRunFromAnchor() = runBlocking {
         val vm = viewModel(FakeCategoriesRepository(categories))
         vm.awaitPhotos()

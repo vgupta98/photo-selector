@@ -48,7 +48,16 @@ fun App(container: AppContainer) {
                     // retained scroll. Latched per visit (remember) so it can't flip mid-visit once the
                     // getOrPut below inserts the key. A cold first visit re-anchors to initialScrollIndex.
                     val anchorInitialScroll = remember { retentionKey !in gridScrollStates }
-                    val gridState = remember { gridScrollStates.getOrPut(retentionKey) { LazyGridState() } }
+                    // Seed a cold first visit's scroll at the restored FLAT index (tile == flat while the
+                    // grid is still ungrouped singles, which is exactly the loading state) rather than at 0
+                    // and chasing it: that closes the window where the grid sits at 0 and persists 0 before
+                    // the re-pin runs, wiping the saved resume point. The grid re-pins by identity once
+                    // bursts form. A warm return reuses the already-correct retained state untouched.
+                    val gridState = remember {
+                        gridScrollStates.getOrPut(retentionKey) {
+                            LazyGridState(firstVisibleItemIndex = s.initialScrollIndex.coerceAtLeast(0))
+                        }
+                    }
                     val vm = remember {
                         container.gridViewModel(s.root, s.scope, s.lastViewedPhotoId)
                     }
