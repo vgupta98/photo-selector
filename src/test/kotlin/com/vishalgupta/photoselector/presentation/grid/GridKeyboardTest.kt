@@ -1,5 +1,7 @@
 package com.vishalgupta.photoselector.presentation.grid
 
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -936,6 +938,111 @@ class GridKeyboardTest {
         assertTrue(
             "cycling the lenses drifted the viewport (top flat $reportedTopFlat) off the start photo",
             reportedTopFlat in 56..64,
+        )
+    }
+
+    // --- A scrollbar drag DURING a settle must win, not get re-pinned away -------------------------
+    // A scrollbar drag reaches the grid through the scrollable, NOT the Column's pointer modifier, so it
+    // emits no PointerEventType.Scroll - the only signal that the user grabbed the scrollbar is the
+    // scrollbar's own DragInteraction. If a grouping settle (the cold similarity pass completing) lands
+    // while the user is mid-drag, the re-pin must stand down and leave them where they dragged - the gap
+    // that used to yank a scrollbar-drag-during-settle back to the anchor. A real thin-scrollbar drag
+    // isn't hittable headlessly, so this drives that interaction source directly and asserts the drag holds.
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun scrollbarDragDuringSettle_keepsTheUsersScrollInsteadOfRepinning() {
+        val photos = (0 until 100).map { photoNamed("p$it") }
+        // Two settle arrangements that both absorb p60 into a burst, so a live re-pin (anchor = p60)
+        // would pull the viewport back toward p60's tile if it ever fired.
+        val timeGroups: List<PhotoGroup> = buildList {
+            addAll(photos.subList(0, 55).map(PhotoGroup::Single))
+            add(PhotoGroup.Burst(photos.subList(55, 65)))
+            addAll(photos.subList(65, 100).map(PhotoGroup::Single))
+        }
+        val similarityGroups: List<PhotoGroup> = buildList {
+            addAll(photos.subList(0, 53).map(PhotoGroup::Single))
+            add(PhotoGroup.Burst(photos.subList(53, 63)))
+            addAll(photos.subList(63, 100).map(PhotoGroup::Single))
+        }
+        lateinit var scrollbarSource: MutableInteractionSource
+        lateinit var dragScrollAway: () -> Unit
+        lateinit var landSettle: () -> Unit
+        var reportedTopFlat = -1
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    // Open in Off (flat singles), parked at p60 - tile 60 == flat 60 here.
+                    val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = 60)
+                    val source = remember { MutableInteractionSource() }
+                    scrollbarSource = source
+                    var groups by remember { mutableStateOf<List<PhotoGroup>>(photos.map(PhotoGroup::Single)) }
+                    var mode by remember { mutableStateOf(GroupingMode.Off) }
+                    // A programmatic scroll stands in for where the user's scrollbar drag LANDS; the drag
+                    // INTENT is the DragInteraction emitted separately. Like a real scrollToItem it emits
+                    // no user-scroll signal of its own - so only the scrollbar wiring can mark user-owned.
+                    var scrollAwayTo by remember { mutableStateOf<Int?>(null) }
+                    LaunchedEffect(scrollAwayTo) { scrollAwayTo?.let { gridState.scrollToItem(it) } }
+                    dragScrollAway = { scrollAwayTo = 5 }
+                    // A background settle (the cold similarity pass completing) reshapes the grid WITHOUT a
+                    // toolbar switch - so captureTop never runs and the held anchor stays p60.
+                    landSettle = { groups = similarityGroups }
+                    GridScreen(
+                        state = GridUiState(
+                            photos = photos,
+                            groups = groups,
+                            scope = CategoryScope.AllPhotos,
+                            groupingMode = mode,
+                            focusedIndex = -1,
+                        ),
+                        initialScrollIndex = 0,
+                        retainedGridState = gridState,
+                        anchorInitialScroll = false, // already open: the retained scroll owns the position
+                        scrollbarInteraction = source,
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onSelectCategory = { _, _ -> },
+                        onCreateCategory = {},
+                        onRenameCategory = { _, _ -> },
+                        onDeleteCategory = {},
+                        onBack = null,
+                        onSetFocusedIndex = {},
+                        onToggleMembershipAtFocus = {},
+                        onToggleCustomCategoryAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        onFirstVisibleItemChanged = { reportedTopFlat = it },
+                        imageLoader = noOpImageLoader,
+                        onSelectGroupingMode = { m ->
+                            mode = m
+                            groups = if (m == GroupingMode.Time) timeGroups else photos.map(PhotoGroup::Single)
+                        },
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        assertTrue("retained scroll starts parked on ~p60", reportedTopFlat in 56..64)
+
+        // Establish the identity anchor on p60 the real way: a toolbar lens switch captures the live top
+        // (p60) and re-pins to it. After this the held anchor is p60.
+        rule.onNodeWithContentDescription("Bursts").performClick()
+        rule.waitForIdle()
+
+        // The user grabs the scrollbar (DragInteraction.Start) and drags up to the top of the list.
+        rule.runOnIdle { scrollbarSource.tryEmit(DragInteraction.Start()) }
+        rule.runOnIdle { dragScrollAway() }
+        rule.waitForIdle()
+        assertTrue("the scrollbar drag moved the viewport up the list", reportedTopFlat < 30)
+
+        // The settle lands while the drag is in progress. The re-pin must stand down: the viewport stays
+        // where the user dragged, NOT yanked back down to p60's burst (~tile 53) the way it would without
+        // the scrollbar's DragInteraction releasing the re-pin.
+        rule.runOnIdle { landSettle() }
+        rule.waitForIdle()
+        assertTrue(
+            "a settle during a scrollbar drag yanked the viewport back to the anchor (top flat $reportedTopFlat)",
+            reportedTopFlat < 30,
         )
     }
 

@@ -219,6 +219,9 @@ fun GridScreen(
     onCopySelection: (ConflictPolicy) -> Unit = {},
     onCompareSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit = { _, _ -> },
     onSelectionTooLargeToCompare: () -> Unit = {},
+    // The scrollbar's drag interactions, hoisted so a test can drive a scrollbar-drag-during-settle
+    // (emit DragInteraction.Start) without a real thin-scrollbar gesture; production uses the default.
+    scrollbarInteraction: MutableInteractionSource = remember { MutableInteractionSource() },
     modifier: Modifier = Modifier,
 ) {
     // The collapsed grouping. The view model populates [GridUiState.groups] (singles, then bursts
@@ -352,7 +355,6 @@ fun GridScreen(
     // below, so observe the scrollbar's own drag interactions to release the re-pin too (the gap that
     // used to let a scrollbar-drag-during-settle get yanked back). Distinct from gridState.isScrollInProgress,
     // which a programmatic re-pin also trips - this fires only on a real user drag.
-    val scrollbarInteraction = remember { MutableInteractionSource() }
     LaunchedEffect(scrollbarInteraction) {
         scrollbarInteraction.interactions.collect { if (it is DragInteraction.Start) anchor.onUserScroll() }
     }
