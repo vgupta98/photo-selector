@@ -4,6 +4,7 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoGroup
 import com.vishalgupta.photoselector.domain.model.PhotoId
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -81,5 +82,29 @@ class GridViewportAnchorTest {
         anchor.onUserScroll() // force the re-read branch
         anchor.captureTop(renderItems = emptyList(), tiles = emptyList())
         assertNull(anchor.anchoredPhotoId)
+    }
+
+    @Test fun `onCursorMove takes the viewport over and arms focus-scroll only on a real change`() {
+        val anchor = anchorAt(topIndex = 0, initial = null)
+        // A coerced no-op at a grid edge: the user is still driving, but nothing should arm the scroll.
+        anchor.onCursorMove(focusChanged = false)
+        assertTrue("any arrow counts as the user taking the viewport over", anchor.userOwned)
+        assertTrue("a no-op edge move must not arm the focus scroll", !anchor.pendingFocusScroll)
+        // An actual move arms focus-into-view.
+        anchor.onCursorMove(focusChanged = true)
+        assertTrue("an actual cursor move arms the focus-into-view scroll", anchor.pendingFocusScroll)
+    }
+
+    @Test fun `scrollFocusIntoView stays inert until a cursor move arms it`() = runBlocking {
+        val anchor = anchorAt(topIndex = 0, initial = null)
+        // Unarmed - this is the reshape case (focus re-anchored to a new index without a user move): it
+        // must NOT consume or scroll, leaving the re-pin as the sole viewport owner.
+        anchor.scrollFocusIntoView(renderItems, focusedIndex = 3)
+        assertTrue("an unarmed focus change does nothing", !anchor.pendingFocusScroll)
+        // Armed but focus unset: it consumes the flag and returns before addressing the grid (so a real
+        // scroll, which needs a live layout, is never attempted here).
+        anchor.onCursorMove(focusChanged = true)
+        anchor.scrollFocusIntoView(renderItems, focusedIndex = -1)
+        assertTrue("the pending flag is consumed even when focus is unset", !anchor.pendingFocusScroll)
     }
 }

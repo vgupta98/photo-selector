@@ -303,34 +303,6 @@ fun GridScreen(
         }
     }
 
-    // The focus-into-view scroll must react only to a genuine *user cursor move*, never to the screen
-    // mounting, a warm return, or a grouping reshape. Focus is moved by exactly one thing - the arrow
-    // keys (GridViewModel.refocus moves it on a reshape too, but that is not user intent) - so a key
-    // move arms [pendingFocusScroll] and the effect scrolls only when it is set. That is what keeps the
-    // focus effect from fighting the re-pin effect below: a reshape re-anchors focus to the same photo's
-    // new index, changing focusedIndex *without* arming the flag, so the re-pin alone owns the viewport
-    // and the two never race (the intermittent-jump bug). A bare index key - or even the photo identity,
-    // which still shifts when a focused single is absorbed into a burst - would fire here on that
-    // reshape; the explicit user-intent flag is the only signal that cleanly excludes it.
-    var pendingFocusScroll by remember { mutableStateOf(false) }
-    LaunchedEffect(state.focusedIndex) {
-        if (!pendingFocusScroll) return@LaunchedEffect
-        pendingFocusScroll = false
-        val idx = state.focusedIndex
-        if (idx < 0) return@LaunchedEffect
-        // focusedIndex is a TILE index; the LazyGrid (visibleItemsInfo.index, animateScrollToItem)
-        // speaks RENDER-ITEM space, which gains header/footer rows when a burst is open - so convert
-        // before addressing it, or we'd mis-detect visibility and scroll to the wrong row.
-        val renderIdx = renderIndexForTile(renderItems, idx) ?: return@LaunchedEffect
-        val layout = gridState.layoutInfo
-        val item = layout.visibleItemsInfo.firstOrNull { it.index == renderIdx }
-        val isFullyVisible = item != null &&
-            item.offset.y >= layout.viewportStartOffset &&
-            item.offset.y + item.size.height <= layout.viewportEndOffset
-        if (!isFullyVisible) {
-            gridState.animateScrollToItem(renderIdx)
-        }
-    }
     // The viewport re-pin across a grouping reshape - the cold settle and a lens switch - lives in one
     // holder (see [GridViewportAnchor]). It keeps the viewport on one photo by IDENTITY, re-read from the
     // live top only when the user has actually scrolled (re-deriving it every reshape degrades a collapsed
@@ -343,12 +315,11 @@ fun GridScreen(
         initialAnchor = if (anchorInitialScroll) state.photos.getOrNull(initialScrollIndex)?.id else null,
         coldFlatFallback = initialScrollIndex.takeIf { anchorInitialScroll },
     )
-    // Moves the keyboard cursor and arms the focus-into-view scroll above - but only on an actual change,
-    // so a coerced no-op at a grid edge can't leave the flag armed to fire on a later reshape. An arrow
-    // also counts as the user taking over the viewport, so it releases the re-pin.
+    // Moves the keyboard cursor: tells the anchor the user took the viewport over (releases the re-pin) and,
+    // on an actual change, arms the focus-into-view scroll. The no-op-at-edge guard lives here because the
+    // change is relative to the current focus; the holder owns the flag and the scroll itself.
     val moveFocus: (Int) -> Unit = { target ->
-        if (target != state.focusedIndex) pendingFocusScroll = true
-        anchor.onUserScroll()
+        anchor.onCursorMove(focusChanged = target != state.focusedIndex)
         onSetFocusedIndex(target)
     }
     // A scrollbar drag reaches [gridState] through the scrollable, NOT the Column's pointer modifier
@@ -375,6 +346,14 @@ fun GridScreen(
     // focus effect and the LazyGrid's own key retention.
     LaunchedEffect(baseGroups) {
         anchor.repin(renderItems, tiles, tileFlatStart)
+    }
+
+    // Bring the focused tile on-screen after a real cursor move. Keyed on the tile index, but the holder
+    // only scrolls when an arrow armed it (see [GridViewportAnchor.onCursorMove]) - so the screen mount, a
+    // warm return, and a reshape's identity re-anchor all change focusedIndex without scrolling here, and
+    // this never fights the re-pin above.
+    LaunchedEffect(state.focusedIndex) {
+        anchor.scrollFocusIntoView(renderItems, state.focusedIndex)
     }
 
     // A toolbar lens switch reshapes the whole grid: capture the photo at the live top before the reshape,
