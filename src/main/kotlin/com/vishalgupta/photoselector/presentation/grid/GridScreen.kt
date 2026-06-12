@@ -6,6 +6,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -326,40 +328,34 @@ fun GridScreen(
             gridState.animateScrollToItem(renderIdx)
         }
     }
-    // The user has taken the viewport over - a scroll gesture (onPointerEvent below) or an arrow move.
-    // A still-pending re-pin then stands down and leaves the user where they are, rather than snapping
-    // back to the anchor mid-settle. Reset to false at each lens switch, which re-captures the anchor
-    // from the fresh top. MUST come from a real gesture/arrow, never inferred from the index moving:
-    // collapsing many singles into fewer tiles shifts firstVisibleItemIndex with no user input at all.
-    var userScrolled by remember { mutableStateOf(false) }
-    // Moves the keyboard cursor and arms the focus-into-view scroll above - but only on an actual
-    // change, so a coerced no-op at a grid edge can't leave the flag armed to fire on a later reshape.
-    // An arrow also counts as the user taking over the viewport, so it releases the re-pin.
+    // The viewport re-pin across a grouping reshape - the cold settle and a lens switch - lives in one
+    // holder (see [GridViewportAnchor]). It keeps the viewport on one photo by IDENTITY, re-read from the
+    // live top only when the user has actually scrolled (re-deriving it every reshape degrades a collapsed
+    // burst to its first frame and walks the viewport upward across switches). Cold seed: the returned
+    // photo's id *if the photos are already loaded* - on a real cold launch they arrive after mount, so
+    // this is null and [coldFlatFallback] (the flat index) carries the restore until an identity anchor
+    // exists; on a warm return both are null so the retained pixel position is left untouched.
+    val anchor = rememberGridViewportAnchor(
+        gridState = gridState,
+        initialAnchor = if (anchorInitialScroll) state.photos.getOrNull(initialScrollIndex)?.id else null,
+        coldFlatFallback = initialScrollIndex.takeIf { anchorInitialScroll },
+    )
+    // Moves the keyboard cursor and arms the focus-into-view scroll above - but only on an actual change,
+    // so a coerced no-op at a grid edge can't leave the flag armed to fire on a later reshape. An arrow
+    // also counts as the user taking over the viewport, so it releases the re-pin.
     val moveFocus: (Int) -> Unit = { target ->
         if (target != state.focusedIndex) pendingFocusScroll = true
-        userScrolled = true
+        anchor.onUserScroll()
         onSetFocusedIndex(target)
     }
-
-    // The viewport top, held by photo IDENTITY rather than by index. A grouping reshape renumbers the
-    // tile space, so a retained index would point at a *different* photo (the "jumps to a random spot"
-    // bug); the photo id is stable across every reshape, so re-finding it after a reshape holds the
-    // viewport still. Seeded from the returned [initialScrollIndex] on a cold first visit *if the photos
-    // are already loaded* - on a real cold launch they arrive after mount, so this seed is null and the
-    // re-pin above falls back to the flat [initialScrollIndex] instead. Left null on a warm return, where
-    // the retained [gridState] already holds the exact pixel position. Read only inside effects, so writing it never recomposes the
-    // grid. CRITICALLY, it is NOT re-derived from the live viewport on every scroll: a collapsed burst
-    // reports only its first frame, so doing that would degrade a precise anchor to a burst's first
-    // frame and the viewport would walk upward across repeated lens switches (Off->Time->Similarity->Off
-    // sliding off the photo you started on). It is set in exactly two places: the cold seed here, and
-    // the lens-switch capture below (which re-reads the top only when the user has actually scrolled).
-    var anchorPhotoId by remember {
-        mutableStateOf(if (anchorInitialScroll) state.photos.getOrNull(initialScrollIndex)?.id else null)
+    // A scrollbar drag reaches [gridState] through the scrollable, NOT the Column's pointer modifier
+    // below, so observe the scrollbar's own drag interactions to release the re-pin too (the gap that
+    // used to let a scrollbar-drag-during-settle get yanked back). Distinct from gridState.isScrollInProgress,
+    // which a programmatic re-pin also trips - this fires only on a real user drag.
+    val scrollbarInteraction = remember { MutableInteractionSource() }
+    LaunchedEffect(scrollbarInteraction) {
+        scrollbarInteraction.interactions.collect { if (it is DragInteraction.Start) anchor.onUserScroll() }
     }
-    // Armed whenever a reshape should re-pin the anchor: a cold first visit (pin the returned photo as
-    // grouping settles) and every lens switch. A warm return leaves it false, so the mount run is a
-    // no-op and an unrelated re-slice never yanks the retained scroll.
-    var reanchorArmed by remember { mutableStateOf(anchorInitialScroll) }
 
     // Persisted scroll position is a FLAT photo index - the 50k-photo resume point, written on every
     // scroll. The subscription is start-once (gridState is stable), but renderItems / tileFlatStart
@@ -372,53 +368,20 @@ fun GridScreen(
             .collect { index -> onFirstVisibleItemChanged(flatIndexForRenderItem(latestRenderItems, latestTileFlatStart, index)) }
     }
 
-    // Keep the viewport pinned to [anchorPhotoId] across a grouping RESHAPE - the cold settle (singles
-    // emitted first, bursts collapsed a frame later) and a toolbar lens switch. A reshape renumbers the
-    // tile space, so the retained render-item index now addresses a *different* photo and the grid
-    // appears to jump; re-finding the anchor photo by identity and scrolling to its new tile holds the
-    // viewport still. Gated on [reanchorArmed] (so a warm return / unrelated re-slice never yanks the
-    // scroll) and released by [userScrolled] (so a scroll during the long cold Similarity settle hands
-    // the viewport to the user). Keyed on the collapsed grouping (not the display tiles) so merely
-    // expanding a burst doesn't yank the scroll - that case is handled by the focus effect and the
-    // LazyGrid's own key retention. Resolves through renderIndexForTile, so it stays correct even with
-    // a burst expanded, and the "already at the target" guard preserves the retained pixel offset.
+    // Re-pin the viewport to the anchor across a grouping reshape. Keyed on the collapsed grouping (not the
+    // display tiles) so merely expanding a burst doesn't yank the scroll - that case is handled by the
+    // focus effect and the LazyGrid's own key retention.
     LaunchedEffect(baseGroups) {
-        if (!reanchorArmed || userScrolled) return@LaunchedEffect
-        // The tile to pin: the identity anchor when we have one, else - on a COLD start only - the
-        // returned FLAT [initialScrollIndex]. On a real cold launch the photos load *after* mount, so the
-        // identity seed below was computed over an empty list and is null; without this flat fallback the
-        // grid would sit at index 0 and the snapshotFlow above would then PERSIST 0, wiping the saved
-        // resume position (the host's retained LazyGridState starts at 0, so the re-pin is the *only*
-        // thing that applies the restored index). Once an anchor exists it wins - a burst makes the
-        // flat->tile mapping diverge, and the anchor names the exact photo.
-        val tile = anchorPhotoId
-            ?.let { id -> tiles.indexOfFirst { group -> group.photos.any { it.id == id } }.takeIf { it >= 0 } }
-            ?: initialScrollIndex.takeIf { anchorInitialScroll }?.let { tileIndexForFlat(tileFlatStart, it) }
-            ?: return@LaunchedEffect
-        val target = renderIndexForTile(renderItems, tile) ?: return@LaunchedEffect
-        if (gridState.firstVisibleItemIndex != target) gridState.scrollToItem(target)
+        anchor.repin(renderItems, tiles, tileFlatStart)
     }
 
-    // A toolbar lens switch reshapes the whole grid. Re-capture the anchor from the live viewport top
-    // ONLY when the user has actually scrolled since it was last set (or there is none yet); otherwise
-    // KEEP the held anchor untouched. This is what stops the viewport from walking across repeated
-    // switches: a collapsed burst reports only its first frame, so re-reading the top each switch would
-    // degrade a precise anchor (p60 -> p55 -> p53 ...), and a re-pin that clamps near the list end can
-    // leave the anchor's photo off the top tile entirely - re-capturing from that clamped top is exactly
-    // the Off->Time->Similarity->Off drift. Tying the capture to a real scroll gesture means switch-only
-    // sequences hold one identity from start to finish. Re-arms the re-pin and clears [userScrolled] so
-    // the (possibly long, cold) regroup that follows pins this top until the user scrolls and takes over.
-    // Remembered (not a bare lambda), keyed on the unstable renderItems / tiles it reads plus the wrapped
-    // callback, so the toolbar keeps skipping through the hot path - exactly like [openTile].
+    // A toolbar lens switch reshapes the whole grid: capture the photo at the live top before the reshape,
+    // then re-pin to it after. Remembered (not a bare lambda), keyed on the unstable renderItems / tiles it
+    // reads plus the wrapped callback, so the toolbar keeps skipping through the hot path - like [openTile].
     val onSelectGroupingModeAnchored: (GroupingMode) -> Unit =
         remember(renderItems, tiles, onSelectGroupingMode) {
             { mode ->
-                if (userScrolled || anchorPhotoId == null) {
-                    anchorPhotoId = tileDisplayIndexForRenderItem(renderItems, gridState.firstVisibleItemIndex)
-                        ?.let { tiles.getOrNull(it) }?.photos?.firstOrNull()?.id
-                }
-                userScrolled = false
-                reanchorArmed = true
+                anchor.captureTop(renderItems, tiles)
                 onSelectGroupingMode(mode)
             }
         }
@@ -428,10 +391,11 @@ fun GridScreen(
             .fillMaxSize()
             .focusRequester(focusRequester)
             .focusable()
-            // A two-finger / wheel scroll (the app's scroll gestures) releases the re-pin above: a
-            // programmatic scroll or a grouping reshape doesn't emit this, so neither is mistaken for
-            // the user taking over. Scrollbar drags reach the grid through the scrollable, not here.
-            .onPointerEvent(PointerEventType.Scroll) { userScrolled = true }
+            // A two-finger / wheel scroll (the app's scroll gestures) releases the re-pin: a programmatic
+            // scroll or a grouping reshape doesn't emit this, so neither is mistaken for the user taking
+            // over. (Scrollbar drags reach the grid through the scrollable, not here - those are caught via
+            // the scrollbar's interactionSource above.)
+            .onPointerEvent(PointerEventType.Scroll) { anchor.onUserScroll() }
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) {
                     // A tile's `Modifier.clickable` activates on the Enter / Space KEY-UP, and a mouse
@@ -668,6 +632,7 @@ fun GridScreen(
                 }
                 VerticalScrollbar(
                     adapter = rememberScrollbarAdapter(gridState),
+                    interactionSource = scrollbarInteraction,
                     modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().padding(end = AppTheme.spacing.xs),
                     style = ScrollbarStyle(
                         minimalHeight = AppTheme.dimens.scrollbarMinHeight,
