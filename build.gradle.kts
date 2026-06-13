@@ -95,6 +95,7 @@ compose.desktop {
                 bundleID = "com.vishalgupta.photoselector"
                 dockName = "Photo Selector"
                 appCategory = "public.app-category.photography"
+                iconFile.set(project.file("src/main/resources/icon/AppIcon.icns"))
             }
         }
     }

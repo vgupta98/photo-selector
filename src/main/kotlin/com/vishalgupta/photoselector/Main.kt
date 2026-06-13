@@ -3,6 +3,7 @@ package com.vishalgupta.photoselector
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyShortcut
 import androidx.compose.ui.unit.dp
@@ -20,6 +21,7 @@ fun main() = application {
         onCloseRequest = ::exitApplication,
         title = "Photo Selector",
         state = windowState,
+        icon = painterResource("icon/app-icon.png"),
     ) {
         val photoPath by container.currentPhotoPath.collectAsState()
         val actions = container.systemActions
