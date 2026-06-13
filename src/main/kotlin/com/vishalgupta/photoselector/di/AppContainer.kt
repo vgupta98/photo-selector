@@ -131,6 +131,11 @@ class AppContainer {
         DownscaleGrayEmbeddingModel()
     }
 
+    // Embedding and sharpness decode separately, at different sizes, on purpose — don't merge them
+    // into one 768 decode to save the second pass. OnnxEmbeddingModel squashes its input to 224 with
+    // a cheap 2-tap bilinear, so feeding it a 768 image would alias on that 768->224 step and degrade
+    // the embedding; decoding embedding straight to 224 lets the decoder do a high-quality downscale.
+    // Sharpness needs the opposite (a larger canonical canvas) — see decodeForSharpness.
     private suspend fun decodeForEmbedding(photo: Photo): DecodedImage? = try {
         formatRegistry.decoderFor(photo.absolutePath)?.decode(photo.absolutePath, EMBEDDING_EDGE_PX)
     } catch (_: Throwable) {
@@ -138,9 +143,8 @@ class AppContainer {
     }
 
     private suspend fun decodeForSharpness(photo: Photo): DecodedImage? = try {
-        // Decode caps large frames at SHARPNESS_EDGE_PX; scaleUpToLongEdge brings smaller frames up
-        // to it too, so every frame of a cluster is scored on the same canonical canvas and a
-        // low-resolution copy can't win the suggested-sharpest pick on pixel-grid steepness alone.
+        // decode caps large frames at SHARPNESS_EDGE_PX; scaleUpToLongEdge brings smaller ones up to
+        // it, so every frame is scored on one canonical canvas (rationale in scaleUpToLongEdge's kdoc).
         formatRegistry.decoderFor(photo.absolutePath)
             ?.decode(photo.absolutePath, SHARPNESS_EDGE_PX)
             ?.let { SkiaImageDecoding.scaleUpToLongEdge(it, SHARPNESS_EDGE_PX) }

@@ -87,21 +87,20 @@ class SimilarityPhotoGrouperTest {
         )
     }
 
-    @Test fun `a failed sharpness decode falls back to the embedding image`() = runBlocking {
+    @Test fun `a failed sharpness decode leaves the frame unassessable, scoring zero`() = runBlocking {
         val dir = Files.createTempDirectory("sharpness-fallback-test").also { it.toFile().deleteOnExit() }
         val cache = EmbeddingCache(dir, modelId = "fake-v1")
         val p = photo("A")
-        // High-res decode unavailable; the embedding image (a checker) must still yield a real score.
+        // No sharpness decode: the frame must NOT be scored on the embedding's smaller canvas (that
+        // would be incomparable with siblings scored at the canonical size). Unassessable -> 0, so it
+        // simply can't win the key-frame pick. The embedding still succeeds from its own decode.
         val embedDecode: suspend (Photo) -> DecodedImage? = { ImageFixtures.checker(16, 16) }
         val sharpDecode: suspend (Photo) -> DecodedImage? = { null }
         val model = FakeEmbeddingModel(id = "fake-v1") { unit(1f, 0f) }
         val extractor = PhotoFeatureExtractor(model, cache, embedDecode, sharpDecode)
 
         val features = assertNotNull(extractor.featuresFor(p))
-        assertTrue(
-            features.sharpness > 0f,
-            "with no high-res decode, sharpness falls back to the embedding image rather than dropping to zero",
-        )
+        assertEquals(0f, features.sharpness, "an unscorable frame is unassessable (0), not scored on a smaller canvas")
     }
 
     private fun unit(vararg xs: Float): FloatArray {

@@ -24,9 +24,10 @@ import com.vishalgupta.photoselector.domain.model.Photo
  * [decodeForEmbedding] returning null means the photo can't be decoded at all (unsupported format, a
  * read error): it has no features and
  * [com.vishalgupta.photoselector.domain.grouping.SimilarityGrouper] leaves it ungrouped rather than
- * guessing. [decodeForSharpness] returning null is softer — the high-res decode failed but the frame
- * is otherwise fine — so it falls back to the embedding image, yielding a weaker (224px) score
- * instead of dropping the frame out of the sharpness map.
+ * guessing. [decodeForSharpness] returning null is softer — the frame embeds fine but its sharpness
+ * is unassessable — so sharpness is left at 0 (the frame just won't be suggested as the cluster's
+ * sharpest) rather than scoring the smaller embedding image, whose non-canonical canvas wouldn't be
+ * comparable with the siblings scored at the canonical size.
  */
 class PhotoFeatureExtractor(
     private val model: EmbeddingModel,
@@ -37,10 +38,13 @@ class PhotoFeatureExtractor(
     suspend fun featuresFor(photo: Photo): PhotoFeatures? {
         cache.get(photo)?.let { return it }
         val embedImage = decodeForEmbedding(photo) ?: return null
-        val sharpnessImage = decodeForSharpness(photo) ?: embedImage
+        // A failed sharpness decode leaves the frame unassessable (0), NOT scored on the 224px
+        // embedding image: that smaller canvas isn't comparable with siblings scored at the canonical
+        // size, so a fallback score there could spuriously win or lose the key-frame pick.
+        val sharpness = decodeForSharpness(photo)?.let { SharpnessScorer.score(it) } ?: 0f
         val features = PhotoFeatures(
             embedding = model.embed(embedImage),
-            sharpness = SharpnessScorer.score(sharpnessImage),
+            sharpness = sharpness,
         )
         cache.put(photo, features)
         return features
