@@ -19,6 +19,7 @@ import com.vishalgupta.photoselector.data.format.ExifCaptureMetadataSource
 import com.vishalgupta.photoselector.data.format.HeicDecoder
 import com.vishalgupta.photoselector.data.format.JpegDecoder
 import com.vishalgupta.photoselector.data.format.PngDecoder
+import com.vishalgupta.photoselector.data.format.RawDecoder
 import com.vishalgupta.photoselector.data.image.DiskThumbnailCache
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.data.image.SkikoImageLoader
@@ -78,12 +79,14 @@ class AppContainer {
     val folderJob: Job get() = _folderJob
 
     private val formatRegistry: PhotoFormatRegistry = DefaultPhotoFormatRegistry(
-        // HEIC is macOS-only for now (ImageIO bridge); off macOS it's simply unregistered, so
-        // .heic/.heif files fall through the scanner rather than registering a throwing decoder.
+        // HEIC and RAW are macOS-only for now (both ride the ImageIO bridge); off macOS they're
+        // simply unregistered, so those files fall through the scanner rather than registering a
+        // throwing decoder.
         decoders = buildList {
             add(JpegDecoder())
             add(PngDecoder())
             if (HeicDecoder.isSupportedOnThisPlatform()) add(HeicDecoder())
+            if (RawDecoder.isSupportedOnThisPlatform()) add(RawDecoder())
         },
     )
 

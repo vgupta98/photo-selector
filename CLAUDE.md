@@ -32,7 +32,8 @@ Clean architecture, single Gradle module, package
   the suggested-sharpest for a similarity cluster.
 - `data/` — repository implementations: `filesystem/`, `categories/`,
   `image/` (decoding), `format/` (per-format `PhotoDecoder`s; `macos/`
-  holds the JNA→ImageIO bridge for HEIC; `ExifReader` also backs
+  holds the JNA→ImageIO bridge that backs both `HeicDecoder` and
+  `RawDecoder` — see **Known gotchas**; `ExifReader` also backs
   `ExifCaptureMetadataSource` — capture time + camera for burst grouping,
   memoized per session by `CachingCaptureMetadataSource`), `ai/` (on-device
   visual-similarity grouping: the `EmbeddingModel` seam — the learned
@@ -222,6 +223,13 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   **only on macOS**, behind the `PhotoDecoder` interface. A future
   Windows build adds its own decoder there — don't reintroduce a search
   for a cross-platform lib without re-checking Maven first.
+- **Camera RAW decodes through the macOS ImageIO bridge (`RawDecoder` →
+  `MacImageIO`), not libraw** — macOS-only, nothing bundled; a bundled native
+  lib was considered and rejected. The one trap, which `MacImageIO` documents:
+  RAW must decode by **file path** (`decodeFileToBgra`), not from a byte buffer
+  like HEIC — handed bytes, Sony ARW returns an empty source and Nikon NEF
+  downgrades to its embedded thumbnail. Don't unify the two paths onto
+  `decodeToBgra`.
 - **Burst grouping reads capture time from JPEG EXIF only, and never
   falls back to mtime.** `ExifReader` is JPEG-only, so HEIC (and any
   EXIF-less file) has no `DateTimeOriginal`. `BurstGrouper` deliberately
