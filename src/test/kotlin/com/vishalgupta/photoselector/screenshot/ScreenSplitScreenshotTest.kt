@@ -410,9 +410,13 @@ class ScreenSplitScreenshotTest {
         // Clicking "Change folder" must not tear the session down on a stray click — it opens
         // a confirm dialog first. Capture the dialog so the guard's copy stays honest (it
         // promises favourites/categories are saved, which they are).
+        // Use the real app window width (1280dp): this test clicks "Change folder", the rightmost
+        // top-bar control. At the cramped 800dp other tests use, the bar overflows under CI's wider
+        // Linux font metrics — the weight(1f) spacer collapses and the button slides off-screen, so
+        // the click misses and no dialog opens. A realistic width keeps the interaction reliable.
         rule.setContent {
             AppTheme {
-                Surface(Modifier.size(800.dp, 600.dp)) {
+                Surface(Modifier.size(1280.dp, 600.dp)) {
                     Grid(
                         state = GridUiState(
                             photos = testPhotos,
@@ -473,6 +477,11 @@ class ScreenSplitScreenshotTest {
             }
         }
         rule.waitForIdle()
+        // The footer legend's F hint is always "Favourite": F files into Favourites in every
+        // scope (GridViewModel.toggleMembershipAtFocus), so it must never claim to toggle the
+        // viewed custom category.
+        rule.onNodeWithText("Favourite").assertIsDisplayed()
+        rule.onNodeWithText("Toggle Selects").assertDoesNotExist()
         rule.onNodeWithContentDescription("Category actions").performClick()
         rule.waitForIdle()
         rule.onNodeWithText("Rename…").assertIsDisplayed()

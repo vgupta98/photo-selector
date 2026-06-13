@@ -653,15 +653,7 @@ fun GridScreen(
         }
 
         if (state.photos.isNotEmpty()) {
-            GridKeyboardLegend(
-                hints = rememberLegendHints(state.scope, currentCategory, onBack != null),
-                // Cull progress only makes sense over the whole library, not inside a finished bucket.
-                status = if (state.scope == CategoryScope.AllPhotos) {
-                    "${state.markedIds.size} favourited"
-                } else {
-                    null
-                },
-            )
+            GridKeyboardLegend(hints = rememberLegendHints(state.scope, onBack != null))
         }
     }
 
@@ -701,24 +693,19 @@ fun GridScreen(
 }
 
 /**
- * The truthful set of grid shortcuts for the current [scope]. `F` toggles membership in the
- * scope's active category (Favourites in All Photos, the viewed category otherwise), and the
- * `1..9` filing keys only do anything from All Photos, so they're only advertised there.
+ * The truthful set of grid shortcuts for the current [scope]. `F` always toggles Favourites
+ * membership (see `GridViewModel.toggleMembershipAtFocus`) — it is the keeper key in every
+ * scope, not a "toggle this category" key — and the `1..9` filing keys only do anything from
+ * All Photos, so they're only advertised there.
  */
 @Composable
 private fun rememberLegendHints(
     scope: CategoryScope,
-    currentCategory: Category?,
     canGoBack: Boolean,
 ): ImmutableList<KeyHint> = buildList {
     add(KeyHint("← → ↑ ↓", "Move"))
     add(KeyHint("↵", "Open"))
-    add(
-        KeyHint(
-            keys = "F",
-            label = if (scope == CategoryScope.AllPhotos) "Favourite" else "Toggle ${currentCategory?.name ?: "category"}",
-        ),
-    )
+    add(KeyHint(keys = "F", label = "Favourite"))
     if (scope == CategoryScope.AllPhotos) add(KeyHint("1–9", "Categories"))
     if (canGoBack) add(KeyHint("Esc", "Back"))
 }.toImmutableList()

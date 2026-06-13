@@ -1,6 +1,8 @@
 package com.vishalgupta.photoselector.presentation.designsystem.molecule
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -33,7 +35,13 @@ fun CategoryMenu(
     // Favourites rides its own button; this menu is the custom categories only, in slot order.
     val customEntries = entries.filter { !it.first.builtIn }
     Box(modifier) {
-        AppOutlinedButton(text = "Categories (${customEntries.size})", onClick = { expanded = true })
+        // The trailing caret signals this opens a menu — distinguishing it from the
+        // visually identical Favourites pill beside it, which navigates rather than drops down.
+        AppOutlinedButton(
+            text = "Categories (${customEntries.size})",
+            onClick = { expanded = true },
+            trailingIcon = Icons.Filled.ArrowDropDown,
+        )
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             customEntries.forEachIndexed { slot, (category, count) ->
                 val prefix = if (slot < 9) "${slot + 1}  " else ""
