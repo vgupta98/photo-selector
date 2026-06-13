@@ -59,17 +59,15 @@ fun App(container: AppContainer) {
                         }
                     }
                     val vm = remember {
-                        container.gridViewModel(s.root, s.scope, s.lastViewedPhotoId).also {
-                            // The deliberate "Show in All Photos" jump seats the keyboard ring on the
-                            // revealed photo so it's unmistakable among thousands (the scroll-into-view
-                            // itself is driven by revealPhotoId below). Done in the remember initializer,
-                            // NOT a post-mount effect: seating focus changes focusedIndex, and doing that
-                            // after the grid mounts re-keys the reveal's reconcile effect and cancels its
-                            // scroll mid-animation. Setting it before the grid first composes sidesteps
-                            // that race. A same-scope resume sets focusRevealedPhoto = false and so leaves
-                            // the (possibly absent) ring alone. Mirrors the last-viewed refresh on retrieval.
-                            if (s.focusRevealedPhoto) it.focusPhoto(s.revealPhotoId)
-                        }
+                        container.gridViewModel(s.root, s.scope, s.lastViewedPhotoId)
+                    }
+                    // The deliberate "Show in All Photos" jump seats the keyboard ring on the revealed
+                    // photo so it's unmistakable among thousands; the scroll-into-view itself is the
+                    // one-shot reveal in GridScreen, which lives in its own Unit-keyed effect, so this
+                    // focusedIndex change can't cancel it. A same-scope resume sets focusRevealedPhoto =
+                    // false and so leaves the (possibly absent) ring alone. Keyed on vm: one-shot per visit.
+                    LaunchedEffect(vm) {
+                        if (s.focusRevealedPhoto) vm.focusPhoto(s.revealPhotoId)
                     }
                     GridScreen(
                         viewModel = vm,
