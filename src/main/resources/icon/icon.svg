@@ -1,48 +1,47 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#5B86F2"/>
-      <stop offset="1" stop-color="#2F54D9"/>
+      <stop offset="0" stop-color="#2B3036"/>
+      <stop offset="1" stop-color="#141619"/>
     </linearGradient>
     <clipPath id="frontClip">
       <rect x="300" y="330" width="424" height="372" rx="34"/>
     </clipPath>
   </defs>
 
-  <!-- All artwork sits inside the Apple icon grid: ~824px squircle centered
-       on a 1024 transparent canvas, leaving the standard ~100px margin. -->
+  <!-- Apple icon grid: ~824px squircle centered on a 1024 transparent canvas -->
   <g transform="translate(512 512) scale(0.805) translate(-512 -512)">
-  <!-- macOS rounded-square background -->
-  <rect x="0" y="0" width="1024" height="1024" rx="228" fill="url(#bg)"/>
+    <!-- charcoal/black background -->
+    <rect x="0" y="0" width="1024" height="1024" rx="228" fill="url(#bg)"/>
 
-  <!-- Stacked photo cards -->
-  <g>
-    <!-- back card -->
-    <g transform="rotate(-13 512 512)">
-      <rect x="318" y="318" width="388" height="340" rx="30" fill="#AFC4FB"/>
-    </g>
-    <!-- middle card -->
-    <g transform="rotate(7 512 512)">
-      <rect x="318" y="330" width="400" height="350" rx="32" fill="#D9E4FE"/>
-    </g>
+    <!-- glyph zoomed in ~18% -->
+    <g transform="translate(512 512) scale(1.18) translate(-512 -512)">
+      <!-- back card -->
+      <g transform="rotate(-13 512 512)">
+        <rect x="318" y="318" width="388" height="340" rx="30" fill="#9B9183"/>
+      </g>
+      <!-- middle card -->
+      <g transform="rotate(7 512 512)">
+        <rect x="318" y="330" width="400" height="350" rx="32" fill="#D9D2C4"/>
+      </g>
 
-    <!-- front card (the chosen photo) -->
-    <rect x="300" y="330" width="424" height="372" rx="34" fill="#FFFFFF"/>
-    <g clip-path="url(#frontClip)">
-      <rect x="300" y="330" width="424" height="372" fill="#EAF2FF"/>
-      <!-- sun -->
-      <circle cx="408" cy="430" r="40" fill="#FFB23E"/>
-      <!-- mountains -->
-      <path d="M300 702 L430 520 L520 612 L610 470 L724 640 L724 702 Z" fill="#3F6BE6"/>
-      <path d="M300 702 L470 560 L600 702 Z" fill="#6E93F2"/>
-    </g>
-  </g>
+      <!-- front card (the chosen photo) -->
+      <rect x="300" y="330" width="424" height="372" rx="34" fill="#FBF8F1"/>
+      <g clip-path="url(#frontClip)">
+        <rect x="300" y="330" width="424" height="372" fill="#F3EEE2"/>
+        <!-- sun -->
+        <circle cx="408" cy="430" r="40" fill="#E7B33C"/>
+        <!-- mountains -->
+        <path d="M300 702 L430 520 L520 612 L610 470 L724 640 L724 702 Z" fill="#2A2E34"/>
+        <path d="M300 702 L470 560 L600 702 Z" fill="#E7B33C"/>
+      </g>
 
-  <!-- Favourite / pick star badge -->
-  <g transform="translate(690 668)">
-    <circle cx="0" cy="0" r="92" fill="#FFFFFF"/>
-    <circle cx="0" cy="0" r="78" fill="#FFB23E"/>
-    <path d="M0 -50 L15.5 -16 L52 -12 L24 13 L32 49 L0 30 L-32 49 L-24 13 L-52 -12 L-15.5 -16 Z" fill="#FFFFFF"/>
-  </g>
+      <!-- Favourite / pick star badge -->
+      <g transform="translate(690 668)">
+        <circle cx="0" cy="0" r="92" fill="#141619"/>
+        <circle cx="0" cy="0" r="78" fill="#E7B33C"/>
+        <path d="M0 -50 L15.5 -16 L52 -12 L24 13 L32 49 L0 30 L-32 49 L-24 13 L-52 -12 L-15.5 -16 Z" fill="#141619"/>
+      </g>
+    </g>
   </g>
 </svg>
