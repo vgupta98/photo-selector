@@ -1,5 +1,6 @@
 package com.vishalgupta.photoselector.data.ai
 
+import com.vishalgupta.photoselector.data.format.SkiaImageDecoding
 import com.vishalgupta.photoselector.testing.ImageFixtures
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -24,5 +25,19 @@ class SharpnessScorerTest {
 
     @Test fun `an image too small to convolve scores zero rather than throwing`() {
         assertEquals(0f, SharpnessScorer.score(ImageFixtures.checker(2, 2)))
+    }
+
+    @Test fun `on a common canvas a detailed frame outscores a low-res copy upscaled to match`() {
+        // The cluster bug: the same shot at two resolutions. Scored at their native sizes the small
+        // one wins (steeper per-pixel edges); scored on a shared canvas the detailed one must win.
+        val target = 64
+        val detailed = SharpnessScorer.score(ImageFixtures.checker(target, target))
+        val lowResUpscaled = SharpnessScorer.score(
+            SkiaImageDecoding.scaleUpToLongEdge(ImageFixtures.checker(4, 4), target),
+        )
+        assertTrue(
+            detailed > lowResUpscaled,
+            "a native ${target}px checker ($detailed) must beat a 4px checker upscaled to $target ($lowResUpscaled)",
+        )
     }
 }

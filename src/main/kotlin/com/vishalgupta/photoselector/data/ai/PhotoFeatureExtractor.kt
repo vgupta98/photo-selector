@@ -13,8 +13,11 @@ import com.vishalgupta.photoselector.domain.model.Photo
  * Sharpness (Laplacian variance) is the opposite: a few-pixel focus/motion blur is sub-pixel once a
  * frame is shrunk to 224, so adjacent burst frames score almost identically there and the "sharpest"
  * pick degrades to noise — hence [decodeForSharpness] decodes at a higher resolution where the blur
- * still registers. Sharing one 224px decode (the original wiring) is exactly what made the suggested
- * key frame look wrong.
+ * still registers. It also normalises every frame onto one fixed canonical canvas (see
+ * `AppContainer`): variance-of-Laplacian is per-pixel, so without that a *lower*-resolution copy of
+ * the same shot scores higher (steeper pixel-grid edges) and wrongly wins the key-frame pick.
+ * Sharing one 224px decode (the original wiring) is exactly what made the suggested key frame look
+ * wrong.
  *
  * Both decodes are injected rather than depending on the whole image stack, so the extractor reuses
  * the existing decode/thumbnail path in production and deterministic synthetic images in tests.

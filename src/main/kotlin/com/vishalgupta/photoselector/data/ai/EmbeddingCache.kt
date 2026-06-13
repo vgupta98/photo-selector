@@ -116,9 +116,10 @@ class EmbeddingCache(
     }
 
     companion object {
-        // v2: sharpness is now scored on a higher-res decode than the embedding (see
-        // PhotoFeatureExtractor), so previously-cached sharpness values are stale and must recompute.
-        const val FORMAT_VERSION = 2
+        // v3: sharpness is scored on a fixed 768px canonical canvas (large frames decoded down,
+        // small frames scaled up), so previously-cached sharpness values are stale and must
+        // recompute. (v2 moved sharpness off the 224px embedding decode onto a higher-res one.)
+        const val FORMAT_VERSION = 3
         const val DEFAULT_MAX_BYTES: Long = 256L * 1024 * 1024
         private const val MAGIC = 0x50534531 // "PSE1"
         private const val FILE_EXTENSION = "emb"

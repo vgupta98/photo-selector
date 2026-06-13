@@ -20,6 +20,7 @@ import com.vishalgupta.photoselector.data.format.HeicDecoder
 import com.vishalgupta.photoselector.data.format.JpegDecoder
 import com.vishalgupta.photoselector.data.format.PngDecoder
 import com.vishalgupta.photoselector.data.format.RawDecoder
+import com.vishalgupta.photoselector.data.format.SkiaImageDecoding
 import com.vishalgupta.photoselector.data.image.DiskThumbnailCache
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.data.image.SkikoImageLoader
@@ -137,7 +138,12 @@ class AppContainer {
     }
 
     private suspend fun decodeForSharpness(photo: Photo): DecodedImage? = try {
-        formatRegistry.decoderFor(photo.absolutePath)?.decode(photo.absolutePath, SHARPNESS_EDGE_PX)
+        // Decode caps large frames at SHARPNESS_EDGE_PX; scaleUpToLongEdge brings smaller frames up
+        // to it too, so every frame of a cluster is scored on the same canonical canvas and a
+        // low-resolution copy can't win the suggested-sharpest pick on pixel-grid steepness alone.
+        formatRegistry.decoderFor(photo.absolutePath)
+            ?.decode(photo.absolutePath, SHARPNESS_EDGE_PX)
+            ?.let { SkiaImageDecoding.scaleUpToLongEdge(it, SHARPNESS_EDGE_PX) }
     } catch (_: Throwable) {
         null
     }
@@ -330,10 +336,11 @@ class AppContainer {
         // input so OnnxEmbeddingModel (and the classical fallback) downscales rather than upscales.
         const val EMBEDDING_EDGE_PX = 224
 
-        // Sharpness is scored on its own, larger decode (see PhotoFeatureExtractor): a few-pixel
-        // focus/motion blur is sub-pixel at 224px, so adjacent burst frames would score the same and
-        // the suggested-sharpest key frame would be noise. 768px keeps that blur measurable while
-        // bounding the one-time cold-pass decode cost.
+        // Canonical canvas every frame's sharpness is scored on (see decodeForSharpness): large
+        // frames are decoded down to it and smaller frames scaled up to it. A few-pixel focus/motion
+        // blur is sub-pixel at 224px (so adjacent frames would tie), and scoring frames at their
+        // differing native sizes lets a low-resolution copy win on pixel-grid steepness — 768px on a
+        // shared canvas avoids both while bounding the one-time cold-pass decode cost.
         const val SHARPNESS_EDGE_PX = 768
     }
 }
