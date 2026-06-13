@@ -106,6 +106,9 @@ fun GridScreen(
     // a root change), so the grid returns with its groups, focus and scroll intact.
     gridState: LazyGridState,
     anchorInitialScroll: Boolean,
+    // A photo to scroll into view on a warm return, regardless of the keyboard ring (resume / "Show in
+    // All Photos"). See [Screen.Grid.revealPhotoId].
+    revealPhotoId: PhotoId? = null,
 ) {
     val state by viewModel.state.collectAsState()
     val coroutineScope = rememberCoroutineScope()
@@ -125,6 +128,7 @@ fun GridScreen(
         initialScrollIndex = initialScrollIndex,
         retainedGridState = gridState,
         anchorInitialScroll = anchorInitialScroll,
+        revealPhotoId = revealPhotoId,
         categoryToast = categoryToast,
         onTileClick = onTileClick,
         onChangeFolder = onChangeFolder,
@@ -188,6 +192,9 @@ fun GridScreen(
     // True only on a cold first visit, where [initialScrollIndex] is re-anchored as grouping settles;
     // false on a warm return, where [retainedGridState] already holds the exact position.
     anchorInitialScroll: Boolean = true,
+    // A photo to scroll into view once on a warm return, regardless of the keyboard ring. See
+    // [Screen.Grid.revealPhotoId]; ignored on a cold visit (initialScrollIndex places the photo there).
+    revealPhotoId: PhotoId? = null,
     onTileClick: (index: Int) -> Unit,
     onChangeFolder: () -> Unit,
     onSelectCategory: (currentScrollIndex: Int, id: CategoryId) -> Unit,
@@ -310,21 +317,15 @@ fun GridScreen(
     // photo's id *if the photos are already loaded* - on a real cold launch they arrive after mount, so
     // this is null and [coldFlatFallback] (the flat index) carries the restore until an identity anchor
     // exists; on a warm return both are null so the retained pixel position is left untouched.
-    // On a warm return from the viewer the view model has re-seated an existing ring onto the photo the
-    // browser left on (GridViewModel.setLastViewed). If that photo is off-screen, resume there: seed the
-    // anchor's focus-into-view so the first reconcile scrolls the ring on-screen. Evaluated once at mount
-    // and gated so it can't fire on a cold first visit, with no ring, or on a stale ring that is NOT on the
-    // last-viewed photo (the warm-return-keeps-scroll case) - only a ring that tracks the returned photo.
-    val resumeFocusIntoView = remember {
-        !anchorInitialScroll &&
-            state.focusedIndex >= 0 &&
-            tiles.getOrNull(state.focusedIndex)?.photos?.any { it.id == state.lastViewedPhotoId } == true
-    }
+    // A warm return (resume) or a "Show in All Photos" jump carries [revealPhotoId]: the anchor scrolls
+    // that photo on-screen by IDENTITY on the first reconcile, ring or no ring (the old resume rode the
+    // keyboard ring's focus-into-view, so a mouse-only user - focusedIndex == -1 - silently got no resume).
+    // Gated to a warm return; a cold first visit places the photo via initialAnchor / coldFlatFallback.
     val anchor = rememberGridViewportAnchor(
         gridState = gridState,
         initialAnchor = if (anchorInitialScroll) state.photos.getOrNull(initialScrollIndex)?.id else null,
         coldFlatFallback = initialScrollIndex.takeIf { anchorInitialScroll },
-        resumeFocusIntoView = resumeFocusIntoView,
+        revealPhotoId = revealPhotoId.takeIf { !anchorInitialScroll },
     )
     // Moves the keyboard cursor: tells the anchor the user took the viewport over (releases the re-pin) and,
     // on an actual change, arms the focus-into-view scroll. The no-op-at-edge guard lives here because the
@@ -347,9 +348,19 @@ fun GridScreen(
     // capture a stale snapshot that would persist a wrong position after a burst expands.
     val latestRenderItems by rememberUpdatedState(renderItems)
     val latestTileFlatStart by rememberUpdatedState(tileFlatStart)
+    val latestTiles by rememberUpdatedState(tiles)
     LaunchedEffect(gridState) {
         snapshotFlow { gridState.firstVisibleItemIndex }
             .collect { index -> onFirstVisibleItemChanged(flatIndexForRenderItem(latestRenderItems, latestTileFlatStart, index)) }
+    }
+
+    // The one-shot reveal (warm-return resume / "Show in All Photos") scrolls a photo on-screen by identity,
+    // ring or not. It lives in its OWN mount effect, keyed on Unit, NOT the focusedIndex-keyed reconcile
+    // below: the jump seats the ring on arrival (flipping focusedIndex), which would re-key reconcile and
+    // cancel a reveal scroll running there mid-animation. Reads the latest tiles/renderItems so a regroup
+    // that lands first still resolves the photo.
+    LaunchedEffect(Unit) {
+        anchor.scrollRevealIntoView(latestRenderItems, latestTiles)
     }
 
     // Every programmatic viewport move goes through the anchor's single [reconcile], keyed on BOTH the

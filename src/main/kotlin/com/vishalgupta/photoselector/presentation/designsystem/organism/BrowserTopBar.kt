@@ -2,6 +2,7 @@ package com.vishalgupta.photoselector.presentation.designsystem.organism
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -9,6 +10,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import com.vishalgupta.photoselector.presentation.designsystem.atom.AppTextButton
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ChangeFolderButton
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.FavouritesButton
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
@@ -27,6 +29,9 @@ fun BrowserTopBar(
     onOpenFavourites: () -> Unit,
     onChangeFolder: () -> Unit,
     modifier: Modifier = Modifier,
+    // Non-null only when browsing a category: a "Show in All Photos" action that jumps to this photo in
+    // the main grid. Hidden in the All-Photos browser, where it would be a no-op.
+    onShowInAllPhotos: (() -> Unit)? = null,
 ) {
     TopBarScaffold(modifier, containerColor = AppTheme.colors.topBarScrim) {
         IconButton(onClick = onBack) {
@@ -49,6 +54,16 @@ fun BrowserTopBar(
                 "Read-only folder · selections in-memory only",
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        // Muted white so it recedes beside Favourites, the bar's filled action. Shown only when the
+        // current photo was opened from a category — the way back to where it lives in the full library.
+        if (onShowInAllPhotos != null) {
+            AppTextButton(
+                text = "Show in All Photos",
+                leadingIcon = Icons.Outlined.PhotoLibrary,
+                onClick = onShowInAllPhotos,
+                contentColor = Color.White.copy(alpha = 0.7f),
             )
         }
         FavouritesButton(count = favouriteCount, onClick = onOpenFavourites)

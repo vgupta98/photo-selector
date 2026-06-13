@@ -21,6 +21,16 @@ sealed interface Screen {
         val initialScrollIndex: Int = 0,
         val lastViewedPhotoId: PhotoId? = null,
         val returnScrollIndex: Int? = null,
+        // A photo to scroll into view on arrival, independent of whether the keyboard ring is showing
+        // — the "resume where I was looking" / "Show in All Photos" intent. Distinct from
+        // [lastViewedPhotoId], which is ONLY the passive underline marker: a retained grid is returned
+        // to as-left, so scroll resume can't piggy-back on the marker (a mouse-only user has no ring,
+        // and the marker also leaks across scopes). Null leaves the retained scroll untouched.
+        val revealPhotoId: PhotoId? = null,
+        // Whether reaching [revealPhotoId] should also seat the keyboard ring on it. True only for the
+        // deliberate "Show in All Photos" jump (so the photo is unmistakable among thousands); a passive
+        // same-scope resume scrolls without spawning a ring, leaving the mouse-only ring rules alone.
+        val focusRevealedPhoto: Boolean = false,
     ) : Screen
     data class Browser(
         val root: RootFolder,

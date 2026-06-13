@@ -49,9 +49,11 @@ internal class GridViewportAnchor(
     // The returned FLAT scroll index to fall back to on a cold start while no identity anchor exists yet
     // (on a real cold launch photos arrive after mount, so [initialAnchor] is null); null on a warm return.
     private val coldFlatFallback: Int?,
-    // True on a warm return from the viewer when an existing ring was re-seated onto the photo the browser
-    // left on: seed [pendingFocusScroll] so the first [reconcile] scrolls that ring on-screen (resume there).
-    resumeFocusIntoView: Boolean = false,
+    // A photo to bring on-screen once, on the first [reconcile], REGARDLESS of the keyboard ring — the
+    // warm-return resume ("scroll to the photo I was just looking at") and the "Show in All Photos" jump.
+    // Resolved by identity, so it works for a mouse-only user with no ring at all (the old resume rode the
+    // ring's focus-into-view, which silently did nothing without one). Null leaves the retained scroll put.
+    revealPhotoId: PhotoId? = null,
 ) {
     var anchoredPhotoId: PhotoId? by mutableStateOf(initialAnchor)
         private set
@@ -63,10 +65,16 @@ internal class GridViewportAnchor(
     var userHeldViewport: Boolean by mutableStateOf(false)
         private set
 
-    // Armed by a real cursor move (an arrow), or seeded once by a viewer-return resume; the next
-    // [reconcile] consumes it to bring the focused tile on-screen. A reshape re-anchors focus without
-    // arming it, so focus-into-view never fires on a reshape and can't fight the re-pin.
-    var pendingFocusScroll: Boolean by mutableStateOf(resumeFocusIntoView)
+    // Armed by a real cursor move (an arrow); the next [reconcile] consumes it to bring the focused tile
+    // on-screen. A reshape re-anchors focus without arming it, so focus-into-view never fires on a reshape
+    // and can't fight the re-pin.
+    var pendingFocusScroll: Boolean by mutableStateOf(false)
+        private set
+
+    // The photo to scroll on-screen once, consumed by the first [reconcile]. Carries the warm-return
+    // resume and the "Show in All Photos" jump; ring-independent (resolved by identity over the tiles),
+    // so it works whether or not a keyboard ring exists. Cleared after it fires.
+    var pendingRevealId: PhotoId? by mutableStateOf(revealPhotoId)
         private set
 
     // The grouping last seen by [reconcile], compared by REFERENCE. The grid's `baseGroups` keeps its
@@ -105,14 +113,18 @@ internal class GridViewportAnchor(
     }
 
     /**
-     * The single decision point for every programmatic viewport move. Call from ONE `LaunchedEffect` keyed
-     * on BOTH the collapsed [groups] (a reshape) and the focused tile (a cursor move). Exactly one thing
-     * happens per call, in priority order:
+     * The single decision point for every programmatic RESHAPE/CURSOR viewport move. Call from ONE
+     * `LaunchedEffect` keyed on BOTH the collapsed [groups] (a reshape) and the focused tile (a cursor
+     * move). Exactly one thing happens per call, in priority order:
      *  - a real cursor move scrolls the focused tile on-screen (it wins over a coincident reshape, since the
      *    user's explicit move should land where they navigated), consuming [pendingFocusScroll];
      *  - otherwise a reshape ([groups] is a new instance) re-pins the anchored photo;
      *  - a bare focus change with nothing armed does nothing.
      * Because the two intents are branches of one `when`, they can never both scroll in the same pass.
+     *
+     * The one-shot REVEAL ([scrollRevealIntoView]) is deliberately NOT here: it runs from its own mount
+     * effect so seating the ring on a "Show in All Photos" jump (which flips focusedIndex, re-keying this
+     * effect) can't cancel a reveal scroll mid-animation.
      */
     suspend fun reconcile(
         renderItems: List<GridRenderItem>,
@@ -126,10 +138,24 @@ internal class GridViewportAnchor(
         when {
             pendingFocusScroll -> {
                 pendingFocusScroll = false
-                scrollFocusedTileIntoView(renderItems, focusedIndex)
+                scrollTileIntoView(renderItems, focusedIndex)
             }
             reshaped -> repinToAnchor(renderItems, tiles, tileFlatStart)
         }
+    }
+
+    /**
+     * One-shot reveal: bring [pendingRevealId]'s tile on-screen by identity, then clear it. Ring-independent
+     * (it never touches focus), so it resumes a pure-mouse user and powers the "Show in All Photos" jump.
+     * Runs from its OWN mount effect keyed on Unit (see GridScreen), NOT [reconcile] — that effect is keyed
+     * on focusedIndex, and the jump seats the ring on arrival, so a reveal living there would be cancelled
+     * the instant the ring moves. A reveal target outside the current slice (tile < 0) just clears.
+     */
+    suspend fun scrollRevealIntoView(renderItems: List<GridRenderItem>, tiles: List<PhotoGroup>) {
+        val id = pendingRevealId ?: return
+        pendingRevealId = null
+        val tile = tiles.indexOfFirst { group -> group.photos.any { it.id == id } }
+        if (tile >= 0) scrollTileIntoView(renderItems, tile)
     }
 
     /**
@@ -152,14 +178,14 @@ internal class GridViewportAnchor(
     }
 
     /**
-     * Bring the focused tile on-screen if it isn't already. [focusedIndex] is a TILE index; the LazyGrid
-     * (visibleItemsInfo.index, animateScrollToItem) speaks RENDER-ITEM space, which gains header/footer rows
-     * when a burst is open - so convert before addressing it, or we'd mis-detect visibility and scroll to the
-     * wrong row.
+     * Bring [tileIndex] on-screen if it isn't already (the focused tile after a cursor move, or a reveal
+     * target by identity). [tileIndex] is a TILE index; the LazyGrid (visibleItemsInfo.index,
+     * animateScrollToItem) speaks RENDER-ITEM space, which gains header/footer rows when a burst is open -
+     * so convert before addressing it, or we'd mis-detect visibility and scroll to the wrong row.
      */
-    private suspend fun scrollFocusedTileIntoView(renderItems: List<GridRenderItem>, focusedIndex: Int) {
-        if (focusedIndex < 0) return
-        val renderIdx = renderIndexForTile(renderItems, focusedIndex) ?: return
+    private suspend fun scrollTileIntoView(renderItems: List<GridRenderItem>, tileIndex: Int) {
+        if (tileIndex < 0) return
+        val renderIdx = renderIndexForTile(renderItems, tileIndex) ?: return
         val layout = gridState.layoutInfo
         val item = layout.visibleItemsInfo.firstOrNull { it.index == renderIdx }
         val isFullyVisible = item != null &&
@@ -174,14 +200,14 @@ internal class GridViewportAnchor(
  * screen mount (which re-runs composition) rebuilds it with this visit's seed, while a recomposition of
  * the same mount keeps it. [initialAnchor] is the cold identity seed (null on a warm return or before
  * photos load); [coldFlatFallback] is the returned flat index a cold start re-pins to until an identity
- * anchor exists.
+ * anchor exists; [revealPhotoId] is the photo to scroll on-screen once on this visit, ring-independent.
  */
 @Composable
 internal fun rememberGridViewportAnchor(
     gridState: LazyGridState,
     initialAnchor: PhotoId?,
     coldFlatFallback: Int?,
-    resumeFocusIntoView: Boolean = false,
+    revealPhotoId: PhotoId? = null,
 ): GridViewportAnchor = remember(gridState) {
-    GridViewportAnchor(gridState, initialAnchor, coldFlatFallback, resumeFocusIntoView)
+    GridViewportAnchor(gridState, initialAnchor, coldFlatFallback, revealPhotoId)
 }

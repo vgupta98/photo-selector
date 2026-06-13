@@ -72,6 +72,9 @@ fun BrowserScreen(
     onChangeFolder: () -> Unit,
     onBack: () -> Unit,
     onCompare: () -> Unit,
+    // Non-null only when browsing a category: jumps to this photo in the All Photos grid. Null hides
+    // the affordance (and disables its key) in the All-Photos browser, which is already All Photos.
+    onShowInAllPhotos: (() -> Unit)? = null,
 ) {
     DisposableEffect(viewModel) { onDispose { viewModel.onClear() } }
     val state by viewModel.state.collectAsState()
@@ -116,6 +119,7 @@ fun BrowserScreen(
         onChangeFolder = onChangeFolder,
         onBackToGrid = onBack,
         onCompare = onCompare,
+        onShowInAllPhotos = onShowInAllPhotos,
     )
 }
 
@@ -133,6 +137,7 @@ fun BrowserScreen(
     onChangeFolder: () -> Unit,
     onBackToGrid: () -> Unit,
     onCompare: () -> Unit = {},
+    onShowInAllPhotos: (() -> Unit)? = null,
     deleteMessage: String? = null,
     onDeleteCurrent: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -215,6 +220,9 @@ fun BrowserScreen(
                     }
                     Key.G -> if (meta) false else { onBackToGrid(); true }
                     Key.C -> if (meta) false else { onCompare(); true }
+                    // A: reveal this photo in the All Photos grid. Only when browsing a category (the
+                    // handler is null in the All-Photos browser), so plain A is inert there.
+                    Key.A -> if (meta || onShowInAllPhotos == null) false else { onShowInAllPhotos(); true }
                     Key.Escape -> { onBackToGrid(); true }
                     Key.Equals, Key.Plus -> { zoom.zoomIn(); true }
                     Key.Minus -> { zoom.zoomOut(); true }
@@ -233,6 +241,7 @@ fun BrowserScreen(
             readOnly = state.readOnly,
             onBack = onBackToGrid,
             onOpenFavourites = onOpenFavourites,
+            onShowInAllPhotos = onShowInAllPhotos,
             onChangeFolder = onChangeFolder,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -311,6 +320,7 @@ fun BrowserScreen(
                         BrowserKeyboardLegend(
                             hasCustomCategories = state.categories.customCategories().isNotEmpty(),
                             readOnly = state.readOnly,
+                            canShowInAllPhotos = onShowInAllPhotos != null,
                         )
                     }
                 }

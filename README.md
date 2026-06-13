@@ -18,7 +18,7 @@ Built with Kotlin + Compose Multiplatform Desktop, following Clean Architecture.
 - **Compare** — press `C` to put two photos side by side with synchronized pan/zoom for choosing between near-identical frames; reach it from the browser (current + next) or by selecting exactly two tiles in the grid. `Tab` switches the active pane, `← →` swap one candidate, and `F` / `1`…`9` file the active pane.
 - **Survey** — select three to twelve tiles in the grid and press `C` to lay them out together for an at-a-glance pick. Arrows or `Tab` move the highlighted tile; `F` / `1`…`9` file it; `Esc` returns to the grid.
 - **Grouping lenses** — collapse near-identical frames into one grid tile with a count badge, so a moment is a single decision instead of a dozen near-identical thumbnails. A segmented control in the grid toolbar picks the lens: **off** (flat grid), **bursts** (frames from the same camera within ~2 seconds — needs a real capture time, which today comes from JPEG EXIF, so HEIC isn't burst-grouped yet), or **similar** (visually near-identical shots, grouped on-device regardless of when they were taken, with the suggested-sharpest frame shown as the representative — a hint you can override). Click a grouped tile to **unfold it in place** and cull the frames inline with the usual keys (`F` / `1`…`9` file the focused frame; `C` over a couple of them opens Compare/Survey); click **Collapse** (or `Esc`) to fold it back.
-- **Category grids** with thumbnails; click any thumbnail to jump back to that photo in the browser.
+- **Category grids** with thumbnails; click any thumbnail to jump back to that photo in the browser. When viewing a category photo full-screen, **Show in All Photos** (top bar, or press `A`) jumps to where it sits in the full library.
 - **Toast feedback** on every Favourites toggle so you can never silently lose a selection.
 - **Export TXT** — write a category's photos as relative paths, one per line, UTF-8.
 - **Export Copy** — copy a category into a destination folder while preserving subfolder structure. Pick OVERWRITE / SKIP / RENAME on conflicts.
@@ -55,6 +55,7 @@ For developers:
 | `F` or `Space` | Toggle Favourites for current photo |
 | `1` … `9` | Toggle the current photo in the Nth custom category (grid + browser) |
 | `C` | Compare the current photo with its neighbour (browser), or open the grid selection side by side — 2 photos to Compare, 3–12 to Survey |
+| `A` | (Browser, when the photo was opened from a category) Show this photo in the All Photos grid |
 | `Cmd`+`A` | Select every photo in the current grid |
 | `Cmd`+`Delete` | Move the selection (grid) or current photo (browser) to the Trash, after a confirm |
 

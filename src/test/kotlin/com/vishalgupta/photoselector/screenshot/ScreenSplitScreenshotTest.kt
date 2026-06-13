@@ -687,6 +687,42 @@ class ScreenSplitScreenshotTest {
     }
 
     @Test
+    fun browser_showInAllPhotos() {
+        // Browsing a category photo: the top bar gains a muted "Show in All Photos" action that jumps to
+        // the photo in the main grid. Wired (non-null) only in a category browser, so capture it there.
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(900.dp, 600.dp)) {
+                    BrowserScreen(
+                        state = BrowserUiState(
+                            photos = testPhotos,
+                            currentIndex = 0,
+                            currentPhoto = testPhotos[0],
+                            currentBitmap = ImageBitmap(200, 150),
+                            isLoadingBitmap = false,
+                            isCurrentFavourite = true,
+                            favouriteCount = 1,
+                            readOnly = false,
+                        ),
+                        toast = null,
+                        onPrevious = {},
+                        onNext = {},
+                        onToggleCategory = {},
+                        onViewportSizeChanged = {},
+                        onOpenFavourites = {},
+                        onChangeFolder = {},
+                        onBackToGrid = {},
+                        onShowInAllPhotos = {},
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("Show in All Photos").assertIsDisplayed()
+        rule.dumpScreenshot("browser-show-in-all-photos")
+    }
+
+    @Test
     fun browser_changeFolderConfirm() {
         // The browser's "Change folder" runs the same session-teardown as the grid's, so it
         // gets the same confirm guard — captured here over the photo scrim.
@@ -1074,6 +1110,30 @@ class ScreenSplitScreenshotTest {
         rule.onNodeWithText("Preview").assertIsDisplayed()
         rule.onNodeWithText("Reveal").assertIsDisplayed()
         rule.dumpScreenshot("browser-keyboard-legend")
+    }
+
+    @Test
+    fun browser_keyboardLegendInCategory() {
+        // Browsing a category adds the "A All Photos" hint (the jump to the main grid). Captured at the
+        // browser's real full-bleed width (1280dp) so the now-longer strip reads as one non-wrapping line.
+        rule.setContent {
+            AppTheme {
+                Box(
+                    Modifier.size(1280.dp, 120.dp).background(Color.Black),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BrowserKeyboardLegend(
+                        hasCustomCategories = true,
+                        readOnly = false,
+                        canShowInAllPhotos = true,
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("All Photos").assertIsDisplayed()
+        rule.dumpScreenshot("browser-keyboard-legend-in-category")
     }
 
     @Test

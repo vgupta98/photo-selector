@@ -370,6 +370,21 @@ class GridViewModel(
         }
     }
 
+    /**
+     * Seats the keyboard ring on [id]'s tile — the deliberate "Show in All Photos" jump, which lands the
+     * cursor on the revealed photo so it's unmistakable among thousands (the scroll-into-view itself is the
+     * grid's job, via `Screen.Grid.revealPhotoId`). Unlike [setLastViewed] this *spawns* a ring where none
+     * existed, which is why only the explicit jump calls it; a passive same-scope resume must not. No-op if
+     * the photo isn't in the current slice.
+     */
+    fun focusPhoto(id: PhotoId?) {
+        if (id == null) return
+        _state.update { st ->
+            val idx = st.displayGroups.indexOfFirst { group -> group.photos.any { it.id == id } }
+            if (idx >= 0) st.copy(focusedIndex = idx) else st
+        }
+    }
+
     /** The frame the focused tile currently represents, the anchor [refocus] re-finds after a reshape. */
     private fun GridUiState.focusedAnchorId(): PhotoId? =
         displayGroups.getOrNull(focusedIndex)?.keyPhoto?.id
