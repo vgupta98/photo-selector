@@ -348,9 +348,19 @@ fun GridScreen(
     // capture a stale snapshot that would persist a wrong position after a burst expands.
     val latestRenderItems by rememberUpdatedState(renderItems)
     val latestTileFlatStart by rememberUpdatedState(tileFlatStart)
+    val latestTiles by rememberUpdatedState(tiles)
     LaunchedEffect(gridState) {
         snapshotFlow { gridState.firstVisibleItemIndex }
             .collect { index -> onFirstVisibleItemChanged(flatIndexForRenderItem(latestRenderItems, latestTileFlatStart, index)) }
+    }
+
+    // The one-shot reveal (warm-return resume / "Show in All Photos") scrolls a photo on-screen by identity,
+    // ring or not. It lives in its OWN mount effect, keyed on Unit, NOT the focusedIndex-keyed reconcile
+    // below: the jump seats the ring on arrival (flipping focusedIndex), which would re-key reconcile and
+    // cancel a reveal scroll running there mid-animation. Reads the latest tiles/renderItems so a regroup
+    // that lands first still resolves the photo.
+    LaunchedEffect(Unit) {
+        anchor.scrollRevealIntoView(latestRenderItems, latestTiles)
     }
 
     // Every programmatic viewport move goes through the anchor's single [reconcile], keyed on BOTH the

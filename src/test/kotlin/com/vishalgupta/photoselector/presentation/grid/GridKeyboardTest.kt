@@ -664,6 +664,62 @@ class GridKeyboardTest {
         )
     }
 
+    // The "Show in All Photos" jump: it both reveals the photo AND rings it. Seating the ring flips
+    // focusedIndex, which re-keys the reconcile effect and cancels the reveal scroll mid-flight - so the
+    // reveal must survive that cancellation and complete on the relaunch, or the photo never scrolls in
+    // (the reported "Show in All Photos doesn't work" bug). This drives that exact sequence: mount with no
+    // ring, then flip focusedIndex onto the reveal target a frame later.
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun revealWithRingSeatedAfterMount_stillScrollsTheTargetIn() {
+        val photos = (0 until 80).map { photoNamed("p$it") }
+        lateinit var gridStateRef: LazyGridState
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(400.dp, 400.dp)) {
+                    val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = 0)
+                    gridStateRef = gridState
+                    // focusedIndex flips from -1 to the reveal target shortly after mount, exactly as
+                    // seating the ring for the jump does - the change that used to cancel the scroll.
+                    var focused by remember { mutableStateOf(-1) }
+                    LaunchedEffect(Unit) { focused = 60 }
+                    GridScreen(
+                        state = GridUiState(
+                            photos = photos,
+                            groups = photos.map(PhotoGroup::Single),
+                            scope = CategoryScope.AllPhotos,
+                            focusedIndex = focused,
+                        ),
+                        initialScrollIndex = 0,
+                        retainedGridState = gridState,
+                        anchorInitialScroll = false,
+                        revealPhotoId = photos[60].id,
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onSelectCategory = { _, _ -> },
+                        onCreateCategory = {},
+                        onRenameCategory = { _, _ -> },
+                        onDeleteCategory = {},
+                        onBack = null,
+                        onSetFocusedIndex = {},
+                        onToggleMembershipAtFocus = {},
+                        onToggleCustomCategoryAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        imageLoader = noOpImageLoader,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        assertTrue(
+            "the reveal scroll was cancelled by the ring seat and never completed, got ${gridStateRef.firstVisibleItemIndex}",
+            gridStateRef.firstVisibleItemIndex > 30,
+        )
+    }
+
     // The other half: a warm return with NO revealPhotoId (e.g. backing out of a category to All Photos,
     // or a background grouping settle) must NOT resume-scroll - it keeps the retained scroll, even though
     // the underline marker may point at an off-screen photo. Only an explicit reveal moves the viewport,

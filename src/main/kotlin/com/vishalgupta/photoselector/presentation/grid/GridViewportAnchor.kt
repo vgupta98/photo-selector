@@ -113,16 +113,18 @@ internal class GridViewportAnchor(
     }
 
     /**
-     * The single decision point for every programmatic viewport move. Call from ONE `LaunchedEffect` keyed
-     * on BOTH the collapsed [groups] (a reshape) and the focused tile (a cursor move). Exactly one thing
-     * happens per call, in priority order:
-     *  - a pending reveal scrolls a specific photo on-screen by identity (warm-return resume / "Show in All
-     *    Photos"), consuming [pendingRevealId] — ring-independent, so it fires even with no cursor;
+     * The single decision point for every programmatic RESHAPE/CURSOR viewport move. Call from ONE
+     * `LaunchedEffect` keyed on BOTH the collapsed [groups] (a reshape) and the focused tile (a cursor
+     * move). Exactly one thing happens per call, in priority order:
      *  - a real cursor move scrolls the focused tile on-screen (it wins over a coincident reshape, since the
      *    user's explicit move should land where they navigated), consuming [pendingFocusScroll];
      *  - otherwise a reshape ([groups] is a new instance) re-pins the anchored photo;
      *  - a bare focus change with nothing armed does nothing.
-     * Because the intents are branches of one `when`, no two of them can scroll in the same pass.
+     * Because the two intents are branches of one `when`, they can never both scroll in the same pass.
+     *
+     * The one-shot REVEAL ([scrollRevealIntoView]) is deliberately NOT here: it runs from its own mount
+     * effect so seating the ring on a "Show in All Photos" jump (which flips focusedIndex, re-keying this
+     * effect) can't cancel a reveal scroll mid-animation.
      */
     suspend fun reconcile(
         renderItems: List<GridRenderItem>,
@@ -134,18 +136,26 @@ internal class GridViewportAnchor(
         val reshaped = groups !== lastReconciledGroups
         lastReconciledGroups = groups
         when {
-            pendingRevealId != null -> {
-                val id = pendingRevealId
-                pendingRevealId = null
-                val tile = tiles.indexOfFirst { group -> group.photos.any { it.id == id } }
-                if (tile >= 0) scrollTileIntoView(renderItems, tile)
-            }
             pendingFocusScroll -> {
                 pendingFocusScroll = false
                 scrollTileIntoView(renderItems, focusedIndex)
             }
             reshaped -> repinToAnchor(renderItems, tiles, tileFlatStart)
         }
+    }
+
+    /**
+     * One-shot reveal: bring [pendingRevealId]'s tile on-screen by identity, then clear it. Ring-independent
+     * (it never touches focus), so it resumes a pure-mouse user and powers the "Show in All Photos" jump.
+     * Runs from its OWN mount effect keyed on Unit (see GridScreen), NOT [reconcile] — that effect is keyed
+     * on focusedIndex, and the jump seats the ring on arrival, so a reveal living there would be cancelled
+     * the instant the ring moves. A reveal target outside the current slice (tile < 0) just clears.
+     */
+    suspend fun scrollRevealIntoView(renderItems: List<GridRenderItem>, tiles: List<PhotoGroup>) {
+        val id = pendingRevealId ?: return
+        pendingRevealId = null
+        val tile = tiles.indexOfFirst { group -> group.photos.any { it.id == id } }
+        if (tile >= 0) scrollTileIntoView(renderItems, tile)
     }
 
     /**

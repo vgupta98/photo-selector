@@ -95,10 +95,10 @@ class GridViewportAnchorTest {
         assertTrue("an actual cursor move arms the focus-into-view scroll", anchor.pendingFocusScroll)
     }
 
-    @Test fun `reconcile consumes a pending reveal, and it wins over a focus arm`() = runBlocking {
-        // Reveal a photo that is NOT in the tiles, so the branch runs and consumes the flag without
-        // needing a live layout to scroll. Arm focus too: the reveal must take priority, and because it
-        // is a different branch of the one `when`, the focus arm is left untouched for a later pass.
+    @Test fun `scrollRevealIntoView consumes the pending reveal and leaves focus alone`() = runBlocking {
+        // Reveal a photo that is NOT in the tiles, so the one-shot runs and consumes the flag without
+        // needing a live layout to scroll. The reveal lives outside reconcile (it must not be cancelled by
+        // a focus change), and it never touches focus - so a separately-armed focus scroll survives it.
         val anchor = GridViewportAnchor(
             gridState = LazyGridState(firstVisibleItemIndex = 0),
             initialAnchor = null,
@@ -107,9 +107,9 @@ class GridViewportAnchorTest {
         )
         assertEquals(PhotoId("absent"), anchor.pendingRevealId)
         anchor.onCursorMove(focusChanged = true)
-        anchor.reconcile(renderItems, tiles, emptyList(), focusedIndex = 3, groups = groups)
-        assertNull("the reveal is consumed on the first reconcile", anchor.pendingRevealId)
-        assertTrue("reveal wins over focus; the focus arm survives for a later pass", anchor.pendingFocusScroll)
+        anchor.scrollRevealIntoView(renderItems, tiles)
+        assertNull("the reveal is consumed", anchor.pendingRevealId)
+        assertTrue("the reveal never touches focus; an armed focus scroll survives", anchor.pendingFocusScroll)
     }
 
     @Test fun `reconcile consumes the focus arm only when a cursor move set it`() = runBlocking {
