@@ -9,8 +9,9 @@ package com.vishalgupta.photoselector.presentation.common
  * burst behaviour); [Similarity] is the opt-in visual lens, kept gentle by never being the default.
  */
 enum class GroupingMode(val label: String) {
-    /** No grouping: one tile per photo, flat and chronological. */
-    Off("Off"),
+    /** No grouping: one tile per photo, flat and chronological. "Single" frames it as one of three
+     * peer lenses (Single | Bursts | Similar) rather than an "on/off" switch on the other two. */
+    Off("Single"),
 
     /** Time + camera proximity (`BurstGrouper`): rapid-fire frames of one moment collapse. */
     Time("Bursts"),

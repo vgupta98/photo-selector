@@ -1088,12 +1088,12 @@ class GridKeyboardTest {
         rule.waitForIdle()
         assertTrue("retained scroll starts parked on ~p60", reportedTopFlat in 56..64)
 
-        // Cycle through every lens and back to Off without ever touching the scroll.
+        // Cycle through every lens and back to Single without ever touching the scroll.
         rule.onNodeWithContentDescription("Bursts").performClick()
         rule.waitForIdle()
         rule.onNodeWithContentDescription("Similar").performClick()
         rule.waitForIdle()
-        rule.onNodeWithContentDescription("Off").performClick()
+        rule.onNodeWithContentDescription("Single").performClick()
         rule.waitForIdle()
 
         // Back in Off, the viewport must be on p60's run again - not drifted up to ~p53 by the

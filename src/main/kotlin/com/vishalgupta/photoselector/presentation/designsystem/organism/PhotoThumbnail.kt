@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,8 +28,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.isMetaPressed
 import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.layout.ContentScale
@@ -60,9 +68,11 @@ private const val THUMBNAIL_VIEWPORT_PX = 320
  * modified click drives selection while a plain click still falls through to [onClick] — so the
  * established "click a tile to open it" gesture is untouched.
  *
- * [burstCount], when non-null, marks this tile as the collapsed representative of a burst of that
- * many frames (a stacked-frames badge). The tile still shows [photo] (the burst's key frame); the
- * caller wires [onClick] to open the burst side by side rather than a single browser.
+ * [burstCount], when non-null, marks this tile as the collapsed representative of a group of that
+ * many frames (a burst or a similarity cluster). The cover photo is drawn inset over a small fanned
+ * "deck" of cards so the stack reads as a stack at a glance, with a count pill naming how many; the
+ * tile still shows [photo] (the group's key frame), and the caller wires [onClick] to open the run
+ * side by side rather than a single browser.
  */
 @Composable
 fun PhotoThumbnail(
@@ -104,22 +114,26 @@ fun PhotoThumbnail(
     // open path and its click semantics, instead of layering a modifier-matching pointer node
     // that races the clickable and lets one swallow the other.
     val windowInfo = LocalWindowInfo.current
-    Box(
-        modifier
-            .aspectRatio(1f)
-            .scale(tileScale)
-            .then(borderMod)
-            .background(AppTheme.colors.tileBackground)
-            .clickable {
-                val mods = windowInfo.keyboardModifiers
-                when {
-                    onToggleSelect != null && mods.isMetaPressed && !mods.isShiftPressed -> onToggleSelect()
-                    onRangeSelect != null && mods.isShiftPressed -> onRangeSelect()
-                    else -> onClick()
-                }
-            },
-        contentAlignment = Alignment.Center,
-    ) {
+
+    // A collapsed group (burst or similarity cluster) reads as a small fanned deck: a couple of
+    // neutral cards peek out top-right behind an inset cover photo, so a stack of frames is legible
+    // as a stack without leaning on the count pill alone. The deck is a *background draw* on the
+    // outer full-cell node and the cover sits in an inset child Box. Interaction, the focus/selection
+    // ring and the deck all live on that outer node, so the whole stack (peeking cards included) is
+    // one click target and the ring brackets the stack — clicking the peek that signals "group"
+    // actually expands it. A single photo takes neither branch: no deck, no inset child, so it stays
+    // the pre-deck single-layout-node tile byte for byte. Keep the inset child a plain fillMaxSize
+    // Box — an earlier matchParentSize/nested-deck version looped the measure/draw phase under grid
+    // scroll (invisible to the static screenshot tests, caught by GridKeyboardTest).
+    val isGroup = burstCount != null
+    val stackInset = AppTheme.dimens.burstStackInset
+    val deckCard = AppTheme.colors.burstStackCard
+    val deckEdge = AppTheme.colors.tileBackground
+
+    // The cover — decoded photo (cropped to fill) plus its corner badges. Emitted either directly in
+    // the full-cell tile (single) or in the inset child over the deck (group), so both paths render
+    // the identical content; it just aligns to the cover bounds in each case.
+    val cover: @Composable BoxScope.() -> Unit = {
         val bmp = bitmap
         if (bmp != null) {
             Image(
@@ -151,7 +165,7 @@ fun PhotoThumbnail(
             )
         }
         if (burstCount != null) {
-            // Bottom-start keeps the burst badge clear of the star (top-end), category badges
+            // Bottom-start keeps the group badge clear of the star (top-end), category badges
             // (top-start) and the select check (bottom-end).
             BurstBadge(
                 count = burstCount,
@@ -188,6 +202,78 @@ fun PhotoThumbnail(
             }
         }
     }
+
+    Box(
+        modifier
+            .aspectRatio(1f)
+            .scale(tileScale)
+            .then(
+                if (isGroup) {
+                    Modifier.drawBehind { drawBurstDeck(stackInset.toPx(), deckCard, deckEdge) }
+                } else {
+                    Modifier
+                },
+            )
+            .then(borderMod)
+            // The deck IS the backdrop in the peeking strips, so a group draws no outer background;
+            // the cover's own background (on the inset child) fills the rest. A single keeps the
+            // full-cell backdrop here, exactly as before.
+            .then(if (isGroup) Modifier else Modifier.background(AppTheme.colors.tileBackground))
+            .clickable {
+                val mods = windowInfo.keyboardModifiers
+                when {
+                    onToggleSelect != null && mods.isMetaPressed && !mods.isShiftPressed -> onToggleSelect()
+                    onRangeSelect != null && mods.isShiftPressed -> onRangeSelect()
+                    else -> onClick()
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (isGroup) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(top = stackInset, end = stackInset)
+                    .background(AppTheme.colors.tileBackground),
+                contentAlignment = Alignment.Center,
+                content = cover,
+            )
+        } else {
+            cover()
+        }
+    }
+}
+
+/** Small corner radius for the deck cards, matching the tile's rounded-small look. */
+private val DECK_CORNER = 4.dp
+
+/**
+ * Paints the two neutral cards behind a collapsed group's (inset) cover photo, stepped up toward the
+ * top-right so the tile reads as a stack of frames. Drawn at the full cell bounds (this runs before
+ * the cover's `padding`), so only the cards' top/right edges peek past the inset cover. The back card
+ * peeks the furthest ([insetPx]); the middle card half that. An [edge] hairline separates each card.
+ */
+private fun DrawScope.drawBurstDeck(insetPx: Float, card: Color, edge: Color) {
+    val cardSize = Size(size.width - insetPx, size.height - insetPx)
+    val corner = CornerRadius(DECK_CORNER.toPx())
+    val hairline = Stroke(width = 1.dp.toPx())
+    // Back-most card: flush to the top-end corner.
+    drawDeckCard(Offset(insetPx, 0f), cardSize, corner, card, edge, hairline)
+    // Middle card: half a step back toward the cover.
+    val half = insetPx / 2f
+    drawDeckCard(Offset(half, half), cardSize, corner, card, edge, hairline)
+}
+
+private fun DrawScope.drawDeckCard(
+    topLeft: Offset,
+    cardSize: Size,
+    corner: CornerRadius,
+    fill: Color,
+    edge: Color,
+    hairline: Stroke,
+) {
+    drawRoundRect(color = fill, topLeft = topLeft, size = cardSize, cornerRadius = corner)
+    drawRoundRect(color = edge, topLeft = topLeft, size = cardSize, cornerRadius = corner, style = hairline)
 }
 
 /** Max chips drawn before collapsing the tail into a "+N" overflow chip. */
@@ -211,16 +297,19 @@ private fun CategoryBadges(badges: ImmutableList<Int>, modifier: Modifier = Modi
 }
 
 /**
- * The collapsed-burst affordance: a stacked-frames glyph plus the frame count, telling the user
- * this one tile stands in for N near-simultaneous shots that open together.
+ * The collapsed-group count pill: a stacked-frames glyph plus the frame count, telling the user
+ * this one tile stands in for N frames that open together. Drawn in the translucent-dark
+ * overlay-chrome chip style (shared with the browser HUD) with bright text, so it stays legible
+ * over both bright and dark photos — louder than a category chip because it changes what a click
+ * does (it opens a run, not a single).
  */
 @Composable
 private fun BurstBadge(count: Int, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier,
         shape = MaterialTheme.shapes.small,
-        color = AppTheme.colors.categoryMemberContainer,
-        contentColor = AppTheme.colors.categoryMemberContent,
+        color = AppTheme.colors.overlayChromeBackground,
+        contentColor = AppTheme.colors.onOverlayChrome,
     ) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.xxs),
@@ -229,10 +318,10 @@ private fun BurstBadge(count: Int, modifier: Modifier = Modifier) {
         ) {
             Icon(
                 imageVector = Icons.Filled.BurstMode,
-                contentDescription = "Burst of $count",
+                contentDescription = "Group of $count",
                 modifier = Modifier.size(AppTheme.dimens.iconSm),
             )
-            Text(text = count.toString(), style = MaterialTheme.typography.labelMedium)
+            Text(text = count.toString(), style = MaterialTheme.typography.labelLarge)
         }
     }
 }

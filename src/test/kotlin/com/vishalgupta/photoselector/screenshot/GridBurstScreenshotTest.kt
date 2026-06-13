@@ -175,7 +175,9 @@ class GridBurstScreenshotTest {
     private fun renderGrid(state: GridUiState) {
         rule.setContent {
             AppTheme {
-                Surface(Modifier.size(700.dp, 500.dp)) {
+                // A realistic toolbar width so the labeled grouping toggle and "Change folder" both
+                // sit without crowding (the default app window is wider still, 1280dp).
+                Surface(Modifier.size(1100.dp, 560.dp)) {
                     GridScreen(
                         state = state,
                         initialScrollIndex = 0,
