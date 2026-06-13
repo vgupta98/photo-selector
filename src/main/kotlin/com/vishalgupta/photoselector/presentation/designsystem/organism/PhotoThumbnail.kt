@@ -27,8 +27,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.isMetaPressed
 import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.layout.ContentScale
@@ -60,9 +67,11 @@ private const val THUMBNAIL_VIEWPORT_PX = 320
  * modified click drives selection while a plain click still falls through to [onClick] — so the
  * established "click a tile to open it" gesture is untouched.
  *
- * [burstCount], when non-null, marks this tile as the collapsed representative of a burst of that
- * many frames (a stacked-frames badge). The tile still shows [photo] (the burst's key frame); the
- * caller wires [onClick] to open the burst side by side rather than a single browser.
+ * [burstCount], when non-null, marks this tile as the collapsed representative of a group of that
+ * many frames (a burst or a similarity cluster). The cover photo is drawn inset over a small fanned
+ * "deck" of cards so the stack reads as a stack at a glance, with a count pill naming how many; the
+ * tile still shows [photo] (the group's key frame), and the caller wires [onClick] to open the run
+ * side by side rather than a single browser.
  */
 @Composable
 fun PhotoThumbnail(
@@ -104,10 +113,31 @@ fun PhotoThumbnail(
     // open path and its click semantics, instead of layering a modifier-matching pointer node
     // that races the clickable and lets one swallow the other.
     val windowInfo = LocalWindowInfo.current
+
+    // A collapsed group (burst or similarity cluster) reads as a small fanned deck: a couple of
+    // neutral cards peek out top-right behind an inset cover photo, so a stack of frames is legible
+    // as a stack without leaning on the count pill alone. The deck is a *background draw* + a content
+    // *inset*, deliberately NOT nested layout nodes: the tile stays a single layout node (a single
+    // photo is then byte-identical to the pre-deck tile), so the grid measures it in one pass. An
+    // earlier nested-Box version looped the measure/draw phase under grid scroll — invisible to the
+    // static screenshot tests, caught by GridKeyboardTest. Keep this one Box.
+    val isGroup = burstCount != null
+    val stackInset = AppTheme.dimens.burstStackInset
+    val deckCard = AppTheme.colors.burstStackCard
+    val deckEdge = AppTheme.colors.tileBackground
     Box(
         modifier
             .aspectRatio(1f)
             .scale(tileScale)
+            .then(
+                if (isGroup) {
+                    Modifier
+                        .drawBehind { drawBurstDeck(stackInset.toPx(), deckCard, deckEdge) }
+                        .padding(top = stackInset, end = stackInset)
+                } else {
+                    Modifier
+                },
+            )
             .then(borderMod)
             .background(AppTheme.colors.tileBackground)
             .clickable {
@@ -190,6 +220,38 @@ fun PhotoThumbnail(
     }
 }
 
+/** Small corner radius for the deck cards, matching the tile's rounded-small look. */
+private val DECK_CORNER = 4.dp
+
+/**
+ * Paints the two neutral cards behind a collapsed group's (inset) cover photo, stepped up toward the
+ * top-right so the tile reads as a stack of frames. Drawn at the full cell bounds (this runs before
+ * the cover's `padding`), so only the cards' top/right edges peek past the inset cover. The back card
+ * peeks the furthest ([insetPx]); the middle card half that. An [edge] hairline separates each card.
+ */
+private fun DrawScope.drawBurstDeck(insetPx: Float, card: Color, edge: Color) {
+    val cardSize = Size(size.width - insetPx, size.height - insetPx)
+    val corner = CornerRadius(DECK_CORNER.toPx())
+    val hairline = Stroke(width = 1.dp.toPx())
+    // Back-most card: flush to the top-end corner.
+    drawDeckCard(Offset(insetPx, 0f), cardSize, corner, card, edge, hairline)
+    // Middle card: half a step back toward the cover.
+    val half = insetPx / 2f
+    drawDeckCard(Offset(half, half), cardSize, corner, card, edge, hairline)
+}
+
+private fun DrawScope.drawDeckCard(
+    topLeft: Offset,
+    cardSize: Size,
+    corner: CornerRadius,
+    fill: Color,
+    edge: Color,
+    hairline: Stroke,
+) {
+    drawRoundRect(color = fill, topLeft = topLeft, size = cardSize, cornerRadius = corner)
+    drawRoundRect(color = edge, topLeft = topLeft, size = cardSize, cornerRadius = corner, style = hairline)
+}
+
 /** Max chips drawn before collapsing the tail into a "+N" overflow chip. */
 private const val MAX_VISIBLE_BADGES = 4
 
@@ -211,16 +273,19 @@ private fun CategoryBadges(badges: ImmutableList<Int>, modifier: Modifier = Modi
 }
 
 /**
- * The collapsed-burst affordance: a stacked-frames glyph plus the frame count, telling the user
- * this one tile stands in for N near-simultaneous shots that open together.
+ * The collapsed-group count pill: a stacked-frames glyph plus the frame count, telling the user
+ * this one tile stands in for N frames that open together. Drawn in the translucent-dark
+ * overlay-chrome chip style (shared with the browser HUD) with bright text, so it stays legible
+ * over both bright and dark photos — louder than a category chip because it changes what a click
+ * does (it opens a run, not a single).
  */
 @Composable
 private fun BurstBadge(count: Int, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier,
         shape = MaterialTheme.shapes.small,
-        color = AppTheme.colors.categoryMemberContainer,
-        contentColor = AppTheme.colors.categoryMemberContent,
+        color = AppTheme.colors.overlayChromeBackground,
+        contentColor = AppTheme.colors.onOverlayChrome,
     ) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.xxs),
@@ -232,7 +297,7 @@ private fun BurstBadge(count: Int, modifier: Modifier = Modifier) {
                 contentDescription = "Burst of $count",
                 modifier = Modifier.size(AppTheme.dimens.iconSm),
             )
-            Text(text = count.toString(), style = MaterialTheme.typography.labelMedium)
+            Text(text = count.toString(), style = MaterialTheme.typography.labelLarge)
         }
     }
 }

@@ -34,6 +34,10 @@ data class Dimens(
     // Horizontal inset inside the small overlay badges (burst count, category chip). Tighter than
     // the spacing scale by design, shared so both badges stay visually identical.
     val badgeInset: Dp = 5.dp,
+    // How far the stacked-deck cards behind a collapsed group tile peek out toward the top-right.
+    // The whole deck is drawn *inside* the cell (the cover photo is inset by this much on its top
+    // and end), so the peeking edges never bleed into the grid gutters or the neighbouring tile.
+    val burstStackInset: Dp = 10.dp,
 )
 
 val LocalDimens = staticCompositionLocalOf { Dimens() }
