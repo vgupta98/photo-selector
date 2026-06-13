@@ -1,0 +1,44 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5B86F2"/>
+      <stop offset="1" stop-color="#2F54D9"/>
+    </linearGradient>
+    <clipPath id="frontClip">
+      <rect x="300" y="330" width="424" height="372" rx="34"/>
+    </clipPath>
+  </defs>
+
+  <!-- macOS rounded-square background -->
+  <rect x="0" y="0" width="1024" height="1024" rx="228" fill="url(#bg)"/>
+
+  <!-- Stacked photo cards -->
+  <g>
+    <!-- back card -->
+    <g transform="rotate(-13 512 512)">
+      <rect x="318" y="318" width="388" height="340" rx="30" fill="#AFC4FB"/>
+    </g>
+    <!-- middle card -->
+    <g transform="rotate(7 512 512)">
+      <rect x="318" y="330" width="400" height="350" rx="32" fill="#D9E4FE"/>
+    </g>
+
+    <!-- front card (the chosen photo) -->
+    <rect x="300" y="330" width="424" height="372" rx="34" fill="#FFFFFF"/>
+    <g clip-path="url(#frontClip)">
+      <rect x="300" y="330" width="424" height="372" fill="#EAF2FF"/>
+      <!-- sun -->
+      <circle cx="408" cy="430" r="40" fill="#FFB23E"/>
+      <!-- mountains -->
+      <path d="M300 702 L430 520 L520 612 L610 470 L724 640 L724 702 Z" fill="#3F6BE6"/>
+      <path d="M300 702 L470 560 L600 702 Z" fill="#6E93F2"/>
+    </g>
+  </g>
+
+  <!-- Favourite / pick star badge -->
+  <g transform="translate(690 668)">
+    <circle cx="0" cy="0" r="92" fill="#FFFFFF"/>
+    <circle cx="0" cy="0" r="78" fill="#FFB23E"/>
+    <path d="M0 -50 L15.5 -16 L52 -12 L24 13 L32 49 L0 30 L-32 49 L-24 13 L-52 -12 L-15.5 -16 Z" fill="#FFFFFF"/>
+  </g>
+</svg>
