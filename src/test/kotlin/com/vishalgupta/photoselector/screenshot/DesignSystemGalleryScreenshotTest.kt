@@ -15,12 +15,15 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
+import com.vishalgupta.photoselector.domain.model.Category
+import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.presentation.designsystem.atom.AppButton
 import com.vishalgupta.photoselector.presentation.designsystem.atom.AppOutlinedButton
 import com.vishalgupta.photoselector.presentation.designsystem.atom.AppTextButton
 import com.vishalgupta.photoselector.presentation.designsystem.atom.FavouriteStar
 import com.vishalgupta.photoselector.presentation.designsystem.atom.LoadingIndicator
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BusyBar
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.CategoryMenu
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ConflictPolicyButton
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ErrorPlaceholder
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.FavouritesButton
@@ -65,6 +68,22 @@ class DesignSystemGalleryScreenshotTest {
                             FavouriteStar(filled = false, modifier = Modifier.size(AppTheme.dimens.iconSm))
                             FavouritesButton(count = 12, onClick = {})
                             ConflictPolicyButton(enabled = true, onSelect = {})
+                        }
+
+                        // The Favourites pill and the Categories dropdown trigger sit side by side
+                        // in the real top bar; the caret on Categories is what tells them apart.
+                        Text("Top-bar category controls", style = MaterialTheme.typography.titleMedium)
+                        Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.md)) {
+                            FavouritesButton(count = 40, onClick = {})
+                            CategoryMenu(
+                                entries = listOf(
+                                    Category.favourites() to 40,
+                                    Category(CategoryId("c1"), "MyCategory", false) to 16,
+                                    Category(CategoryId("c2"), "MyCategory2", false) to 19,
+                                ),
+                                onSelect = {},
+                                onCreateRequested = {},
+                            )
                         }
 
                         Text("Pill toasts", style = MaterialTheme.typography.titleMedium)

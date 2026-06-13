@@ -473,6 +473,11 @@ class ScreenSplitScreenshotTest {
             }
         }
         rule.waitForIdle()
+        // The footer legend's F hint is always "Favourite": F files into Favourites in every
+        // scope (GridViewModel.toggleMembershipAtFocus), so it must never claim to toggle the
+        // viewed custom category.
+        rule.onNodeWithText("Favourite").assertIsDisplayed()
+        rule.onNodeWithText("Toggle Selects").assertDoesNotExist()
         rule.onNodeWithContentDescription("Category actions").performClick()
         rule.waitForIdle()
         rule.onNodeWithText("Rename…").assertIsDisplayed()
