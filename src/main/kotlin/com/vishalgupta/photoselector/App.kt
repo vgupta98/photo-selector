@@ -209,7 +209,10 @@ fun App(container: AppContainer) {
                         },
                         // Only offered when browsing a category: jump to this photo in the All Photos grid,
                         // ringing it there. Null in the All-Photos browser (it's already All Photos), which
-                        // is what hides the button and disables the key.
+                        // is what hides the button and disables the key. Relies on the All Photos grid being
+                        // warm - it always is, since a category is reached through the All Photos dropdown,
+                        // so its VM and scroll are retained. A cold All Photos would drop revealPhotoId in
+                        // GridScreen (the reveal is gated to a warm return) and land at index 0 instead.
                         onShowInAllPhotos = (s.scope as? CategoryScope.Category)?.let {
                             {
                                 container.goTo(
