@@ -610,20 +610,20 @@ class GridKeyboardTest {
         )
     }
 
-    // --- Returning from the viewer resumes the ring at the photo you left on ---------------------
-    // Mouse-open a photo and come back: an existing ring follows to that photo (the view model re-seats
-    // it via setLastViewed). If that photo is off-screen - you paged far away in the viewer - the grid
-    // scrolls to it so you resume there with the ring in view. This drives the UI half: a warm return
-    // whose ring sits on the (off-screen) last-viewed photo must scroll it on-screen.
+    // --- Returning from the viewer resumes at the photo you left on - RING OR NOT -----------------
+    // Open a photo and come back: the grid scrolls to that photo so you resume there. Browser.onBack
+    // carries it as revealPhotoId, and the resume is driven by THAT, not by the keyboard ring - so it
+    // fires even for a pure-mouse user with no ring (focusedIndex == -1), the bug the old ring-gated
+    // resume had. This drives the UI half: an off-screen revealPhotoId must scroll on-screen with no ring.
     @OptIn(ExperimentalTestApi::class)
     @Test
-    fun warmReturnWithRingOnLastViewed_scrollsThatPhotoIntoView() {
+    fun warmReturnWithRevealPhoto_scrollsItIntoViewEvenWithNoRing() {
         val photos = (0 until 80).map { photoNamed("p$it") }
         lateinit var gridStateRef: LazyGridState
         rule.setContent {
             AppTheme {
                 Surface(Modifier.size(400.dp, 400.dp)) {
-                    // Retained scroll parked at the top; the ring + last-viewed photo are far below, off-screen.
+                    // Retained scroll parked at the top; the reveal target is far below, off-screen.
                     val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = 0)
                     gridStateRef = gridState
                     GridScreen(
@@ -631,12 +631,12 @@ class GridKeyboardTest {
                             photos = photos,
                             groups = photos.map(PhotoGroup::Single),
                             scope = CategoryScope.AllPhotos,
-                            focusedIndex = 60, // ring re-seated onto the returned photo
-                            lastViewedPhotoId = photos[60].id,
+                            focusedIndex = -1, // pure-mouse user, NO ring - resume must still fire
                         ),
                         initialScrollIndex = 0,
                         retainedGridState = gridState,
                         anchorInitialScroll = false, // warm return
+                        revealPhotoId = photos[60].id, // the photo the browser left on
                         onTileClick = {},
                         onChangeFolder = {},
                         onSelectCategory = { _, _ -> },
@@ -657,18 +657,20 @@ class GridKeyboardTest {
         }
         rule.waitForIdle()
 
-        // The ring's photo (tile 60) was below the fold; the resume must have scrolled it into view.
+        // The reveal target (tile 60) was below the fold; the resume must have scrolled it into view.
         assertTrue(
-            "the off-screen ring at p60 should have scrolled into view, got ${gridStateRef.firstVisibleItemIndex}",
+            "the off-screen reveal target p60 should have scrolled into view, got ${gridStateRef.firstVisibleItemIndex}",
             gridStateRef.firstVisibleItemIndex > 30,
         )
     }
 
-    // The "(if present)" half: a pure-mouse user has no ring, so a warm return must NOT resume-scroll -
-    // it keeps the retained scroll, even though the underline marker points at an off-screen photo.
+    // The other half: a warm return with NO revealPhotoId (e.g. backing out of a category to All Photos,
+    // or a background grouping settle) must NOT resume-scroll - it keeps the retained scroll, even though
+    // the underline marker may point at an off-screen photo. Only an explicit reveal moves the viewport,
+    // which is what keeps categories "viewed separately" from the main grid.
     @OptIn(ExperimentalTestApi::class)
     @Test
-    fun warmReturnWithNoRing_keepsTheScrollInsteadOfResuming() {
+    fun warmReturnWithoutReveal_keepsTheScrollInsteadOfResuming() {
         val photos = (0 until 80).map { photoNamed("p$it") }
         lateinit var gridStateRef: LazyGridState
         rule.setContent {
@@ -681,12 +683,13 @@ class GridKeyboardTest {
                             photos = photos,
                             groups = photos.map(PhotoGroup::Single),
                             scope = CategoryScope.AllPhotos,
-                            focusedIndex = -1, // pure-mouse user, no ring
-                            lastViewedPhotoId = photos[60].id,
+                            focusedIndex = -1,
+                            lastViewedPhotoId = photos[60].id, // marker points off-screen, but must not scroll
                         ),
                         initialScrollIndex = 0,
                         retainedGridState = gridState,
                         anchorInitialScroll = false,
+                        // No revealPhotoId: the retained scroll must stand.
                         onTileClick = {},
                         onChangeFolder = {},
                         onSelectCategory = { _, _ -> },
@@ -707,9 +710,9 @@ class GridKeyboardTest {
         }
         rule.waitForIdle()
 
-        // No ring -> no resume; the retained scroll at the top stands.
+        // No reveal -> no resume; the retained scroll at the top stands.
         assertTrue(
-            "with no ring the warm return must keep its scroll, got ${gridStateRef.firstVisibleItemIndex}",
+            "without a reveal the warm return must keep its scroll, got ${gridStateRef.firstVisibleItemIndex}",
             gridStateRef.firstVisibleItemIndex < 10,
         )
     }

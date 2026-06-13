@@ -95,6 +95,23 @@ class GridViewportAnchorTest {
         assertTrue("an actual cursor move arms the focus-into-view scroll", anchor.pendingFocusScroll)
     }
 
+    @Test fun `reconcile consumes a pending reveal, and it wins over a focus arm`() = runBlocking {
+        // Reveal a photo that is NOT in the tiles, so the branch runs and consumes the flag without
+        // needing a live layout to scroll. Arm focus too: the reveal must take priority, and because it
+        // is a different branch of the one `when`, the focus arm is left untouched for a later pass.
+        val anchor = GridViewportAnchor(
+            gridState = LazyGridState(firstVisibleItemIndex = 0),
+            initialAnchor = null,
+            coldFlatFallback = null,
+            revealPhotoId = PhotoId("absent"),
+        )
+        assertEquals(PhotoId("absent"), anchor.pendingRevealId)
+        anchor.onCursorMove(focusChanged = true)
+        anchor.reconcile(renderItems, tiles, emptyList(), focusedIndex = 3, groups = groups)
+        assertNull("the reveal is consumed on the first reconcile", anchor.pendingRevealId)
+        assertTrue("reveal wins over focus; the focus arm survives for a later pass", anchor.pendingFocusScroll)
+    }
+
     @Test fun `reconcile consumes the focus arm only when a cursor move set it`() = runBlocking {
         val anchor = anchorAt(topIndex = 0, initial = null)
         // First reconcile is the initial reshape (lastReconciledGroups is null) with no anchor and nothing

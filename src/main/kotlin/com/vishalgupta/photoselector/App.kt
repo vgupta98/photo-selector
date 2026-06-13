@@ -61,11 +61,19 @@ fun App(container: AppContainer) {
                     val vm = remember {
                         container.gridViewModel(s.root, s.scope, s.lastViewedPhotoId)
                     }
+                    // The deliberate "Show in All Photos" jump seats the keyboard ring on the revealed
+                    // photo so it's unmistakable among thousands; the scroll-into-view itself is handled by
+                    // revealPhotoId below. A passive same-scope resume sets focusRevealedPhoto = false and
+                    // so leaves the (possibly absent) ring alone. Keyed on vm: runs once per visit.
+                    LaunchedEffect(vm) {
+                        if (s.focusRevealedPhoto) vm.focusPhoto(s.revealPhotoId)
+                    }
                     GridScreen(
                         viewModel = vm,
                         initialScrollIndex = s.initialScrollIndex,
                         gridState = gridState,
                         anchorInitialScroll = anchorInitialScroll,
+                        revealPhotoId = s.revealPhotoId,
                         onTileClick = { index ->
                             container.goTo(
                                 Screen.Browser(
@@ -88,7 +96,8 @@ fun App(container: AppContainer) {
                                 Screen.Grid(
                                     root = s.root,
                                     scope = CategoryScope.Category(id),
-                                    lastViewedPhotoId = s.lastViewedPhotoId,
+                                    // No lastViewedPhotoId: a category's underline marks what was browsed
+                                    // *in that category*, not whatever was last opened from All Photos.
                                     returnScrollIndex = currentScrollIndex,
                                 ),
                             )
@@ -126,7 +135,11 @@ fun App(container: AppContainer) {
                                             scope = CategoryScope.AllPhotos,
                                             initialScrollIndex = s.returnScrollIndex
                                                 ?: container.loadBrowsePosition(s.root).lastIndex,
-                                            lastViewedPhotoId = s.lastViewedPhotoId,
+                                            // No lastViewedPhotoId / revealPhotoId: backing out of a
+                                            // category must NOT drag the category-browsed photo into All
+                                            // Photos and scroll there - categories are viewed separately.
+                                            // All Photos returns to its own retained scroll; use the
+                                            // browser's "Show in All Photos" for a deliberate jump.
                                         ),
                                     )
                                 }
@@ -171,6 +184,10 @@ fun App(container: AppContainer) {
                                     s.scope,
                                     initialScrollIndex = idx,
                                     lastViewedPhotoId = photoId,
+                                    // Resume the grid on the photo just browsed, ring or no ring (mouse-only
+                                    // users get the same resume keyboard users always did). Same scope, so
+                                    // no ring is spawned - focusRevealedPhoto stays false.
+                                    revealPhotoId = photoId,
                                     returnScrollIndex = s.returnScrollIndex,
                                 ),
                             )
@@ -185,6 +202,21 @@ fun App(container: AppContainer) {
                                         leftIndex = st.currentIndex,
                                         rightIndex = (st.currentIndex + 1) % st.photos.size,
                                         returnScrollIndex = s.returnScrollIndex,
+                                    ),
+                                )
+                            }
+                        },
+                        // Only offered when browsing a category: jump to this photo in the All Photos grid,
+                        // ringing it there. Null in the All-Photos browser (it's already All Photos), which
+                        // is what hides the button and disables the key.
+                        onShowInAllPhotos = (s.scope as? CategoryScope.Category)?.let {
+                            {
+                                container.goTo(
+                                    Screen.Grid(
+                                        root = s.root,
+                                        scope = CategoryScope.AllPhotos,
+                                        revealPhotoId = vm.state.value.currentPhoto?.id,
+                                        focusRevealedPhoto = true,
                                     ),
                                 )
                             }

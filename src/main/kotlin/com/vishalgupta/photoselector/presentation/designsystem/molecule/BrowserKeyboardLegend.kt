@@ -24,9 +24,15 @@ fun BrowserKeyboardLegend(
     hasCustomCategories: Boolean,
     readOnly: Boolean,
     modifier: Modifier = Modifier,
+    // True only when browsing a category, where `A` jumps to the photo in the All Photos grid.
+    canShowInAllPhotos: Boolean = false,
 ) {
     KeyboardLegend(
-        hints = browserHints(hasCustomCategories = hasCustomCategories, readOnly = readOnly),
+        hints = browserHints(
+            hasCustomCategories = hasCustomCategories,
+            readOnly = readOnly,
+            canShowInAllPhotos = canShowInAllPhotos,
+        ),
         modifier = modifier,
         shape = PillShape,
         containerColor = AppTheme.colors.overlayChromeBackground,
@@ -39,6 +45,7 @@ fun BrowserKeyboardLegend(
 private fun browserHints(
     hasCustomCategories: Boolean,
     readOnly: Boolean,
+    canShowInAllPhotos: Boolean,
 ): ImmutableList<KeyHint> = buildList {
     add(KeyHint("← →", "Move"))
     if (!readOnly) {
@@ -46,6 +53,7 @@ private fun browserHints(
         if (hasCustomCategories) add(KeyHint("1–9", "Categories"))
     }
     add(KeyHint("C", "Compare"))
+    if (canShowInAllPhotos) add(KeyHint("A", "All Photos"))
     add(KeyHint("Space", "Preview"))
     add(KeyHint("R", "Reveal"))
     add(KeyHint("O", "Open"))
