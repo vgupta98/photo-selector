@@ -28,7 +28,7 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   `CategoryId`, `PhotoGroup` (`Single | Burst`; `Burst.keyIndex` = representative
   frame), `DecodedImage`, `ScanProgress`.
 - `repository/` — interfaces: `PhotoRepository`, `CategoriesRepository`,
-  `BrowsePositionRepository`, `PhotoExporter`, `PhotoTrash`.
+  `BrowsePositionRepository`, `AppPreferencesRepository`, `PhotoExporter`, `PhotoTrash`.
 - `usecase/` — `ScanRootFolderUseCase`, `CopyPhotosToFolderUseCase`,
   `ExportPhotosTxtUseCase`, `MovePhotosToTrashUseCase`.
 - `grouping/` — the grouping seam: `PhotoGrouper` (an interface with one suspend
@@ -53,7 +53,10 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 - `ai/` — similarity pipeline: `EmbeddingModel` seam → `OnnxEmbeddingModel`
   (default) / `DownscaleGrayEmbeddingModel` (fallback), `GrayBuffer`,
   `SharpnessScorer`, `PhotoFeatureExtractor` (+ `PhotoFeatures`), `EmbeddingCache`,
-  `SimilarityPhotoGrouper` (adapter onto `PhotoGrouper`).
+  `SimilarityPhotoGrouper` (adapter onto `PhotoGrouper`); `GroupingResultCache` +
+  `CachingPhotoGrouper` (memoize the computed grouping so lens re-entry is instant).
+- `prefs/` — `JsonAppPreferences` (global one-off flags, e.g. the first-run
+  Similarity coachmark "seen" bit; one small JSON via `AtomicJsonWriter`).
 - `export/` — `CopyPhotoExporter`, `TxtPhotoExporter`, `CompositePhotoExporter`.
 - `trash/` — `DesktopPhotoTrash` (move-to-Trash via AWT Desktop).
 - `io/` — `AtomicJsonWriter` (shared atomic JSON write; categories + browse).
@@ -83,9 +86,11 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   three only); `AppTypography`/`AppShapes` go via `MaterialTheme`. Files:
   `Color`, `Spacing`, `Dimens`, `Type`, `Shape`.
 - `atom/` — `Buttons`, `FavouriteStar`, `LoadingIndicator`.
-- `molecule/` — incl. `GroupingModeToggle`, `BurstExpandedHeader`/`Footer`, the
-  `*KeyboardLegend` set, `CategoryMenu`/`CategoryActionsMenu`, `PillToast`,
-  `SelectionFileMenu`, `ConfirmDialog`/`CategoryNameDialog`.
+- `molecule/` — incl. `GroupingModeToggle` (lens segments + hover tooltips),
+  `GroupingProgressBanner` (cold-pass framing), `SimilarityCoachmark` (first-run
+  callout), `BurstExpandedHeader`/`Footer`, the `*KeyboardLegend` set,
+  `CategoryMenu`/`CategoryActionsMenu`, `PillToast`, `SelectionFileMenu`,
+  `ConfirmDialog`/`CategoryNameDialog`.
 - `organism/` — `GridTopBar`/`GridSelectionTopBar`, `BrowserTopBar`/
   `BrowserCategoryHud`, `PhotoThumbnail`, `ComparePaneView`, `SurveyTileView`,
   `TopBarScaffold`.

@@ -132,14 +132,15 @@ class GridBurstScreenshotTest {
         rule.dumpScreenshot("grid-burst-ungrouped")
     }
 
-    @Test fun `the similarity lens collapses to the suggested-sharpest frame`() {
-        // Toolbar set to "Similar": the same b|c|d run collapses, but keyIndex 0 marks b (the
-        // suggested-sharpest frame) as the representative instead of the middle c. Eyeball
-        // build/screenshots/grid-similarity-collapsed.png - the 2nd tile shows b's cyan, not c's
-        // blue, and the segmented toolbar control reads "Similar".
+    @Test fun `the similarity lens shows the sparkle glyph and a Pick tag on the suggested frame`() {
+        // Toolbar set to "Similar": the same b|c|d run collapses, keyIndex 0 marks b (the
+        // suggested-sharpest) as representative, and keyIsSuggested drives a "Pick" tag. Eyeball
+        // build/screenshots/grid-similarity-collapsed.png - the 2nd tile shows b's cyan, its count
+        // pill carries the SPARKLE glyph (not stacked frames), a "Pick" tag rides above the pill, and
+        // the segmented toolbar control reads "Similar".
         val similarityGroups = listOf(
             PhotoGroup.Single(photos[0]),
-            PhotoGroup.Burst(listOf(photos[1], photos[2], photos[3]), keyIndex = 0),
+            PhotoGroup.Burst(listOf(photos[1], photos[2], photos[3]), keyIndex = 0, keyIsSuggested = true),
             PhotoGroup.Single(photos[4]),
             PhotoGroup.Single(photos[5]),
         )
@@ -155,10 +156,11 @@ class GridBurstScreenshotTest {
         rule.dumpScreenshot("grid-similarity-collapsed")
     }
 
-    @Test fun `a grouping pass shows a non-blocking determinate progress bar`() {
-        // The AI lens is mid-pass: the singles grid stays interactive while a determinate bar under
-        // the toolbar reports "Grouping 18 / 60". Eyeball build/screenshots/grid-grouping-progress.png
-        // - the toolbar reads "Similar", the bar is part-filled, and the tiles below are untouched.
+    @Test fun `the cold similarity pass shows the framing banner with the privacy line`() {
+        // The AI lens is mid-cold-pass: the singles grid stays interactive while the framing banner
+        // under the toolbar names the work ("Finding similar shots — analysing 60 photos on your Mac.")
+        // and carries the privacy line ("Everything stays on your device.") plus the 18 / 60 fraction.
+        // Eyeball build/screenshots/grid-grouping-progress.png.
         renderGrid(
             GridUiState(
                 photos = photos,
@@ -172,7 +174,55 @@ class GridBurstScreenshotTest {
         rule.dumpScreenshot("grid-grouping-progress")
     }
 
-    private fun renderGrid(state: GridUiState) {
+    @Test fun `a productive pass surfaces the N photos to M stacks summary pill`() {
+        // After a Similar pass that grouped: a one-line payoff pill near the bottom. Eyeball
+        // build/screenshots/grid-grouping-summary.png - "3 photos -> 1 stack. Review to cut duplicates."
+        renderGrid(
+            GridUiState(
+                photos = photos,
+                groups = groups,
+                groupingMode = GroupingMode.Similarity,
+                scope = CategoryScope.AllPhotos,
+                categories = listOf(Category.favourites()),
+            ),
+            groupingNotice = "3 photos → 1 stack. Review to cut duplicates.",
+        )
+        rule.dumpScreenshot("grid-grouping-summary")
+    }
+
+    @Test fun `an empty pass explains itself instead of a silent flat grid`() {
+        // A Similar pass that grouped nothing: the flat photos stay browsable, with a notice explaining
+        // why. Eyeball build/screenshots/grid-grouping-empty.png - "No similar shots found ...".
+        renderGrid(
+            GridUiState(
+                photos = photos,
+                groups = photos.map(PhotoGroup::Single),
+                groupingMode = GroupingMode.Similarity,
+                scope = CategoryScope.AllPhotos,
+                categories = listOf(Category.favourites()),
+            ),
+            groupingNotice = "No similar shots found — these all look unique.",
+        )
+        rule.dumpScreenshot("grid-grouping-empty")
+    }
+
+    @Test fun `the first Similar pick shows the on-device coachmark`() {
+        // First time the Similar lens is picked: a dismissible callout under the toolbar explains the
+        // on-device pass. Eyeball build/screenshots/grid-similarity-coachmark.png.
+        renderGrid(
+            GridUiState(
+                photos = photos,
+                groups = photos.map(PhotoGroup::Single),
+                groupingMode = GroupingMode.Similarity,
+                showSimilarityCoachmark = true,
+                scope = CategoryScope.AllPhotos,
+                categories = listOf(Category.favourites()),
+            ),
+        )
+        rule.dumpScreenshot("grid-similarity-coachmark")
+    }
+
+    private fun renderGrid(state: GridUiState, groupingNotice: String? = null) {
         rule.setContent {
             AppTheme {
                 // A realistic toolbar width so the labeled grouping toggle and "Change folder" both
@@ -195,6 +245,7 @@ class GridBurstScreenshotTest {
                         onCopyToFolder = {},
                         onDismissToast = {},
                         imageLoader = colorLoader,
+                        groupingNotice = groupingNotice,
                     )
                 }
             }

@@ -49,7 +49,9 @@ object SimilarityGrouper {
             if (breakHere) {
                 val run = photos.subList(runStart, i)
                 groups += if (run.size >= 2) {
-                    PhotoGroup.Burst(run.toList(), keyIndex = sharpestIndex(run, sharpness))
+                    // keyIsSuggested = true: the key frame is the sharpest, a quality hint the tile can
+                    // surface as a "Pick" (a time burst leaves this false — it has no quality signal).
+                    PhotoGroup.Burst(run.toList(), keyIndex = sharpestIndex(run, sharpness), keyIsSuggested = true)
                 } else {
                     PhotoGroup.Single(run[0])
                 }

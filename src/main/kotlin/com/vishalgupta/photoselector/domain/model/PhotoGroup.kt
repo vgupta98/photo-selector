@@ -35,10 +35,14 @@ sealed interface PhotoGroup {
      * middle frame: time-based [BurstGrouper] has no quality signal to pick a "best"
      * (favourites/categories are the model, not stars), so the middle is the neutral
      * representative. Similarity grouping passes the *sharpest* frame's index here as a hint.
+     * @param keyIsSuggested true when [keyIndex] came from a quality signal (the sharpest frame, set
+     * only by `SimilarityGrouper`) rather than the neutral middle. Lets the tile surface a "Pick" hint
+     * over a genuine suggestion while a time burst — which made no quality judgement — shows none.
      */
     data class Burst(
         override val photos: List<Photo>,
         val keyIndex: Int = photos.size / 2,
+        val keyIsSuggested: Boolean = false,
     ) : PhotoGroup {
         init {
             require(photos.size >= 2) { "A burst needs at least two frames, got ${photos.size}" }

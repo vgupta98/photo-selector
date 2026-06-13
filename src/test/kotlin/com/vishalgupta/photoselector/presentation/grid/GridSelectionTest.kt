@@ -124,6 +124,8 @@ class GridSelectionTest {
         metadata: CaptureMetadataSource = perPhotoCameraMetadata,
         initialGroupingMode: GroupingMode = GroupingMode.Time,
         onGroupingModeChanged: ((GroupingMode) -> Unit)? = null,
+        hasSeenSimilarityCoachmark: Boolean = true,
+        onSimilarityCoachmarkSeen: () -> Unit = {},
     ): GridViewModel = GridViewModel(
         root = RootFolder(Path.of("/photos")),
         allPhotos = photos,
@@ -136,6 +138,8 @@ class GridSelectionTest {
         imageLoader = noOpImageLoader,
         captureMetadataSource = metadata,
         initialGroupingMode = initialGroupingMode,
+        hasSeenSimilarityCoachmark = hasSeenSimilarityCoachmark,
+        onSimilarityCoachmarkSeen = onSimilarityCoachmarkSeen,
         onGroupingModeChanged = onGroupingModeChanged,
         onPhotosDeleted = { ids -> deletedRoots += ids },
     )
@@ -627,6 +631,91 @@ class GridSelectionTest {
         watcher.cancel()
 
         assertTrue("a warm regroup flashed the progress bar", !flashed)
+        vm.onClear()
+    }
+
+    @Test
+    fun groupingOutcome_firesOnceOnAUserLensPickWithPayoffCounts() = runBlocking {
+        // oneBurstMetadata collapses all six frames into one burst. A deliberate lens pick must announce
+        // the result exactly once, with counts derived from the applied groups.
+        val vm = viewModel(FakeCategoriesRepository(categories), metadata = oneBurstMetadata, initialGroupingMode = GroupingMode.Off)
+        vm.awaitPhotos()
+
+        vm.setGroupingMode(GroupingMode.Time)
+        withTimeout(2_000) { vm.state.first { it.groups.size == 1 } } // the burst landed (state applied first)
+        val outcome = withTimeout(2_000) { vm.groupingOutcomes.first() }
+
+        assertEquals(GroupingMode.Time, outcome.mode)
+        assertEquals(photos.size, outcome.photoCount)
+        assertEquals(1, outcome.burstCount)
+        assertEquals(photos.size, outcome.photosInBursts)
+        vm.onClear()
+    }
+
+    @Test
+    fun groupingOutcome_isEmptyWhenALensPickProducesNoBursts() = runBlocking {
+        // perPhotoCameraMetadata never groups, so picking a lens yields zero stacks: the outcome still
+        // fires (burstCount == 0) so the grid can explain the empty result rather than going silent.
+        val vm = viewModel(FakeCategoriesRepository(categories), metadata = perPhotoCameraMetadata, initialGroupingMode = GroupingMode.Off)
+        vm.awaitPhotos()
+
+        vm.setGroupingMode(GroupingMode.Time)
+        val outcome = withTimeout(2_000) { vm.groupingOutcomes.first() }
+
+        assertEquals(0, outcome.burstCount)
+        assertEquals(0, outcome.photosInBursts)
+        vm.onClear()
+    }
+
+    @Test
+    fun groupingOutcome_doesNotFireOnTheSeededFirstLoadPass() = runBlocking {
+        // A grid seeded into a lens regroups on init (announce = false): a background pass, not a user
+        // pick, so it must stay silent — otherwise every folder-open would pop a summary.
+        val vm = viewModel(FakeCategoriesRepository(categories), metadata = oneBurstMetadata, initialGroupingMode = GroupingMode.Time)
+        vm.awaitPhotos()
+        withTimeout(2_000) { vm.state.first { it.groups.size == 1 } } // init pass collapsed the burst
+
+        var fired = false
+        val watcher = launch { vm.groupingOutcomes.collect { fired = true } }
+        delay(200)
+        watcher.cancel()
+
+        assertTrue("the seeded first-load pass must not announce", !fired)
+        vm.onClear()
+    }
+
+    @Test
+    fun similarityCoachmark_showsOnFirstPickThenDismissPersistsAndNeverReturns() = runBlocking {
+        var seen = 0
+        val vm = viewModel(
+            FakeCategoriesRepository(categories),
+            hasSeenSimilarityCoachmark = false,
+            onSimilarityCoachmarkSeen = { seen++ },
+        )
+        vm.awaitPhotos()
+        assertTrue("no coachmark before the lens is picked", !vm.state.value.showSimilarityCoachmark)
+
+        vm.setGroupingMode(GroupingMode.Similarity)
+        assertTrue("coachmark shows on the first Similar pick", vm.state.value.showSimilarityCoachmark)
+
+        vm.dismissSimilarityCoachmark()
+        assertTrue("dismissing hides it", !vm.state.value.showSimilarityCoachmark)
+        assertEquals("dismissal is persisted exactly once", 1, seen)
+
+        // Re-picking Similar (after switching away) never shows it again.
+        vm.setGroupingMode(GroupingMode.Off)
+        vm.setGroupingMode(GroupingMode.Similarity)
+        assertTrue("coachmark never returns once dismissed", !vm.state.value.showSimilarityCoachmark)
+        assertEquals("no second persist call", 1, seen)
+        vm.onClear()
+    }
+
+    @Test
+    fun similarityCoachmark_neverShowsWhenAlreadySeen() = runBlocking {
+        val vm = viewModel(FakeCategoriesRepository(categories), hasSeenSimilarityCoachmark = true)
+        vm.awaitPhotos()
+        vm.setGroupingMode(GroupingMode.Similarity)
+        assertTrue("a returning user is not re-coached", !vm.state.value.showSimilarityCoachmark)
         vm.onClear()
     }
 

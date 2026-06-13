@@ -6,9 +6,12 @@ import com.vishalgupta.photoselector.data.export.CopyPhotoExporter
 import com.vishalgupta.photoselector.data.export.TxtPhotoExporter
 import com.vishalgupta.photoselector.data.categories.JsonCategoriesRepository
 import com.vishalgupta.photoselector.data.filesystem.FileSystemPhotoRepository
+import com.vishalgupta.photoselector.data.prefs.JsonAppPreferences
+import com.vishalgupta.photoselector.data.ai.CachingPhotoGrouper
 import com.vishalgupta.photoselector.data.ai.DownscaleGrayEmbeddingModel
 import com.vishalgupta.photoselector.data.ai.EmbeddingCache
 import com.vishalgupta.photoselector.data.ai.EmbeddingModel
+import com.vishalgupta.photoselector.data.ai.GroupingResultCache
 import com.vishalgupta.photoselector.data.ai.OnnxEmbeddingModel
 import com.vishalgupta.photoselector.data.ai.PhotoFeatureExtractor
 import com.vishalgupta.photoselector.data.ai.SimilarityPhotoGrouper
@@ -32,6 +35,7 @@ import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.BrowsePosition
 import com.vishalgupta.photoselector.domain.repository.CategoriesRepository
+import com.vishalgupta.photoselector.domain.repository.AppPreferencesRepository
 import com.vishalgupta.photoselector.domain.repository.BrowsePositionRepository
 import com.vishalgupta.photoselector.domain.repository.PhotoExporter
 import com.vishalgupta.photoselector.domain.repository.PhotoRepository
@@ -115,13 +119,22 @@ class AppContainer {
     private val embeddingModel: EmbeddingModel = loadEmbeddingModel()
     private val embeddingCache = EmbeddingCache(cacheDir = cacheDir, modelId = embeddingModel.id)
         .also { it.startEviction(appScope) }
-    private val similarityGrouper: PhotoGrouper = SimilarityPhotoGrouper(
-        PhotoFeatureExtractor(
-            model = embeddingModel,
-            cache = embeddingCache,
-            decodeForEmbedding = ::decodeForEmbedding,
-            decodeForSharpness = ::decodeForSharpness,
+    // Memoizes the computed grouping (frame ids + key frame, not pixels) so re-entering the Similarity
+    // lens on an unchanged folder is instant instead of re-running the model pass. Content+modelId
+    // keyed, so a source edit or model swap re-keys it automatically (same discipline as embeddingCache).
+    private val groupingResultCache = GroupingResultCache(cacheDir = cacheDir, json = json)
+        .also { it.startEviction(appScope) }
+    private val similarityGrouper: PhotoGrouper = CachingPhotoGrouper(
+        delegate = SimilarityPhotoGrouper(
+            PhotoFeatureExtractor(
+                model = embeddingModel,
+                cache = embeddingCache,
+                decodeForEmbedding = ::decodeForEmbedding,
+                decodeForSharpness = ::decodeForSharpness,
+            ),
         ),
+        cache = groupingResultCache,
+        modelId = embeddingModel.id,
     )
 
     private fun loadEmbeddingModel(): EmbeddingModel = try {
@@ -156,6 +169,10 @@ class AppContainer {
     private val categoriesRepository: CategoriesRepository =
         JsonCategoriesRepository(json, scannedPhotos = { root -> photosFor(root) })
     private val browsePositionRepository: BrowsePositionRepository = JsonBrowsePositionRepository(json)
+    // Global one-off flags (the first-run Similarity coachmark "seen" bit). One small JSON doc in the
+    // cache dir, written through the shared AtomicJsonWriter.
+    private val appPreferences: AppPreferencesRepository =
+        JsonAppPreferences(cacheDir.resolve("preferences.json"), json)
     private val exporter: PhotoExporter = CompositePhotoExporter(TxtPhotoExporter(), CopyPhotoExporter())
     private val photoTrash: PhotoTrash = DesktopPhotoTrash()
 
@@ -313,6 +330,10 @@ class AppContainer {
             captureMetadataSource = captureMetadataSource,
             similarityGrouper = similarityGrouper,
             initialGroupingMode = lastGroupingMode,
+            // Global flag, read at build time; the in-memory cache keeps later grids coherent once
+            // it's been dismissed. The callback persists the dismissal so it never reappears.
+            hasSeenSimilarityCoachmark = appPreferences.hasSeenSimilarityCoachmark(),
+            onSimilarityCoachmarkSeen = { appPreferences.markSimilarityCoachmarkSeen() },
             parentJob = folderJob,
             onScrollIndexChanged = { index ->
                 appScope.launch { browsePositionRepository.saveIndex(root, index) }
