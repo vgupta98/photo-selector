@@ -118,7 +118,8 @@ class AppContainer {
         PhotoFeatureExtractor(
             model = embeddingModel,
             cache = embeddingCache,
-            decode = ::decodeForEmbedding,
+            decodeForEmbedding = ::decodeForEmbedding,
+            decodeForSharpness = ::decodeForSharpness,
         ),
     )
 
@@ -131,6 +132,12 @@ class AppContainer {
 
     private suspend fun decodeForEmbedding(photo: Photo): DecodedImage? = try {
         formatRegistry.decoderFor(photo.absolutePath)?.decode(photo.absolutePath, EMBEDDING_EDGE_PX)
+    } catch (_: Throwable) {
+        null
+    }
+
+    private suspend fun decodeForSharpness(photo: Photo): DecodedImage? = try {
+        formatRegistry.decoderFor(photo.absolutePath)?.decode(photo.absolutePath, SHARPNESS_EDGE_PX)
     } catch (_: Throwable) {
         null
     }
@@ -319,9 +326,14 @@ class AppContainer {
     }
 
     private companion object {
-        // Edge length of the decode feeding the embedder + sharpness scorer. Sized to the learned
-        // model's 224px square input so OnnxEmbeddingModel downscales rather than upscales; the
-        // classical fallback and the sharpness metric are happy at this size too.
+        // Edge length of the decode feeding the embedder. Sized to the learned model's 224px square
+        // input so OnnxEmbeddingModel (and the classical fallback) downscales rather than upscales.
         const val EMBEDDING_EDGE_PX = 224
+
+        // Sharpness is scored on its own, larger decode (see PhotoFeatureExtractor): a few-pixel
+        // focus/motion blur is sub-pixel at 224px, so adjacent burst frames would score the same and
+        // the suggested-sharpest key frame would be noise. 768px keeps that blur measurable while
+        // bounding the one-time cold-pass decode cost.
+        const val SHARPNESS_EDGE_PX = 768
     }
 }
