@@ -6,8 +6,8 @@ import com.vishalgupta.photoselector.domain.grouping.SimilarityGrouper
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoGroup
 import com.vishalgupta.photoselector.domain.model.PhotoId
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlin.coroutines.coroutineContext
 
 /**
  * The visual-similarity [PhotoGrouper]: extracts each frame's [PhotoFeatures] (cached) and feeds
@@ -30,7 +30,7 @@ class SimilarityPhotoGrouper(
         val embeddings = HashMap<PhotoId, FloatArray>(total)
         val sharpness = HashMap<PhotoId, Float>(total)
         photos.forEachIndexed { i, photo ->
-            coroutineContext.ensureActive()
+            currentCoroutineContext().ensureActive()
             // The (cached) decode + embedding is the cost; report after each so a cold first pass
             // drives a determinate bar rather than leaving the grid looking frozen for a minute.
             extractor.featuresFor(photo)?.let { features ->
