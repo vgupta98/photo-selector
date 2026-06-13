@@ -9,6 +9,9 @@
     </clipPath>
   </defs>
 
+  <!-- All artwork sits inside the Apple icon grid: ~824px squircle centered
+       on a 1024 transparent canvas, leaving the standard ~100px margin. -->
+  <g transform="translate(512 512) scale(0.805) translate(-512 -512)">
   <!-- macOS rounded-square background -->
   <rect x="0" y="0" width="1024" height="1024" rx="228" fill="url(#bg)"/>
 
@@ -40,5 +43,6 @@
     <circle cx="0" cy="0" r="92" fill="#FFFFFF"/>
     <circle cx="0" cy="0" r="78" fill="#FFB23E"/>
     <path d="M0 -50 L15.5 -16 L52 -12 L24 13 L32 49 L0 30 L-32 49 L-24 13 L-52 -12 L-15.5 -16 Z" fill="#FFFFFF"/>
+  </g>
   </g>
 </svg>
