@@ -1,5 +1,6 @@
 package com.vishalgupta.photoselector.data.ai
 
+import com.vishalgupta.photoselector.domain.model.DecodedImage
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoGroup
 import com.vishalgupta.photoselector.domain.model.PhotoId
@@ -12,6 +13,8 @@ import kotlin.math.sqrt
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 /**
  * Exercises the data-layer half end to end: extract features (decode -> embed -> cache) and feed
@@ -30,7 +33,7 @@ class SimilarityPhotoGrouperTest {
         val colour = mapOf(a.id to 10, b.id to 10, c.id to 200)
 
         var decodeCount = 0
-        val decode: suspend (Photo) -> com.vishalgupta.photoselector.domain.model.DecodedImage? = { photo ->
+        val decode: suspend (Photo) -> DecodedImage? = { photo ->
             decodeCount++
             ImageFixtures.solid(8, 8, r = colour.getValue(photo.id))
         }
@@ -39,31 +42,65 @@ class SimilarityPhotoGrouperTest {
             val red = image.bgraBytes[2].toInt() and 0xFF
             if (red < 128) unit(1f, 0f) else unit(0f, 1f)
         }
-        val grouper = SimilarityPhotoGrouper(PhotoFeatureExtractor(model, cache, decode))
+        // The same decode backs both lambdas here, so each photo decodes twice on a miss.
+        val grouper = SimilarityPhotoGrouper(PhotoFeatureExtractor(model, cache, decode, decode))
 
         val first = grouper.group(listOf(a, b, c))
         assertEquals(listOf(a, b), assertIs<PhotoGroup.Burst>(first[0]).photos)
         assertIs<PhotoGroup.Single>(first[1])
-        assertEquals(3, decodeCount, "first pass decodes each photo once")
+        assertEquals(6, decodeCount, "first pass decodes each photo twice: embedding + sharpness")
 
         val second = grouper.group(listOf(a, b, c))
         assertEquals(listOf(a, b), assertIs<PhotoGroup.Burst>(second[0]).photos)
-        assertEquals(3, decodeCount, "second pass is all cache hits, no re-decode")
+        assertEquals(6, decodeCount, "second pass is all cache hits, no re-decode")
     }
 
     @Test fun `reports progress once per photo, ending at total`() = runBlocking {
         val dir = Files.createTempDirectory("similarity-progress-test").also { it.toFile().deleteOnExit() }
         val cache = EmbeddingCache(dir, modelId = "fake-v1")
         val a = photo("A"); val b = photo("B"); val c = photo("C")
-        val decode: suspend (Photo) -> com.vishalgupta.photoselector.domain.model.DecodedImage? =
-            { ImageFixtures.solid(8, 8) }
+        val decode: suspend (Photo) -> DecodedImage? = { ImageFixtures.solid(8, 8) }
         val model = FakeEmbeddingModel(id = "fake-v1") { unit(1f, 0f) }
-        val grouper = SimilarityPhotoGrouper(PhotoFeatureExtractor(model, cache, decode))
+        val grouper = SimilarityPhotoGrouper(PhotoFeatureExtractor(model, cache, decode, decode))
 
         val seen = mutableListOf<Pair<Int, Int>>()
         grouper.group(listOf(a, b, c)) { processed, total -> seen += processed to total }
 
         assertEquals(listOf(1 to 3, 2 to 3, 3 to 3), seen)
+    }
+
+    @Test fun `sharpness is scored from the dedicated sharpness decode, not the embedding decode`() = runBlocking {
+        val dir = Files.createTempDirectory("sharpness-decode-test").also { it.toFile().deleteOnExit() }
+        val cache = EmbeddingCache(dir, modelId = "fake-v1")
+        val p = photo("A")
+        // Embedding decode: a flat fill (Laplacian variance 0). Sharpness decode: a high-frequency
+        // checker (high variance). Were sharpness read off the embedding image it would be 0.
+        val embedDecode: suspend (Photo) -> DecodedImage? = { ImageFixtures.solid(16, 16) }
+        val sharpDecode: suspend (Photo) -> DecodedImage? = { ImageFixtures.checker(16, 16) }
+        val model = FakeEmbeddingModel(id = "fake-v1") { unit(1f, 0f) }
+        val extractor = PhotoFeatureExtractor(model, cache, embedDecode, sharpDecode)
+
+        val features = assertNotNull(extractor.featuresFor(p))
+        assertTrue(
+            features.sharpness > 0f,
+            "sharpness must come from the checker sharpness-decode, not the flat embedding decode",
+        )
+    }
+
+    @Test fun `a failed sharpness decode leaves the frame unassessable, scoring zero`() = runBlocking {
+        val dir = Files.createTempDirectory("sharpness-fallback-test").also { it.toFile().deleteOnExit() }
+        val cache = EmbeddingCache(dir, modelId = "fake-v1")
+        val p = photo("A")
+        // No sharpness decode: the frame must NOT be scored on the embedding's smaller canvas (that
+        // would be incomparable with siblings scored at the canonical size). Unassessable -> 0, so it
+        // simply can't win the key-frame pick. The embedding still succeeds from its own decode.
+        val embedDecode: suspend (Photo) -> DecodedImage? = { ImageFixtures.checker(16, 16) }
+        val sharpDecode: suspend (Photo) -> DecodedImage? = { null }
+        val model = FakeEmbeddingModel(id = "fake-v1") { unit(1f, 0f) }
+        val extractor = PhotoFeatureExtractor(model, cache, embedDecode, sharpDecode)
+
+        val features = assertNotNull(extractor.featuresFor(p))
+        assertEquals(0f, features.sharpness, "an unscorable frame is unassessable (0), not scored on a smaller canvas")
     }
 
     private fun unit(vararg xs: Float): FloatArray {

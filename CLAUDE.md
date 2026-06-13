@@ -255,6 +255,7 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   Regenerate the blob via `tools/embedding-model/` (pinned timm/torch,
   Apache-2.0) and **bump `OnnxEmbeddingModel`'s `id` whenever the vectors change**
   so the on-disk cache re-keys. Don't bake model assumptions into callers.
+- **Sharpness (the suggested key frame) is scored on a dedicated 768px canonical canvas, not the 224px embedding decode** — variance-of-Laplacian is per-pixel, so sharing the embedding decode hid focus differences and scoring at native size let the *lowest-res* copy win; don't unify the two decodes or drop `scaleUpToLongEdge` (bump `EmbeddingCache.FORMAT_VERSION` if the score changes).
 - **ONNX Runtime is a bundled native dependency.** The
   `com.microsoft.onnxruntime:onnxruntime` JAR ships a JNI `.dylib` (and the
   win/linux equivalents) that jpackage rolls into the DMG. Unlike the HEIC
