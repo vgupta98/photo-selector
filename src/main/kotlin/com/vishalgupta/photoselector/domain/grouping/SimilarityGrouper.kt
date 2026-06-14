@@ -49,6 +49,8 @@ object SimilarityGrouper {
             if (breakHere) {
                 val run = photos.subList(runStart, i)
                 groups += if (run.size >= 2) {
+                    // The key frame is the sharpest, so the collapsed tile's cover is the suggested
+                    // keeper (a time burst has no quality signal and keeps the neutral middle frame).
                     PhotoGroup.Burst(run.toList(), keyIndex = sharpestIndex(run, sharpness))
                 } else {
                     PhotoGroup.Single(run[0])

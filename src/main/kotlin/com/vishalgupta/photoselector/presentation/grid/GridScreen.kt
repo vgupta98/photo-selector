@@ -25,6 +25,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.BurstMode
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.PhotoLibrary
@@ -51,8 +53,10 @@ import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.CategoryId
@@ -73,9 +77,11 @@ import com.vishalgupta.photoselector.presentation.designsystem.molecule.BusyBar
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ConfirmDialog
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.EmptyState
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.GridKeyboardLegend
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.GroupingProgressBanner
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.KeyHint
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToast
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToastDefaults
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.SimilarityCoachmark
 import com.vishalgupta.photoselector.presentation.designsystem.organism.GridSelectionTopBar
 import com.vishalgupta.photoselector.presentation.designsystem.organism.GridTopBar
 import com.vishalgupta.photoselector.presentation.designsystem.organism.PhotoThumbnail
@@ -123,6 +129,17 @@ fun GridScreen(
         }
     }
 
+    // The "what the lens found" notice, fired once per user lens pick (see GroupingOutcome). collectLatest
+    // so a quick second lens pick replaces the previous notice rather than queueing it behind the timer.
+    var groupingNotice by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(viewModel) {
+        viewModel.groupingOutcomes.collectLatest { outcome ->
+            groupingNotice = groupingNoticeText(outcome)
+            delay(GROUPING_NOTICE_MS)
+            groupingNotice = null
+        }
+    }
+
     GridScreen(
         state = state,
         initialScrollIndex = initialScrollIndex,
@@ -130,6 +147,7 @@ fun GridScreen(
         anchorInitialScroll = anchorInitialScroll,
         revealPhotoId = revealPhotoId,
         categoryToast = categoryToast,
+        groupingNotice = groupingNotice,
         onTileClick = onTileClick,
         onChangeFolder = onChangeFolder,
         onSelectCategory = onSelectCategory,
@@ -163,6 +181,7 @@ fun GridScreen(
         onSelectGroupingMode = viewModel::setGroupingMode,
         onToggleBurstExpansion = viewModel::toggleBurstExpansion,
         onCollapseBurst = viewModel::collapseBurst,
+        onDismissSimilarityCoachmark = viewModel::dismissSimilarityCoachmark,
         imageLoader = viewModel.imageLoader,
         onToggleSelection = viewModel::toggleSelection,
         onSelectRange = viewModel::selectRange,
@@ -212,8 +231,12 @@ fun GridScreen(
     onSelectGroupingMode: (GroupingMode) -> Unit = {},
     onToggleBurstExpansion: (PhotoId) -> Unit = {},
     onCollapseBurst: () -> Unit = {},
+    onDismissSimilarityCoachmark: () -> Unit = {},
     imageLoader: ImageLoader,
     categoryToast: CategoryToggle? = null,
+    // A one-shot "what the lens found" notice (summary or empty result), already rendered to copy by
+    // the stateful host from a [GroupingOutcome]. Null when there's nothing to announce.
+    groupingNotice: String? = null,
     // Multi-select plumbing. Defaulted so the stateless screen can be hosted (tests, previews)
     // without wiring selection — a grid with no selection handlers simply never selects.
     onToggleSelection: (Int) -> Unit = {},
@@ -298,6 +321,26 @@ fun GridScreen(
             }
         }
     }
+
+    // "Review" a collapsed group: open its frames straight into Compare (2) / Survey (3+), the
+    // "decide now" path next to expand-in-place. The group is a contiguous run of the flat photo
+    // list, so its flat indices are [tileFlatStart] .. +frameCount — resolved HERE, the sole tile->flat
+    // translator (never put a tile index on the nav wire). A run past the side-by-side cap declines
+    // with the same notice a too-large multi-select gets. Remembered like [openTile] so the hover CTA
+    // and the focused-group `C` share one stable resolver and the tiles keep skipping.
+    val openReview: (Int) -> Unit =
+        remember(tiles, tileFlatStart, renderItems, gridState, onCompareSelection, onSelectionTooLargeToCompare) {
+            review@{ tileIndex ->
+                val group = tiles.getOrNull(tileIndex) as? PhotoGroup.Burst ?: return@review
+                val frameCount = group.photos.size
+                if (frameCount > MAX_SURVEY_PHOTOS) {
+                    onSelectionTooLargeToCompare()
+                    return@review
+                }
+                val start = tileFlatStart[tileIndex]
+                onCompareSelection((start until start + frameCount).toList(), firstVisibleFlat())
+            }
+        }
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -433,6 +476,23 @@ fun GridScreen(
                     }
                     return@onPreviewKeyEvent true
                 }
+                // C with no multi-select but a collapsed group focused: review that group's run with
+                // no prior multi-select — the group's frames ARE the selection (the keyboard fallback
+                // for the hover "Review" CTA). Singles fall through to no-op.
+                if (!meta && event.key == Key.C && !hasSelection &&
+                    tiles.getOrNull(state.focusedIndex) is PhotoGroup.Burst
+                ) {
+                    openReview(state.focusedIndex)
+                    return@onPreviewKeyEvent true
+                }
+                // G cycles the lens Single -> Bursts -> Similar -> Single without the mouse. Goes through
+                // the anchored selector so the viewport re-pins across the reshape, exactly like the
+                // toolbar. Suppressed during a multi-select (the toolbar is hidden then anyway).
+                if (!meta && event.key == Key.G && !hasSelection) {
+                    val modes = GroupingMode.entries
+                    onSelectGroupingModeAnchored(modes[(state.groupingMode.ordinal + 1) % modes.size])
+                    return@onPreviewKeyEvent true
+                }
                 val isArrow = event.key == Key.DirectionLeft || event.key == Key.DirectionRight ||
                     event.key == Key.DirectionUp || event.key == Key.DirectionDown
                 if (isArrow && state.focusedIndex < 0 && maxIndex >= 0) {
@@ -540,14 +600,26 @@ fun GridScreen(
             BusyBar(label = state.progressLabel ?: "Working…")
         }
 
-        // Non-blocking determinate progress while a grouping lens computes (the cold Similarity pass
-        // is a ~minute-long wait). Unlike the busy bar above it doesn't lock the toolbar — the user
-        // can keep scrolling the singles grid while the model works.
+        // Non-blocking determinate progress while a grouping lens computes. Unlike the busy bar above
+        // it doesn't lock the toolbar — the user can keep scrolling the singles grid while the model
+        // works. The cold Similarity pass is a ~minute-long on-device run, so it gets the framing
+        // banner (what's happening + the privacy line); the Time regroup is sub-second and never earns
+        // it, so it stays the bare bar.
         state.grouping?.takeIf { it.total > 0 }?.let { g ->
-            BusyBar(
-                label = "Grouping ${g.processed} / ${g.total}",
-                progress = g.processed.toFloat() / g.total,
-            )
+            if (state.groupingMode == GroupingMode.Similarity) {
+                GroupingProgressBanner(processed = g.processed, total = g.total)
+            } else {
+                BusyBar(
+                    label = "Grouping ${g.processed} / ${g.total}",
+                    progress = g.processed.toFloat() / g.total,
+                )
+            }
+        }
+
+        // First-run callout for the Similarity lens — a dismissible card under the toolbar (near the
+        // lens toggle), not a modal: the user can ignore it and keep culling. Shown once, then never.
+        if (state.showSimilarityCoachmark) {
+            SimilarityCoachmark(onDismiss = onDismissSimilarityCoachmark)
         }
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -621,6 +693,15 @@ fun GridScreen(
                                     onRangeSelect = { onSelectRange(index) },
                                     categoryBadges = categoryBadgesFor(keyPhoto, customCategories, state.memberships),
                                     burstCount = (group as? PhotoGroup.Burst)?.photos?.size,
+                                    // The glyph echoes the active lens, and onReview opens the run
+                                    // side by side. Both null for singles and for an expanded burst's
+                                    // individual frames (those open the browser, not a review).
+                                    groupGlyph = if (group is PhotoGroup.Burst) groupGlyphFor(state.groupingMode) else null,
+                                    onReview = if (group is PhotoGroup.Burst) {
+                                        { openReview(index) }
+                                    } else {
+                                        null
+                                    },
                                     withinBurst = item.expandedFrame,
                                 )
                             }
@@ -661,10 +742,28 @@ fun GridScreen(
                     .align(Alignment.BottomCenter)
                     .padding(bottom = AppTheme.spacing.lg),
             )
+
+            // The grouping payoff / empty-result notice, fired once per user lens pick. Sits a row
+            // higher than the action pills above so a coincident toggle/result pill doesn't collide.
+            GridMessagePill(
+                message = groupingNotice,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = GROUPING_NOTICE_BOTTOM_PADDING),
+            )
         }
 
         if (state.photos.isNotEmpty()) {
-            GridKeyboardLegend(hints = rememberLegendHints(state.scope, onBack != null))
+            GridKeyboardLegend(
+                hints = rememberLegendHints(
+                    scope = state.scope,
+                    canGoBack = onBack != null,
+                    // A focused *collapsed* burst is a Burst in tile space (an open burst's frames are
+                    // Singles), so Enter expands it rather than opening the browser.
+                    focusedBurstCollapsed = tiles.getOrNull(state.focusedIndex) is PhotoGroup.Burst,
+                    burstExpanded = state.expandedBurstId != null,
+                ),
+            )
         }
     }
 
@@ -708,16 +807,24 @@ fun GridScreen(
  * membership (see `GridViewModel.toggleMembershipAtFocus`) — it is the keeper key in every
  * scope, not a "toggle this category" key — and the `1..9` filing keys only do anything from
  * All Photos, so they're only advertised there.
+ *
+ * The grouping keys stay honest too: `G` (cycle lens) always applies, but Enter is labelled
+ * **Expand** only when a collapsed burst is focused ([focusedBurstCollapsed]) and `Esc` advertises
+ * **Collapse** only while a burst is open ([burstExpanded]) — where Esc peels the burst before backing out.
  */
 @Composable
 private fun rememberLegendHints(
     scope: CategoryScope,
     canGoBack: Boolean,
+    focusedBurstCollapsed: Boolean,
+    burstExpanded: Boolean,
 ): ImmutableList<KeyHint> = buildList {
     add(KeyHint("← → ↑ ↓", "Move"))
-    add(KeyHint("↵", "Open"))
+    add(KeyHint("↵", if (focusedBurstCollapsed) "Expand" else "Open"))
     add(KeyHint(keys = "F", label = "Favourite"))
     if (scope == CategoryScope.AllPhotos) add(KeyHint("1–9", "Categories"))
+    add(KeyHint("G", "Group"))
+    if (burstExpanded) add(KeyHint("Esc", "Collapse"))
     if (canGoBack) add(KeyHint("Esc", "Back"))
 }.toImmutableList()
 
@@ -784,6 +891,30 @@ private fun GridEmptyState(
 /** How long a [GridMessagePill] result/notice stays up before it fades out. */
 private const val TOAST_DURATION_MS = 2500L
 
+/** How long the grouping summary / empty-result notice stays up — a touch longer, it's the payoff line. */
+private const val GROUPING_NOTICE_MS = 4000L
+
+/** Bottom offset that lifts the grouping notice above the action/toggle pills so they never collide. */
+private val GROUPING_NOTICE_BOTTOM_PADDING = 64.dp
+
+/**
+ * The user-facing copy for a completed grouping pass. An empty result (no stacks) explains why nothing
+ * collapsed rather than leaving a silently flat grid; a productive pass names the payoff. Wording
+ * follows the lens — "stacks" for Similar, "bursts" for Time.
+ */
+internal fun groupingNoticeText(outcome: GroupingOutcome): String {
+    if (outcome.burstCount == 0) {
+        return if (outcome.mode == GroupingMode.Similarity) {
+            "No similar shots found — these all look unique."
+        } else {
+            "No bursts here — nothing was shot rapid-fire."
+        }
+    }
+    val stack = if (outcome.mode == GroupingMode.Similarity) "stack" else "burst"
+    val noun = if (outcome.burstCount == 1) stack else "${stack}s"
+    return "${outcome.photosInBursts} photos → ${outcome.burstCount} $noun. Review to cut duplicates."
+}
+
 /**
  * Result/notice pill for bulk and library-level actions (export saved, copy report, the survey
  * cap notice). Uses the shared [PillToast] chrome and the same latch + fade as [GridTogglePill], so
@@ -837,6 +968,15 @@ private fun GridTogglePill(toast: CategoryToggle?, modifier: Modifier = Modifier
         }
     }
 }
+
+/**
+ * The count-pill glyph for a collapsed group under [mode]: a sparkle for the Similarity lens (an
+ * on-device-AI cluster), the stacked-frames glyph otherwise (a time burst). So a grouped tile
+ * silently says *why* it grouped, echoing the lens the toolbar names. A returned Material icon is a
+ * cached singleton, so the param stays stable and the tile skippable.
+ */
+private fun groupGlyphFor(mode: GroupingMode): ImageVector =
+    if (mode == GroupingMode.Similarity) Icons.Filled.AutoAwesome else Icons.Filled.BurstMode
 
 /**
  * The digit slots (1..9) of the custom categories [photo] belongs to, for its tile badges.

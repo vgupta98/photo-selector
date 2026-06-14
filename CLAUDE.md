@@ -247,8 +247,13 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   boundary** (same contiguity rule as `BurstGrouper`; the expand-in-place burst
   UI fences a contiguous run, and a folder is an event boundary). Per-photo
   embeddings + sharpness are cached to disk (`EmbeddingCache`, keyed by content +
-  model id, invalidated on source edit or model swap); the *grouping* itself is
-  recomputed, never persisted. The shipped embedder is `OnnxEmbeddingModel` — a
+  model id, invalidated on source edit or model swap). The *grouping result* is
+  also memoized — `GroupingResultCache`, wrapped around the grouper by
+  `CachingPhotoGrouper` and wired in `AppContainer` — so re-entering the lens on
+  an unchanged folder is instant rather than re-running the pass; it stores only
+  the lightweight group structure (frame ids + key frame), is content+model-id
+  keyed exactly like the embedding cache, and a cancelled pass is never written.
+  Bump its `FORMAT_VERSION` if the stored shape changes. The shipped embedder is `OnnxEmbeddingModel` — a
   MobileNetV3-Small backbone (classifier stripped) bundled at
   `src/main/resources/models/mobilenetv3-small.onnx` (~6 MB); `dimensions` (1024)
   is probed from the graph at load, so a model swap needs no caller change.

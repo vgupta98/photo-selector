@@ -379,6 +379,99 @@ class GridKeyboardTest {
         assertEquals("it declines with feedback instead", 1, declines)
     }
 
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun cOnAFocusedCollapsedBurst_reviewsItsFramesWithNoPriorSelection() {
+        // a | [b c d] burst | e  -> the burst is tile 1, its frames are flat indices 1..3. C with the
+        // burst focused (and NO multi-select) opens those frames for review.
+        val photos = (0 until 5).map { photoNamed("q$it") }
+        val groups = listOf(
+            PhotoGroup.Single(photos[0]),
+            PhotoGroup.Burst(photos.subList(1, 4)),
+            PhotoGroup.Single(photos[4]),
+        )
+        var captured: List<Int>? = null
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    GridScreen(
+                        state = GridUiState(
+                            photos = photos,
+                            groups = groups,
+                            scope = CategoryScope.AllPhotos,
+                            groupingMode = GroupingMode.Time,
+                            focusedIndex = 1, // the burst tile
+                        ),
+                        initialScrollIndex = 0,
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onSelectCategory = { _, _ -> },
+                        onCreateCategory = {},
+                        onRenameCategory = { _, _ -> },
+                        onDeleteCategory = {},
+                        onBack = null,
+                        onSetFocusedIndex = {},
+                        onToggleMembershipAtFocus = {},
+                        onToggleCustomCategoryAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        imageLoader = noOpImageLoader,
+                        onCompareSelection = { indices, _ -> captured = indices },
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        rule.onRoot().performKeyInput { pressKey(Key.C) }
+        rule.waitForIdle()
+
+        assertEquals("a focused burst's frames open for review", listOf(1, 2, 3), captured)
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun gKey_cyclesTheGroupingLensToTheNextMode() {
+        var picked: GroupingMode? = null
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    GridScreen(
+                        state = GridUiState(
+                            photos = testPhotos,
+                            groups = testPhotos.map(PhotoGroup::Single),
+                            scope = CategoryScope.AllPhotos,
+                            groupingMode = GroupingMode.Off,
+                        ),
+                        initialScrollIndex = 0,
+                        onTileClick = {},
+                        onChangeFolder = {},
+                        onSelectCategory = { _, _ -> },
+                        onCreateCategory = {},
+                        onRenameCategory = { _, _ -> },
+                        onDeleteCategory = {},
+                        onBack = null,
+                        onSetFocusedIndex = {},
+                        onToggleMembershipAtFocus = {},
+                        onToggleCustomCategoryAtFocus = {},
+                        onExportTxt = {},
+                        onCopyToFolder = {},
+                        onDismissToast = {},
+                        imageLoader = noOpImageLoader,
+                        onSelectGroupingMode = { picked = it },
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        rule.onRoot().performKeyInput { pressKey(Key.G) }
+        rule.waitForIdle()
+
+        assertEquals("G advances Single -> Bursts", GroupingMode.Time, picked)
+    }
+
     // --- Mouse-then-keyboard: Enter must not re-fire the mouse-focused tile -----------------------
     // Expanding a burst with the MOUSE leaves Compose focus on that tile. A tile's `clickable`
     // activates on the Enter/Space KEY-UP, so if the key-up leaks past the grid's handler the

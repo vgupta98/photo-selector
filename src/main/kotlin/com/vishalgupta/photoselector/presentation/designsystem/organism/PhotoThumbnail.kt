@@ -5,6 +5,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -26,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -37,6 +41,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.isMetaPressed
 import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.layout.ContentScale
@@ -73,6 +78,15 @@ private const val THUMBNAIL_VIEWPORT_PX = 320
  * "deck" of cards so the stack reads as a stack at a glance, with a count pill naming how many; the
  * tile still shows [photo] (the group's key frame), and the caller wires [onClick] to open the run
  * side by side rather than a single browser.
+ *
+ * Two further cues ride alongside [burstCount] and are both presentation-only (stable types, so the
+ * tile stays skippable):
+ *  - [groupGlyph] is the count pill's glyph — the caller passes the lens's icon (stacked frames for a
+ *    time burst, a sparkle for a similarity cluster) so a grouped tile silently says *why* it grouped.
+ *    Defaults to the stacked-frames glyph when null.
+ *  - [onReview], when non-null, reveals a "Review N →" chip on hover that opens the run's frames in
+ *    Compare/Survey straight away — the "decide now" path next to expand-in-place. Hover-only, so the
+ *    keyboard path (a focused-group `C`) is the non-hover fallback the grid wires separately.
  */
 @Composable
 fun PhotoThumbnail(
@@ -88,6 +102,8 @@ fun PhotoThumbnail(
     onRangeSelect: (() -> Unit)? = null,
     categoryBadges: ImmutableList<Int> = persistentListOf(),
     burstCount: Int? = null,
+    groupGlyph: ImageVector? = null,
+    onReview: (() -> Unit)? = null,
     withinBurst: Boolean = false,
 ) {
     val bitmap by produceState<ImageBitmap?>(null, photo.id) {
@@ -114,6 +130,13 @@ fun PhotoThumbnail(
     // open path and its click semantics, instead of layering a modifier-matching pointer node
     // that races the clickable and lets one swallow the other.
     val windowInfo = LocalWindowInfo.current
+
+    // Hover drives the "Review N →" CTA on a collapsed group. The hoverable is attached only when
+    // [onReview] is wired (groups), and the [hovered] state is read only behind that same null-check
+    // below — so although every tile collects the source, a single never attaches the hoverable and
+    // never reads [hovered], so it never recomposes on hover and stays the pre-CTA tile.
+    val hoverSource = remember { MutableInteractionSource() }
+    val hovered by hoverSource.collectIsHoveredAsState()
 
     // A collapsed group (burst or similarity cluster) reads as a small fanned deck: a couple of
     // neutral cards peek out top-right behind an inset cover photo, so a stack of frames is legible
@@ -165,12 +188,25 @@ fun PhotoThumbnail(
             )
         }
         if (burstCount != null) {
-            // Bottom-start keeps the group badge clear of the star (top-end), category badges
+            // Bottom-start keeps the count pill clear of the star (top-end), category badges
             // (top-start) and the select check (bottom-end).
             BurstBadge(
                 count = burstCount,
+                glyph = groupGlyph ?: Icons.Filled.BurstMode,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
+                    .padding(AppTheme.spacing.xs),
+            )
+        }
+        // Hover-revealed "decide now" CTA — top-start (clear of the star/count/check), neutral
+        // overlay-chrome chip (the amber accent is reserved for favourite/selection). Keyboard users
+        // reach the same action via a focused-group `C`, wired by the grid.
+        if (onReview != null && hovered) {
+            ReviewChip(
+                count = burstCount ?: 0,
+                onClick = onReview,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
                     .padding(AppTheme.spacing.xs),
             )
         }
@@ -226,7 +262,9 @@ fun PhotoThumbnail(
                     onRangeSelect != null && mods.isShiftPressed -> onRangeSelect()
                     else -> onClick()
                 }
-            },
+            }
+            // Track hover only for a reviewable group, so a single never subscribes (see [hovered]).
+            .then(if (onReview != null) Modifier.hoverable(hoverSource) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         if (isGroup) {
@@ -297,14 +335,15 @@ private fun CategoryBadges(badges: ImmutableList<Int>, modifier: Modifier = Modi
 }
 
 /**
- * The collapsed-group count pill: a stacked-frames glyph plus the frame count, telling the user
- * this one tile stands in for N frames that open together. Drawn in the translucent-dark
- * overlay-chrome chip style (shared with the browser HUD) with bright text, so it stays legible
- * over both bright and dark photos — louder than a category chip because it changes what a click
- * does (it opens a run, not a single).
+ * The collapsed-group count pill: the lens's [glyph] plus the frame count, telling the user this one
+ * tile stands in for N frames that open together. Drawn in the translucent-dark overlay-chrome chip
+ * style (shared with the browser HUD) with bright text, so it stays legible over both bright and dark
+ * photos — louder than a category chip because it changes what a click does (it opens a run, not a
+ * single). The [glyph] reflects the active lens (stacked frames for a time burst, a sparkle for a
+ * similarity cluster), so the tile silently echoes the toolbar's chosen lens.
  */
 @Composable
-private fun BurstBadge(count: Int, modifier: Modifier = Modifier) {
+private fun BurstBadge(count: Int, glyph: ImageVector, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier,
         shape = MaterialTheme.shapes.small,
@@ -317,12 +356,37 @@ private fun BurstBadge(count: Int, modifier: Modifier = Modifier) {
             modifier = Modifier.padding(horizontal = AppTheme.dimens.badgeInset, vertical = AppTheme.spacing.xxs),
         ) {
             Icon(
-                imageVector = Icons.Filled.BurstMode,
+                imageVector = glyph,
                 contentDescription = "Group of $count",
                 modifier = Modifier.size(AppTheme.dimens.iconSm),
             )
             Text(text = count.toString(), style = MaterialTheme.typography.labelLarge)
         }
+    }
+}
+
+/**
+ * Hover-revealed "Review N →" chip: opens the group's frames straight into Compare/Survey — the
+ * "decide now" path. Its own [clickable] sits inside the tile's click target and consumes the click,
+ * so reviewing never doubles as expand-in-place. Neutral overlay-chrome, like the count pill (this is
+ * navigation chrome, not the accent-coloured keeper action).
+ */
+@Composable
+private fun ReviewChip(count: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = MaterialTheme.shapes.small,
+        color = AppTheme.colors.overlayChromeBackground,
+        contentColor = AppTheme.colors.onOverlayChrome,
+    ) {
+        Text(
+            text = "Review $count →",
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(
+                horizontal = AppTheme.dimens.badgeInset,
+                vertical = AppTheme.dimens.badgeVerticalInset,
+            ),
+        )
     }
 }
 
@@ -336,7 +400,10 @@ private fun CategoryBadge(label: String) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = AppTheme.dimens.badgeInset, vertical = 1.dp),
+            modifier = Modifier.padding(
+                horizontal = AppTheme.dimens.badgeInset,
+                vertical = AppTheme.dimens.badgeVerticalInset,
+            ),
         )
     }
 }

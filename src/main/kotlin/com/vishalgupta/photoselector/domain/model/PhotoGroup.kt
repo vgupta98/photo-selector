@@ -34,7 +34,8 @@ sealed interface PhotoGroup {
      * @param keyIndex which frame represents the burst on a collapsed tile. Defaults to the
      * middle frame: time-based [BurstGrouper] has no quality signal to pick a "best"
      * (favourites/categories are the model, not stars), so the middle is the neutral
-     * representative. Similarity grouping passes the *sharpest* frame's index here as a hint.
+     * representative. Similarity grouping passes the *sharpest* frame's index here, so the collapsed
+     * tile's cover is the suggested keeper.
      */
     data class Burst(
         override val photos: List<Photo>,
