@@ -45,11 +45,13 @@ import com.vishalgupta.photoselector.domain.usecase.ExportPhotosTxtUseCase
 import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
 import com.vishalgupta.photoselector.domain.usecase.ScanRootFolderUseCase
 import com.vishalgupta.photoselector.presentation.browser.BrowserViewModel
-import com.vishalgupta.photoselector.presentation.compare.CompareViewModel
 import com.vishalgupta.photoselector.presentation.grid.GridViewModel
+import com.vishalgupta.photoselector.presentation.inspect.InspectMode
+import com.vishalgupta.photoselector.presentation.inspect.InspectViewModel
 import com.vishalgupta.photoselector.presentation.survey.SurveyViewModel
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.navigation.GridRetentionKey
+import com.vishalgupta.photoselector.presentation.navigation.MAX_INSPECT_GRID_PHOTOS
 import com.vishalgupta.photoselector.presentation.navigation.activeCategoryId
 import com.vishalgupta.photoselector.presentation.navigation.slice
 import com.vishalgupta.photoselector.presentation.common.GroupingMode
@@ -266,35 +268,64 @@ class AppContainer {
         },
     )
 
-    fun compareViewModel(
-        root: RootFolder,
-        scope: CategoryScope,
-        leftIndex: Int,
-        rightIndex: Int,
-    ): CompareViewModel = CompareViewModel(
-        root = root,
-        photos = photosForScope(root, scope),
-        leftIndex = leftIndex,
-        rightIndex = rightIndex,
-        categories = categoriesRepository,
-        imageLoader = imageLoader,
-        isReadOnly = categoriesRepository.isReadOnly(root),
-        parentJob = folderJob,
-    )
-
-    fun surveyViewModel(
+    /**
+     * Inspect over the photos at [indices] in scope. Both facets run on a *subset* list (the selected
+     * photos, re-indexed 0..n-1) so browse pages only this set and the grid's "n / N" reads as position
+     * within it. The grid facet is built only when the set fits [MAX_INSPECT_GRID_PHOTOS]; a larger set
+     * is browse-only (the factory returns null for the grid). The browse facet neither persists a scroll
+     * position (it's an ephemeral set, not the All-Photos reel) nor deletes (move-to-Trash is disabled
+     * while embedded), so both its scan hooks are null.
+     */
+    fun inspectViewModel(
         root: RootFolder,
         scope: CategoryScope,
         indices: List<Int>,
-    ): SurveyViewModel = SurveyViewModel(
-        root = root,
-        photos = photosForScope(root, scope),
-        indices = indices,
-        categories = categoriesRepository,
-        imageLoader = imageLoader,
-        isReadOnly = categoriesRepository.isReadOnly(root),
-        parentJob = folderJob,
-    )
+    ): InspectViewModel {
+        val scoped = photosForScope(root, scope)
+        val subset = indices.mapNotNull { scoped.getOrNull(it) }
+        val isReadOnly = categoriesRepository.isReadOnly(root)
+        val gridAvailable = subset.size in 2..MAX_INSPECT_GRID_PHOTOS
+
+        val makeGrid: ((Int) -> SurveyViewModel)? = if (gridAvailable) {
+            { initialActive ->
+                SurveyViewModel(
+                    root = root,
+                    photos = subset,
+                    indices = subset.indices.toList(),
+                    categories = categoriesRepository,
+                    imageLoader = imageLoader,
+                    isReadOnly = isReadOnly,
+                    parentJob = folderJob,
+                ).also { it.setActive(initialActive) }
+            }
+        } else {
+            null
+        }
+
+        val makeBrowse: (Int) -> BrowserViewModel = { initialIndex ->
+            BrowserViewModel(
+                root = root,
+                photos = subset,
+                initialIndex = initialIndex,
+                categories = categoriesRepository,
+                moveToTrash = movePhotosToTrashUseCase,
+                imageLoader = imageLoader,
+                isReadOnly = isReadOnly,
+                parentJob = folderJob,
+                onPositionChanged = null,
+                // Embedded browse disables move-to-Trash (BrowserScreen gates it on !embedded), so
+                // there is no delete path to purge from the scan here.
+                onPhotosDeleted = null,
+            )
+        }
+
+        return InspectViewModel(
+            makeGrid = makeGrid,
+            makeBrowse = makeBrowse,
+            initialMode = if (gridAvailable) InspectMode.Grid else InspectMode.Browse,
+            parentJob = folderJob,
+        )
+    }
 
     private fun photosForScope(root: RootFolder, scope: CategoryScope): List<Photo> {
         val members = categoriesRepository.observeMemberships(root).value[scope.activeCategoryId].orEmpty()

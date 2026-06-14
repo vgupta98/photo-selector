@@ -45,7 +45,7 @@ Clean architecture, single Gradle module, package
   `trash/` (move-to-Trash via `java.awt.Desktop.moveToTrash`), plus `io/`
   (the shared `AtomicJsonWriter`).
 - `presentation/` — Compose UI + view models, organised by screen
-  (`rootpicker/`, `grid/`, `browser/`, `compare/`, `survey/`), plus
+  (`rootpicker/`, `grid/`, `browser/`, `inspect/`, `survey/`), plus
   `navigation/` and `common/` (non-UI plumbing: file dialogs, system
   actions, hover).
 - `presentation/designsystem/` — the Atomic Design system. `theme/`
@@ -56,15 +56,19 @@ Clean architecture, single Gradle module, package
 - `di/AppContainer.kt` — manual DI container. **No DI framework.** Add new
   wiring here.
 - Navigation is a sealed `Screen` interface (`RootPicker | Grid | Browser |
-  Compare | Survey`). `Screen.Grid` carries a `CategoryScope` (`AllPhotos |
+  Inspect`). `Screen.Grid` carries a `CategoryScope` (`AllPhotos |
   Category(id)`); each category opens as its *own* `Screen.Grid` (own scroll
-  state) from the All Photos dropdown, never toggled in place. `Screen.Compare`
-  is the two-up side-by-side view (two indices, one shared `ZoomState`);
-  `Screen.Survey` is the overview-pick grid for a 3+ tile selection (capped at
-  `MAX_SURVEY_PHOTOS`; larger is declined with a toast). Both open from the grid
-  or browser via `C`; grid-originated Compare/Survey return to the grid on `Esc`
-  (`Compare.returnToGrid`, `Survey.returnScrollIndex`), browser-originated
-  Compare returns to the browser.
+  state) from the All Photos dropdown, never toggled in place. `Screen.Inspect`
+  holds a *fixed set* of selected photos (`indices`) and shows them two ways
+  behind one toggle: an overview *grid* (the `survey/` facet) and a full-screen
+  *browse* mode (`browser/` reused over just that set, one shared cursor). It
+  opens via `C` — from the grid (a 2+ selection or a group's Review CTA) or the
+  browser (current + next); a set up to `MAX_INSPECT_GRID_PHOTOS` lands on the
+  grid, a larger one (e.g. a long burst) opens browse-only, and `InspectOrigin`
+  decides whether `Esc` returns to the grid or the browser's active photo.
+  `InspectViewModel` lazily builds the two facet view models — a grid-first set
+  never decodes the browser until the first toggle, a browse-only set never
+  builds the grid.
 - **The grid is grouping/presentation only — mind the three index spaces.** The
   toolbar's segmented control picks a lens (`GridUiState.groupingMode`: `Off |
   Time | Similarity`, Time default); a non-`Off` mode resolves to one
@@ -76,7 +80,7 @@ Clean architecture, single Gradle module, package
   collapse → grid-back; collapsed `F` files the whole burst, expanded `F` the
   focused frame). Two invariants here are recurring bug sources:
   - Focus, multi-select and keyboard filing run over `displayGroups` (tile-index
-    space, shared via `GridDisplayModel`); browser/Compare/Survey nav and every
+    space, shared via `GridDisplayModel`); browser/Inspect nav and every
     persisted scroll index (`BrowsePosition.lastIndex`) stay **flat photo
     indices**. The grid is the *sole* translator (`tileIndexForFlat`) — never put
     a tile index on the nav wire or a flat index into grid focus.
@@ -147,7 +151,7 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   - **UI:** compose from existing `atom/`/`molecule/`/`organism/` pieces;
     add a parameter to a component before writing a near-twin; reuse a
     whole screen where the flow fits (a burst opens the existing
-    Compare/Survey, not a new viewer).
+    Inspect, not a new viewer).
   - **Parsing/decoding:** extend the existing reader/registry (`ExifReader`,
     `DefaultPhotoFormatRegistry`) rather than writing a parallel one.
   - **Logic:** the second time the same logic appears, extract one helper

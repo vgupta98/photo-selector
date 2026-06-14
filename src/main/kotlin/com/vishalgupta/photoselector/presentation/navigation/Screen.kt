@@ -41,39 +41,33 @@ sealed interface Screen {
         val returnScrollIndex: Int? = null,
     ) : Screen
     /**
-     * Two-up side-by-side compare. [leftIndex] / [rightIndex] index into the scoped photo
-     * list (same list the browser pages through), so exiting lands on the active pane's photo.
-     * [returnScrollIndex] is carried through from the source so the scroll position survives the
-     * round trip, exactly as [Browser] does. [returnToGrid] flags a grid-originated compare (the
-     * `C` shortcut over a 2-tile selection): it exits back to the grid at [returnScrollIndex]
-     * rather than into the full-screen browser, since that's where the user came from.
+     * Inspect: look at a fixed set of [indices] (the photos selected in the grid, or a group
+     * opened for review, or a current+next pair from the browser) together. Each index points
+     * into the scoped photo list (the same list the browser pages through). Inspect has two
+     * presentations behind one toggle — an overview *grid* (the keepers laid out fit-to-cell) and
+     * a *browse* mode (the full-screen single-photo browser walking only this set). Up to
+     * [MAX_INSPECT_GRID_PHOTOS] it opens on the grid; a larger set (e.g. a long burst) opens
+     * straight into browse with the grid disabled, since dozens of tiles are too small to pick
+     * between. [returnScrollIndex] restores the source's scroll on exit; [origin] decides whether
+     * exit lands back on the grid or the full-screen browser (the active photo).
      */
-    data class Compare(
-        val root: RootFolder,
-        val scope: CategoryScope = CategoryScope.AllPhotos,
-        val leftIndex: Int,
-        val rightIndex: Int,
-        val returnScrollIndex: Int? = null,
-        val returnToGrid: Boolean = false,
-    ) : Screen
-    /**
-     * Survey: an overview-pick grid of the [indices] (3+ tiles) selected in the grid and opened
-     * with `C`. Each index points into the scoped photo list (same as [Compare]). One tile is
-     * "active"; arrows/Tab move it and `F`/`1`-`9` file it, mirroring compare's active-pane model
-     * but with no zoom. [returnScrollIndex] restores the grid's scroll on exit.
-     */
-    data class Survey(
+    data class Inspect(
         val root: RootFolder,
         val scope: CategoryScope = CategoryScope.AllPhotos,
         val indices: List<Int>,
         val returnScrollIndex: Int? = null,
+        val origin: InspectOrigin = InspectOrigin.Grid,
     ) : Screen
 }
 
+/** Where an [Screen.Inspect] was opened from, so it can return there on exit. */
+enum class InspectOrigin { Grid, Browser }
+
 /**
- * Upper bound on how many photos `C` can open side by side at once (Compare is always 2; Survey
- * takes 3 up to this). Past it the grid declines and toasts instead of opening: the survey grid is
- * non-lazy and pins every tile's decode, and beyond a dozen the tiles are too small to pick between
- * anyway — so a stray `Cmd+A` then `C` can't freeze the app or blow the image cache.
+ * Up to this many photos, Inspect opens on its overview *grid* (every tile pinned and decoded at
+ * its cell size); beyond it, a set opens straight into *browse* mode with the grid disabled, where
+ * one photo decodes at a time. The bound exists because the grid is non-lazy and beyond a dozen the
+ * tiles are too small to choose between — but a large set (a long burst) is no longer declined, it
+ * just skips the grid. So a stray `Cmd+A` then `C` can't freeze the app or blow the image cache.
  */
-const val MAX_SURVEY_PHOTOS = 12
+const val MAX_INSPECT_GRID_PHOTOS = 12

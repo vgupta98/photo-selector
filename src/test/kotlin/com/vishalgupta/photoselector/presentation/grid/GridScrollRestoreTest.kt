@@ -4,7 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * The grid translates the FLAT photo index that the browser / Compare / Survey / persisted
+ * The grid translates the FLAT photo index that the browser / Inspect / persisted
  * position speak into its own TILE index. A burst collapses several flat frames into one tile,
  * so the two index spaces diverge once any burst precedes the target - that divergence was the
  * "scroll position is messed up after going back" bug. [tileIndexForFlat] is the translator.

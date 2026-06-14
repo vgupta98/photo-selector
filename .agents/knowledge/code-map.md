@@ -63,8 +63,8 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 
 ## presentation/ — Compose + view models, by screen
 
-- `navigation/` — `Screen` (sealed: `RootPicker | Grid | Browser | Compare |
-  Survey`), `CategoryScope`.
+- `navigation/` — `Screen` (sealed: `RootPicker | Grid | Browser | Inspect`),
+  `InspectOrigin`, `CategoryScope`.
 - `StateHolder.kt` — base view-model plumbing.
 - `rootpicker/` — `RootFolderPickerScreen` + `…ViewModel`.
 - `grid/` — **the heart of the app.** `GridViewModel` (focus/select/file; holds
@@ -74,8 +74,12 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   `displayGroupsFor`/`buildRenderItems` explode the open burst into per-frame
   tiles, plus `renderIndexForTile` etc.), `GridViewportAnchor` (scroll anchoring).
 - `browser/` — `BrowserScreen` + `…ViewModel`, `ZoomableImage`, `ZoomState`.
-- `compare/` — `CompareScreen` + `…ViewModel` (two-up, shared zoom).
-- `survey/` — `SurveyScreen` + `…ViewModel` (3+ overview pick).
+  Reused inside Inspect's browse mode (`embedded`, `onSwitchToGrid`).
+- `inspect/` — `InspectScreen` + `InspectViewModel`: one fixed photo set viewed
+  as an overview grid or full-screen browse, behind one toggle. Reuses the
+  `survey/` and `browser/` view models as its two facets.
+- `survey/` — `SurveyScreen` + `…ViewModel`: Inspect's overview-grid facet
+  (fit-to-cell pick, no zoom).
 - `common/` — non-UI plumbing: `NativeFileDialogs`, `MacSystemActions` /
   `SystemActions`, `CategoryHotkeys`, `CategoryToggle`, `GroupingMode`,
   `HoverOverlay`, `PlatformLabels`.
@@ -92,7 +96,7 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   `CategoryMenu`/`CategoryActionsMenu`, `PillToast`, `SelectionFileMenu`,
   `ConfirmDialog`/`CategoryNameDialog`.
 - `organism/` — `GridTopBar`/`GridSelectionTopBar`, `BrowserTopBar`/
-  `BrowserCategoryHud`, `PhotoThumbnail`, `ComparePaneView`, `SurveyTileView`,
+  `BrowserCategoryHud`, `PhotoThumbnail`, `SurveyTileView`,
   `TopBarScaffold`.
 
 ## By task — open these first
@@ -107,7 +111,7 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 | Decoding a new format | `domain/format/PhotoDecoder.kt`, `data/format/DefaultPhotoFormatRegistry.kt`, register in `di/AppContainer.kt` |
 | HEIC / RAW specifics | `data/format/HeicDecoder.kt`, `data/format/RawDecoder.kt`, `data/format/macos/MacImageIO.kt` |
 | Similarity embeddings / model swap | `data/ai/OnnxEmbeddingModel.kt`, `data/ai/EmbeddingCache.kt`, `tools/embedding-model/` |
-| Compare / Survey views | `presentation/compare/`, `presentation/survey/` |
+| Inspect (grid + browse toggle) | `presentation/inspect/`, `presentation/survey/`, `presentation/browser/` |
 | Adding a screen | `presentation/navigation/Screen.kt`, `App.kt`, `di/AppContainer.kt` |
 | Theming / new shared component | `presentation/designsystem/` (theme → atom → molecule → organism) |
 | Export / trash | `data/export/`, `data/trash/`, matching `domain/usecase/` |

@@ -87,7 +87,6 @@ import com.vishalgupta.photoselector.presentation.designsystem.organism.GridTopB
 import com.vishalgupta.photoselector.presentation.designsystem.organism.PhotoThumbnail
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
-import com.vishalgupta.photoselector.presentation.navigation.MAX_SURVEY_PHOTOS
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -102,7 +101,7 @@ fun GridScreen(
     onTileClick: (index: Int) -> Unit,
     onChangeFolder: () -> Unit,
     onSelectCategory: (currentScrollIndex: Int, id: CategoryId) -> Unit,
-    onCompareSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit,
+    onInspectSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit,
     onBack: (() -> Unit)?,
     // The scroll state retained for this (root, scope) across the session, supplied by the host so it
     // survives a Grid -> Browser -> Grid round trip. [anchorInitialScroll] is true only on the first
@@ -151,8 +150,7 @@ fun GridScreen(
         onTileClick = onTileClick,
         onChangeFolder = onChangeFolder,
         onSelectCategory = onSelectCategory,
-        onCompareSelection = onCompareSelection,
-        onSelectionTooLargeToCompare = viewModel::notifySurveyCapExceeded,
+        onInspectSelection = onInspectSelection,
         onCreateCategory = viewModel::createCategory,
         onRenameCategory = viewModel::renameCategory,
         onDeleteCategory = viewModel::deleteCategory,
@@ -247,8 +245,7 @@ fun GridScreen(
     onFileSelectionIntoCustom: (slot: Int) -> Unit = {},
     onDeleteSelection: () -> Unit = {},
     onCopySelection: (ConflictPolicy) -> Unit = {},
-    onCompareSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit = { _, _ -> },
-    onSelectionTooLargeToCompare: () -> Unit = {},
+    onInspectSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit = { _, _ -> },
     // The scrollbar's drag interactions, hoisted so a test can drive a scrollbar-drag-during-settle
     // (emit DragInteraction.Start) without a real thin-scrollbar gesture; production uses the default.
     scrollbarInteraction: MutableInteractionSource = remember { MutableInteractionSource() },
@@ -304,8 +301,8 @@ fun GridScreen(
 
     // Opening a tile: a collapsed burst unfolds in place into its frames; a single photo - including
     // an open burst's frame - opens the browser at that photo. There is no frame-count cap: even a
-    // huge burst is culled inline. (Compare / Survey stay reachable by selecting frames and pressing
-    // C, exactly as for any multi-select.)
+    // huge burst is culled inline. (Inspect stays reachable by selecting frames and pressing C, exactly
+    // as for any multi-select.)
     // Remembered, not a bare val: this resolver captures the unstable tiles / tileFlatStart lists, so
     // rebuilding it every recomposition would hand every tile a fresh { openTile(index) } onClick and
     // defeat per-tile skipping on any unrelated state flip (favourite, focus, selection). tiles and
@@ -322,23 +319,18 @@ fun GridScreen(
         }
     }
 
-    // "Review" a collapsed group: open its frames straight into Compare (2) / Survey (3+), the
-    // "decide now" path next to expand-in-place. The group is a contiguous run of the flat photo
-    // list, so its flat indices are [tileFlatStart] .. +frameCount — resolved HERE, the sole tile->flat
-    // translator (never put a tile index on the nav wire). A run past the side-by-side cap declines
-    // with the same notice a too-large multi-select gets. Remembered like [openTile] so the hover CTA
-    // and the focused-group `C` share one stable resolver and the tiles keep skipping.
+    // "Review" a collapsed group: open its frames straight into Inspect, the "decide now" path next to
+    // expand-in-place. The group is a contiguous run of the flat photo list, so its flat indices are
+    // [tileFlatStart] .. +frameCount — resolved HERE, the sole tile->flat translator (never put a tile
+    // index on the nav wire). Any size opens: Inspect itself shows a long burst (past the grid cap) in
+    // browse mode rather than declining. Remembered like [openTile] so the hover CTA and the
+    // focused-group `C` share one stable resolver and the tiles keep skipping.
     val openReview: (Int) -> Unit =
-        remember(tiles, tileFlatStart, renderItems, gridState, onCompareSelection, onSelectionTooLargeToCompare) {
+        remember(tiles, tileFlatStart, renderItems, gridState, onInspectSelection) {
             review@{ tileIndex ->
                 val group = tiles.getOrNull(tileIndex) as? PhotoGroup.Burst ?: return@review
-                val frameCount = group.photos.size
-                if (frameCount > MAX_SURVEY_PHOTOS) {
-                    onSelectionTooLargeToCompare()
-                    return@review
-                }
                 val start = tileFlatStart[tileIndex]
-                onCompareSelection((start until start + frameCount).toList(), firstVisibleFlat())
+                onInspectSelection((start until start + group.photos.size).toList(), firstVisibleFlat())
             }
         }
 
@@ -464,16 +456,12 @@ fun GridScreen(
                     confirmingDelete = true
                     return@onPreviewKeyEvent true
                 }
-                // C opens the multi-selection side by side: 2 tiles -> Compare, 3+ -> Survey. The
-                // indices are taken in scope (reading) order; only fires with a 2+ selection. Past
-                // the cap it declines with a toast instead of opening an unusable wall of tiles.
+                // C opens the multi-selection in Inspect (a 2-tile selection opens its overview grid the
+                // same as any larger one). The indices are taken in scope (reading) order; only fires
+                // with a 2+ selection. A large selection isn't declined — Inspect opens it browse-only.
                 if (!meta && event.key == Key.C && state.selection.size >= 2) {
-                    if (state.selection.size <= MAX_SURVEY_PHOTOS) {
-                        val indices = state.photos.indices.filter { state.photos[it].id in state.selection }
-                        onCompareSelection(indices, firstVisibleFlat())
-                    } else {
-                        onSelectionTooLargeToCompare()
-                    }
+                    val indices = state.photos.indices.filter { state.photos[it].id in state.selection }
+                    onInspectSelection(indices, firstVisibleFlat())
                     return@onPreviewKeyEvent true
                 }
                 // C with no multi-select but a collapsed group focused: review that group's run with

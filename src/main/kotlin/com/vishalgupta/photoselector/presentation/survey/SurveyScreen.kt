@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -54,8 +55,13 @@ fun SurveyScreen(
     viewModel: SurveyViewModel,
     systemActions: SystemActions,
     onExit: () -> Unit,
+    // Title and the "open the active tile in browse mode" toggle are set by Inspect, which hosts this
+    // grid as one of its two facets; [manageLifecycle] is false there so Inspect owns the VM's clear.
+    title: String = "Survey",
+    onOpenActive: (() -> Unit)? = null,
+    manageLifecycle: Boolean = true,
 ) {
-    DisposableEffect(viewModel) { onDispose { viewModel.onClear() } }
+    DisposableEffect(viewModel, manageLifecycle) { onDispose { if (manageLifecycle) viewModel.onClear() } }
     val state by viewModel.state.collectAsState()
 
     // Decoding is driven entirely by the reported viewport (onViewportSizeChanged) so tiles decode
@@ -68,6 +74,8 @@ fun SurveyScreen(
         onToggleCategory = viewModel::toggleCategory,
         onViewportSizeChanged = viewModel::setViewportLongEdgePx,
         onExit = onExit,
+        title = title,
+        onOpenActive = onOpenActive,
     )
 }
 
@@ -88,6 +96,10 @@ fun SurveyScreen(
     onToggleCategory: (CategoryId) -> Unit,
     onViewportSizeChanged: (Int) -> Unit,
     onExit: () -> Unit,
+    title: String = "Survey",
+    // Non-null when this grid is a facet of Inspect: `Enter` and a top-bar button open the active
+    // tile in browse mode. Null elsewhere, where the key and button are simply absent.
+    onOpenActive: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -125,10 +137,6 @@ fun SurveyScreen(
                     Key.DirectionUp -> { onMoveActive(-cols); true }
                     Key.DirectionDown -> { onMoveActive(cols); true }
                     Key.F -> if (meta) false else { onToggleCategory(Category.FAVOURITES_ID); true }
-                    Key.Spacebar -> if (meta) false else {
-                        state.active?.photo?.absolutePath?.let { systemActions?.preview(it) }
-                        true
-                    }
                     Key.R -> if (meta) false else {
                         state.active?.photo?.absolutePath?.let { systemActions?.revealInFileManager(it) }
                         true
@@ -137,6 +145,8 @@ fun SurveyScreen(
                         state.active?.photo?.absolutePath?.let { systemActions?.openWithDefaultApp(it) }
                         true
                     }
+                    // Enter opens the active tile in Inspect's browse mode (absent outside Inspect).
+                    Key.Enter -> if (onOpenActive != null) { onOpenActive(); true } else false
                     Key.Escape -> { onExit(); true }
                     else -> false
                 }
@@ -150,7 +160,13 @@ fun SurveyScreen(
                 IconButton(onClick = onExit) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                 }
-                Text("Survey", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium)
+                if (onOpenActive != null) {
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = onOpenActive) {
+                        Icon(Icons.Outlined.Fullscreen, contentDescription = "Browse", tint = Color.White)
+                    }
+                }
             }
 
             Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -205,6 +221,7 @@ fun SurveyScreen(
                     SurveyKeyboardLegend(
                         hasCustomCategories = state.categories.customCategories().isNotEmpty(),
                         readOnly = state.readOnly,
+                        canBrowse = onOpenActive != null,
                     )
                 }
             }
