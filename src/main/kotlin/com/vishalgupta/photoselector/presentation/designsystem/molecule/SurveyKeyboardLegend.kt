@@ -8,20 +8,27 @@ import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 
 /**
- * The survey view's keyboard legend, styled to match the browser/compare overlay chrome so the
- * modes read as one surface. Hints are truthful to the survey key handler: `Tab` and the arrows
- * move the active tile, filing keys apply to the active tile, `Esc` returns to the grid. Filing
- * hints (`F`, `1-9`) drop in [readOnly], and `1-9` only shows when there are [hasCustomCategories]
- * custom categories.
+ * The Inspect grid's keyboard legend, styled to match the browser overlay chrome so the two read as
+ * one surface. Hints are truthful to the grid key handler: `Tab` and the arrows move the active tile,
+ * filing keys apply to the active tile, `Enter` opens it in browse mode ([canBrowse]), `Esc` returns
+ * to the grid. Filing hints (`F`, `1-9`) drop in [readOnly], and `1-9` only shows when there are
+ * [hasCustomCategories] custom categories.
  */
 @Composable
 fun SurveyKeyboardLegend(
     hasCustomCategories: Boolean,
     readOnly: Boolean,
     modifier: Modifier = Modifier,
+    // True when this grid is a facet of Inspect: surfaces the `Enter` hint that opens the active
+    // tile in browse mode. False elsewhere, where that toggle doesn't exist.
+    canBrowse: Boolean = false,
 ) {
     KeyboardLegend(
-        hints = surveyHints(hasCustomCategories = hasCustomCategories, readOnly = readOnly),
+        hints = surveyHints(
+            hasCustomCategories = hasCustomCategories,
+            readOnly = readOnly,
+            canBrowse = canBrowse,
+        ),
         modifier = modifier,
         shape = PillShape,
         containerColor = AppTheme.colors.overlayChromeBackground,
@@ -34,11 +41,13 @@ fun SurveyKeyboardLegend(
 private fun surveyHints(
     hasCustomCategories: Boolean,
     readOnly: Boolean,
+    canBrowse: Boolean,
 ): ImmutableList<KeyHint> = buildList {
     add(KeyHint("Tab ← →", "Move"))
     if (!readOnly) {
         add(KeyHint("F", "Favourite"))
         if (hasCustomCategories) add(KeyHint("1–9", "Categories"))
     }
+    if (canBrowse) add(KeyHint("Enter", "Browse"))
     add(KeyHint("Esc", "Back"))
 }.toImmutableList()

@@ -10,8 +10,4 @@ class MacSystemActions : SystemActions {
     override fun openWithDefaultApp(path: Path) {
         ProcessBuilder("open", path.toString()).start()
     }
-
-    override fun preview(path: Path) {
-        ProcessBuilder("qlmanage", "-p", path.toString()).start()
-    }
 }

@@ -39,12 +39,6 @@ fun main() = application {
                     shortcut = KeyShortcut(Key.O, meta = true),
                     onClick = { photoPath?.let { actions.openWithDefaultApp(it) } },
                 )
-                Item(
-                    PlatformLabels.preview,
-                    enabled = photoPath != null,
-                    shortcut = KeyShortcut(Key.Y, meta = true),
-                    onClick = { photoPath?.let { actions.preview(it) } },
-                )
             }
         }
         App(container)

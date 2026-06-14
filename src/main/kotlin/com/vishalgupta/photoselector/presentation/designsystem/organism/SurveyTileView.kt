@@ -22,11 +22,11 @@ import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import com.vishalgupta.photoselector.presentation.survey.SurveyTile
 
 /**
- * One cell of the survey overview: the photo fit (not cropped) into the cell, a [ComparePaneHeader]
- * floating at the top, and a focus-ring border when [isActive] so it's obvious which tile the
- * keyboard is filing into. Pressing anywhere in the tile makes it active ([onActivate]). Unlike
- * [ComparePaneView] there's no zoom — survey is a no-zoom overview-pick — so it draws a plain
- * fitted [Image] rather than a `ZoomableImage`, reusing the same header/placeholder chrome.
+ * One cell of the Inspect overview grid: the photo fit (not cropped) into the cell, a
+ * [ComparePaneHeader] floating at the top, and a focus-ring border when [isActive] so it's obvious
+ * which tile the keyboard is filing into. Pressing anywhere in the tile makes it active
+ * ([onActivate]). The overview never zooms (that's what Inspect's browse mode is for), so it draws a
+ * plain fitted [Image] rather than a `ZoomableImage`, reusing the same header/placeholder chrome.
  *
  * The caller sizes the tile (e.g. `Modifier.weight(1f).fillMaxHeight()`); the active/inactive border
  * is always laid out at the same width so activating a tile never nudges the survey layout.

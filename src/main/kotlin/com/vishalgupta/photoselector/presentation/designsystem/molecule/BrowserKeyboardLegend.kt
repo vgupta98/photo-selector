@@ -14,8 +14,8 @@ import kotlinx.collections.immutable.toImmutableList
  * text — so the two read as one chrome surface, and the caller folds it into the HUD's existing
  * reveal/auto-hide rather than pinning a third always-on band over the image.
  *
- * The hints are truthful to the browser's key handler and verbs are platform-neutral ("Preview",
- * "Reveal", "Open") so the strip stays short and reads correctly on a future Windows build. Filing
+ * The hints are truthful to the browser's key handler and verbs are platform-neutral ("Reveal",
+ * "Open") so the strip stays short and reads correctly on a future Windows build. Filing
  * hints are dropped when they can't do anything: `F` and `1–9` are hidden in [readOnly], and
  * `1–9` only shows when [hasCustomCategories].
  */
@@ -54,7 +54,6 @@ private fun browserHints(
     }
     add(KeyHint("C", "Compare"))
     if (canShowInAllPhotos) add(KeyHint("A", "All Photos"))
-    add(KeyHint("Space", "Preview"))
     add(KeyHint("R", "Reveal"))
     add(KeyHint("O", "Open"))
     add(KeyHint("+ − 0", "Zoom"))

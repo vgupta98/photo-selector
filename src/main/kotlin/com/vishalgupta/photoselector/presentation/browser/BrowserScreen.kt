@@ -75,8 +75,14 @@ fun BrowserScreen(
     // Non-null only when browsing a category: jumps to this photo in the All Photos grid. Null hides
     // the affordance (and disables its key) in the All-Photos browser, which is already All Photos.
     onShowInAllPhotos: (() -> Unit)? = null,
+    // True when embedded in Inspect's browse mode: trims the browser to the fixed set (no library
+    // chrome, no delete). [onSwitchToGrid] is the toggle back to the overview (null for a browse-only
+    // set). [manageLifecycle] is false there so Inspect, not a per-toggle dispose, clears the VM.
+    embedded: Boolean = false,
+    onSwitchToGrid: (() -> Unit)? = null,
+    manageLifecycle: Boolean = true,
 ) {
-    DisposableEffect(viewModel) { onDispose { viewModel.onClear() } }
+    DisposableEffect(viewModel, manageLifecycle) { onDispose { if (manageLifecycle) viewModel.onClear() } }
     val state by viewModel.state.collectAsState()
     var toast by remember { mutableStateOf<CategoryToastState?>(null) }
     var deleteMessage by remember { mutableStateOf<String?>(null) }
@@ -120,6 +126,8 @@ fun BrowserScreen(
         onBackToGrid = onBack,
         onCompare = onCompare,
         onShowInAllPhotos = onShowInAllPhotos,
+        embedded = embedded,
+        onSwitchToGrid = onSwitchToGrid,
     )
 }
 
@@ -138,6 +146,11 @@ fun BrowserScreen(
     onBackToGrid: () -> Unit,
     onCompare: () -> Unit = {},
     onShowInAllPhotos: (() -> Unit)? = null,
+    // True when embedded in Inspect's browse mode: hides the library chrome and disables move-to-Trash
+    // (a fixed inspect set isn't where you cull files). [onSwitchToGrid] is the toggle back to the
+    // overview, shown only when there is a grid to return to.
+    embedded: Boolean = false,
+    onSwitchToGrid: (() -> Unit)? = null,
     deleteMessage: String? = null,
     onDeleteCurrent: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -196,8 +209,9 @@ fun BrowserScreen(
                     return@onPreviewKeyEvent true
                 }
                 // Cmd+Delete (Cmd+Backspace on a Mac keyboard) arms the move-to-Trash confirmation
-                // for the photo on screen — the macOS "move to trash" chord.
-                if (meta && (event.key == Key.Backspace || event.key == Key.Delete)) {
+                // for the photo on screen — the macOS "move to trash" chord. Disabled when embedded
+                // in Inspect: the grid facet has no delete, so a delete there would desync the two.
+                if (!embedded && meta && (event.key == Key.Backspace || event.key == Key.Delete)) {
                     if (state.currentPhoto != null) confirmingDelete = true
                     revealHud++
                     return@onPreviewKeyEvent true
@@ -206,10 +220,6 @@ fun BrowserScreen(
                     Key.DirectionLeft -> { onPrevious(); true }
                     Key.DirectionRight -> { onNext(); true }
                     Key.F -> if (meta) false else { onToggleCategory(Category.FAVOURITES_ID); true }
-                    Key.Spacebar -> if (meta) false else {
-                        state.currentPhoto?.absolutePath?.let { systemActions?.preview(it) }
-                        true
-                    }
                     Key.R -> if (meta) false else {
                         state.currentPhoto?.absolutePath?.let { systemActions?.revealInFileManager(it) }
                         true
@@ -243,6 +253,8 @@ fun BrowserScreen(
             onOpenFavourites = onOpenFavourites,
             onShowInAllPhotos = onShowInAllPhotos,
             onChangeFolder = onChangeFolder,
+            embedded = embedded,
+            onSwitchToGrid = onSwitchToGrid,
             modifier = Modifier.fillMaxWidth(),
         )
 

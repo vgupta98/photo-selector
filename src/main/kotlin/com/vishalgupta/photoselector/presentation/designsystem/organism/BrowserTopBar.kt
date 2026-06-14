@@ -2,6 +2,7 @@ package com.vishalgupta.photoselector.presentation.designsystem.organism
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,6 +33,12 @@ fun BrowserTopBar(
     // Non-null only when browsing a category: a "Show in All Photos" action that jumps to this photo in
     // the main grid. Hidden in the All-Photos browser, where it would be a no-op.
     onShowInAllPhotos: (() -> Unit)? = null,
+    // True when the browser is *embedded* in Inspect's browse mode: suppresses the library-navigation
+    // chrome (Show in All Photos, Favourites, Change folder), none of which apply to a fixed set.
+    embedded: Boolean = false,
+    // The "grid view" toggle back to Inspect's overview. Shown (when [embedded]) only if there is a
+    // grid to return to — a browse-only set (past the grid cap) leaves it null.
+    onSwitchToGrid: (() -> Unit)? = null,
 ) {
     TopBarScaffold(modifier, containerColor = AppTheme.colors.topBarScrim) {
         IconButton(onClick = onBack) {
@@ -56,21 +63,31 @@ fun BrowserTopBar(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-        // Muted white so it recedes beside Favourites, the bar's filled action. Shown only when the
-        // current photo was opened from a category — the way back to where it lives in the full library.
-        if (onShowInAllPhotos != null) {
-            AppTextButton(
-                text = "Show in All Photos",
-                leadingIcon = Icons.Outlined.PhotoLibrary,
-                onClick = onShowInAllPhotos,
+        if (embedded) {
+            // Inspect's browse mode: the only trailing action is back to the overview grid — and only
+            // when there is one (a browse-only set has no grid, so the toggle is absent).
+            if (onSwitchToGrid != null) {
+                IconButton(onClick = onSwitchToGrid) {
+                    Icon(Icons.Outlined.GridView, contentDescription = "Grid view", tint = Color.White)
+                }
+            }
+        } else {
+            // Muted white so it recedes beside Favourites, the bar's filled action. Shown only when the
+            // current photo was opened from a category — the way back to where it lives in the full library.
+            if (onShowInAllPhotos != null) {
+                AppTextButton(
+                    text = "Show in All Photos",
+                    leadingIcon = Icons.Outlined.PhotoLibrary,
+                    onClick = onShowInAllPhotos,
+                    contentColor = Color.White.copy(alpha = 0.7f),
+                )
+            }
+            FavouritesButton(count = favouriteCount, onClick = onOpenFavourites)
+            // Muted white so it recedes behind Favourites — the bar's real action — on the scrim.
+            ChangeFolderButton(
+                onChangeFolder = onChangeFolder,
                 contentColor = Color.White.copy(alpha = 0.7f),
             )
         }
-        FavouritesButton(count = favouriteCount, onClick = onOpenFavourites)
-        // Muted white so it recedes behind Favourites — the bar's real action — on the scrim.
-        ChangeFolderButton(
-            onChangeFolder = onChangeFolder,
-            contentColor = Color.White.copy(alpha = 0.7f),
-        )
     }
 }

@@ -22,7 +22,6 @@ import com.vishalgupta.photoselector.presentation.common.CategoryToggle
 import com.vishalgupta.photoselector.presentation.common.GroupingMode
 import com.vishalgupta.photoselector.presentation.common.customCategories
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
-import com.vishalgupta.photoselector.presentation.navigation.MAX_SURVEY_PHOTOS
 import com.vishalgupta.photoselector.presentation.navigation.activeCategoryId
 import com.vishalgupta.photoselector.presentation.navigation.slice
 import kotlinx.coroutines.Dispatchers
@@ -697,11 +696,6 @@ class GridViewModel(
         report.failed.isEmpty() -> "Moved ${report.trashed} photos to Trash"
         report.trashed == 0 -> "Couldn't move ${report.failed.size} to Trash"
         else -> "Moved ${report.trashed}, ${report.failed.size} failed"
-    }
-
-    /** `C` over more than the side-by-side cap: decline and say why rather than open a useless wall of tiles. */
-    fun notifySurveyCapExceeded() {
-        _state.update { it.copy(toast = "Select up to $MAX_SURVEY_PHOTOS photos to compare side by side") }
     }
 
     private fun bulkFileToast(category: String, requested: Int, added: Int): String = when {

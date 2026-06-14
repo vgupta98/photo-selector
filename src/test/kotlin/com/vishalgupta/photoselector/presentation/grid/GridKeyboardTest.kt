@@ -166,8 +166,7 @@ class GridKeyboardTest {
         onClearSelection: () -> Unit = {},
         onFileSelectionIntoFavourites: () -> Unit = {},
         onFileSelectionIntoCustom: (Int) -> Unit = {},
-        onCompareSelection: (List<Int>, Int) -> Unit = { _, _ -> },
-        onSelectionTooLargeToCompare: () -> Unit = {},
+        onInspectSelection: (List<Int>, Int) -> Unit = { _, _ -> },
     ) {
         GridScreen(
             state = state,
@@ -190,8 +189,7 @@ class GridKeyboardTest {
             onClearSelection = onClearSelection,
             onFileSelectionIntoFavourites = onFileSelectionIntoFavourites,
             onFileSelectionIntoCustom = onFileSelectionIntoCustom,
-            onCompareSelection = onCompareSelection,
-            onSelectionTooLargeToCompare = onSelectionTooLargeToCompare,
+            onInspectSelection = onInspectSelection,
         )
     }
 
@@ -301,7 +299,7 @@ class GridKeyboardTest {
                             scope = CategoryScope.AllPhotos,
                             selection = setOf(fourPhotos[3].id, fourPhotos[1].id),
                         ),
-                        onCompareSelection = { indices, _ -> captured = indices },
+                        onInspectSelection = { indices, _ -> captured = indices },
                     )
                 }
             }
@@ -327,7 +325,7 @@ class GridKeyboardTest {
                             scope = CategoryScope.AllPhotos,
                             selection = setOf(fourPhotos[0].id),
                         ),
-                        onCompareSelection = { _, _ -> calls++ },
+                        onInspectSelection = { _, _ -> calls++ },
                     )
                 }
             }
@@ -337,12 +335,14 @@ class GridKeyboardTest {
         rule.onRoot().performKeyInput { pressKey(Key.C) }
         rule.waitForIdle()
 
-        assertEquals("C needs a 2+ selection to open compare/survey", 0, calls)
+        assertEquals("C needs a 2+ selection to open Inspect", 0, calls)
     }
 
     @OptIn(ExperimentalTestApi::class)
     @Test
-    fun cAboveTheCap_declinesInsteadOfOpening() {
+    fun cAboveTheGridCap_stillOpensInspect() {
+        // A 13-photo selection no longer declines: it opens Inspect, which shows a set past the grid
+        // cap browse-only. The grid still just hands off every selected index; the mode call is Inspect's.
         val thirteen = (0 until 13).map { i ->
             Photo(
                 id = PhotoId("p$i"),
@@ -353,8 +353,7 @@ class GridKeyboardTest {
                 lastModifiedEpochMs = 0,
             )
         }
-        var opens = 0
-        var declines = 0
+        var captured: List<Int>? = null
         rule.setContent {
             AppTheme {
                 Surface(Modifier.size(800.dp, 600.dp)) {
@@ -362,10 +361,9 @@ class GridKeyboardTest {
                         state = GridUiState(
                             photos = thirteen,
                             scope = CategoryScope.AllPhotos,
-                            selection = thirteen.map { it.id }.toSet(), // 13 > cap of 12
+                            selection = thirteen.map { it.id }.toSet(),
                         ),
-                        onCompareSelection = { _, _ -> opens++ },
-                        onSelectionTooLargeToCompare = { declines++ },
+                        onInspectSelection = { indices, _ -> captured = indices },
                     )
                 }
             }
@@ -375,8 +373,7 @@ class GridKeyboardTest {
         rule.onRoot().performKeyInput { pressKey(Key.C) }
         rule.waitForIdle()
 
-        assertEquals("13 selected is over the cap, so nothing opens", 0, opens)
-        assertEquals("it declines with feedback instead", 1, declines)
+        assertEquals("all 13 selected indices are handed to Inspect", (0 until 13).toList(), captured)
     }
 
     @OptIn(ExperimentalTestApi::class)
@@ -417,7 +414,7 @@ class GridKeyboardTest {
                         onCopyToFolder = {},
                         onDismissToast = {},
                         imageLoader = noOpImageLoader,
-                        onCompareSelection = { indices, _ -> captured = indices },
+                        onInspectSelection = { indices, _ -> captured = indices },
                     )
                 }
             }
