@@ -3,7 +3,12 @@ package com.vishalgupta.photoselector.screenshot
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -155,9 +160,33 @@ class GridBurstScreenshotTest {
         rule.dumpScreenshot("grid-similarity-collapsed")
     }
 
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun `hovering a collapsed group reveals the Review CTA`() {
+        // The "Review N →" chip is hover-gated, so the headless suite has to drive a mouse-enter to
+        // see it. Hover the burst tile (via its "Group of 3" badge, which sits inside the tile's
+        // hoverable), then assert the chip is actually up BEFORE dumping — so a hover that fails to
+        // register fails loudly here instead of silently producing a chip-less screenshot. Eyeball
+        // build/screenshots/grid-review-cta-hover.png - the 2nd tile shows "Review 3 →" top-start,
+        // clear of the count pill (bottom-start) and the deck.
+        renderGrid(
+            GridUiState(
+                photos = photos,
+                groups = groups,
+                groupingMode = GroupingMode.Similarity,
+                scope = CategoryScope.AllPhotos,
+                categories = listOf(Category.favourites()),
+            ),
+        )
+        rule.onNodeWithContentDescription("Group of 3", useUnmergedTree = true)
+            .performMouseInput { moveTo(center) }
+        rule.waitForIdle()
+        rule.onNodeWithText("Review 3 →").assertIsDisplayed()
+        rule.dumpScreenshot("grid-review-cta-hover")
+    }
+
     @Test fun `the cold similarity pass shows the framing banner with the privacy line`() {
         // The AI lens is mid-cold-pass: the singles grid stays interactive while the framing banner
-        // under the toolbar names the work ("Finding similar shots — analysing 60 photos on your Mac.")
+        // under the toolbar names the work ("Finding similar shots — analysing 60 photos.")
         // and carries the privacy line ("Everything stays on your device.") plus the 18 / 60 fraction.
         // Eyeball build/screenshots/grid-grouping-progress.png.
         renderGrid(

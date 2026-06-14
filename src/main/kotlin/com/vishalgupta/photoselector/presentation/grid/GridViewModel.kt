@@ -105,7 +105,6 @@ data class GroupingStatus(val processed: Int, val total: Int)
  */
 data class GroupingOutcome(
     val mode: GroupingMode,
-    val photoCount: Int,
     val burstCount: Int,
     val photosInBursts: Int,
 )
@@ -376,7 +375,6 @@ class GridViewModel(
                 _groupingOutcomes.trySend(
                     GroupingOutcome(
                         mode = mode,
-                        photoCount = photos.size,
                         burstCount = burstCount,
                         photosInBursts = photosInBursts,
                     ),

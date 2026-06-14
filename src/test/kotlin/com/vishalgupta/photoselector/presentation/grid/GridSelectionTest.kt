@@ -646,7 +646,6 @@ class GridSelectionTest {
         val outcome = withTimeout(2_000) { vm.groupingOutcomes.first() }
 
         assertEquals(GroupingMode.Time, outcome.mode)
-        assertEquals(photos.size, outcome.photoCount)
         assertEquals(1, outcome.burstCount)
         assertEquals(photos.size, outcome.photosInBursts)
         vm.onClear()

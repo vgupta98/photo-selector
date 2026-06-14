@@ -44,7 +44,7 @@ fun GroupingProgressBanner(processed: Int, total: Int, modifier: Modifier = Modi
             )
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = "Finding similar shots — analysing $total photos on your Mac.",
+                    text = "Finding similar shots — analysing $total photos.",
                     style = MaterialTheme.typography.labelLarge,
                 )
                 Text(

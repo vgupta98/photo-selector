@@ -48,7 +48,7 @@ fun SimilarityCoachmark(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
             )
             Text(
                 text = "Finds look-alike shots so you can keep the best and cut the rest. " +
-                    "Runs entirely on your Mac — about a minute the first time.",
+                    "Runs entirely on your device — about a minute the first time.",
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f),
             )
