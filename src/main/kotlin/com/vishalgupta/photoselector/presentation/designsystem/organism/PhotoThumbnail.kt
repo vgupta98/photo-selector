@@ -11,7 +11,6 @@ import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -80,13 +79,11 @@ private const val THUMBNAIL_VIEWPORT_PX = 320
  * tile still shows [photo] (the group's key frame), and the caller wires [onClick] to open the run
  * side by side rather than a single browser.
  *
- * Three further cues ride alongside [burstCount] and are all presentation-only (stable types, so the
+ * Two further cues ride alongside [burstCount] and are both presentation-only (stable types, so the
  * tile stays skippable):
  *  - [groupGlyph] is the count pill's glyph — the caller passes the lens's icon (stacked frames for a
  *    time burst, a sparkle for a similarity cluster) so a grouped tile silently says *why* it grouped.
  *    Defaults to the stacked-frames glyph when null.
- *  - [suggestedPick] adds a neutral "Pick" tag (only set for a similarity cluster, whose key frame is
- *    the suggested-sharpest — a time burst makes no quality judgement, so it stays false and shows none).
  *  - [onReview], when non-null, reveals a "Review N →" chip on hover that opens the run's frames in
  *    Compare/Survey straight away — the "decide now" path next to expand-in-place. Hover-only, so the
  *    keyboard path (a focused-group `C`) is the non-hover fallback the grid wires separately.
@@ -106,7 +103,6 @@ fun PhotoThumbnail(
     categoryBadges: ImmutableList<Int> = persistentListOf(),
     burstCount: Int? = null,
     groupGlyph: ImageVector? = null,
-    suggestedPick: Boolean = false,
     onReview: (() -> Unit)? = null,
     withinBurst: Boolean = false,
 ) {
@@ -192,18 +188,15 @@ fun PhotoThumbnail(
             )
         }
         if (burstCount != null) {
-            // Bottom-start keeps the group cues clear of the star (top-end), category badges
-            // (top-start) and the select check (bottom-end). The "Pick" tag rides just above the
-            // count pill so "suggested keeper + N frames" reads as one stack of information.
-            Column(
+            // Bottom-start keeps the count pill clear of the star (top-end), category badges
+            // (top-start) and the select check (bottom-end).
+            BurstBadge(
+                count = burstCount,
+                glyph = groupGlyph ?: Icons.Filled.BurstMode,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(AppTheme.spacing.xs),
-                verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.xxs),
-            ) {
-                if (suggestedPick) PickTag()
-                BurstBadge(count = burstCount, glyph = groupGlyph ?: Icons.Filled.BurstMode)
-            }
+            )
         }
         // Hover-revealed "decide now" CTA — top-start (clear of the star/count/check), neutral
         // overlay-chrome chip (the amber accent is reserved for favourite/selection). Keyboard users
@@ -369,28 +362,6 @@ private fun BurstBadge(count: Int, glyph: ImageVector, modifier: Modifier = Modi
             )
             Text(text = count.toString(), style = MaterialTheme.typography.labelLarge)
         }
-    }
-}
-
-/**
- * The "Pick" tag over a similarity cluster's cover: a quiet hint that the shown key frame is the
- * suggested-sharpest keeper. Deliberately the neutral overlay-chrome chip, NOT the amber accent —
- * accent means a deliberate user action (favourite/selection); this is information the grouper
- * surfaced, not a choice the user made.
- */
-@Composable
-private fun PickTag(modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        shape = MaterialTheme.shapes.small,
-        color = AppTheme.colors.overlayChromeBackground,
-        contentColor = AppTheme.colors.onOverlayChrome,
-    ) {
-        Text(
-            text = "Pick",
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = AppTheme.dimens.badgeInset, vertical = 1.dp),
-        )
     }
 }
 

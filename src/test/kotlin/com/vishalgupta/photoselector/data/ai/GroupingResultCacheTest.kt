@@ -30,12 +30,12 @@ class GroupingResultCacheTest {
         lastModifiedEpochMs = mtime,
     )
 
-    // a | [b c d] burst (key c, suggested) | e
+    // a | [b c d] burst (key c) | e
     private fun photosAndGroups(): Pair<List<Photo>, List<PhotoGroup>> {
         val photos = listOf("a", "b", "c", "d", "e").map { photo(it) }
         val groups = listOf(
             PhotoGroup.Single(photos[0]),
-            PhotoGroup.Burst(photos.subList(1, 4), keyIndex = 1, keyIsSuggested = true),
+            PhotoGroup.Burst(photos.subList(1, 4), keyIndex = 1),
             PhotoGroup.Single(photos[4]),
         )
         return photos to groups
@@ -54,7 +54,6 @@ class GroupingResultCacheTest {
         val burst = got[1] as PhotoGroup.Burst
         assertEquals(listOf("b", "c", "d"), burst.photos.map { it.id.value })
         assertEquals(1, burst.keyIndex)
-        assertTrue(burst.keyIsSuggested)
         // Reconstructed from the SAME Photo instances we passed in.
         assertTrue(burst.photos[0] === photos[1])
     }

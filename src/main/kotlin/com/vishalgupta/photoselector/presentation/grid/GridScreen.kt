@@ -693,12 +693,10 @@ fun GridScreen(
                                     onRangeSelect = { onSelectRange(index) },
                                     categoryBadges = categoryBadgesFor(keyPhoto, customCategories, state.memberships),
                                     burstCount = (group as? PhotoGroup.Burst)?.photos?.size,
-                                    // The glyph echoes the active lens, the Pick tag rides only a
-                                    // quality-derived key (similarity), and onReview opens the run
-                                    // side by side. All null/false for singles and for an expanded
-                                    // burst's individual frames (those open the browser, not a review).
+                                    // The glyph echoes the active lens, and onReview opens the run
+                                    // side by side. Both null for singles and for an expanded burst's
+                                    // individual frames (those open the browser, not a review).
                                     groupGlyph = if (group is PhotoGroup.Burst) groupGlyphFor(state.groupingMode) else null,
-                                    suggestedPick = (group as? PhotoGroup.Burst)?.keyIsSuggested == true,
                                     onReview = if (group is PhotoGroup.Burst) {
                                         { openReview(index) }
                                     } else {

@@ -87,7 +87,6 @@ class GroupingResultCache(
                     is PhotoGroup.Burst -> GroupDto(
                         ids = group.photos.map { it.id.value },
                         keyIndex = group.keyIndex,
-                        keyIsSuggested = group.keyIsSuggested,
                     )
                 }
             },
@@ -108,7 +107,7 @@ class GroupingResultCache(
             dto.groups.map { g ->
                 val frames = g.ids.map { id -> byId[id] ?: return null }
                 if (frames.size >= 2) {
-                    PhotoGroup.Burst(frames, keyIndex = g.keyIndex, keyIsSuggested = g.keyIsSuggested)
+                    PhotoGroup.Burst(frames, keyIndex = g.keyIndex)
                 } else {
                     PhotoGroup.Single(frames.first())
                 }
@@ -156,12 +155,12 @@ class GroupingResultCache(
     private data class GroupDto(
         val ids: List<String>,
         val keyIndex: Int = 0,
-        val keyIsSuggested: Boolean = false,
     )
 
     companion object {
         // Bump when the on-disk schema (or the meaning of a stored field) changes.
-        const val FORMAT_VERSION = 1
+        // v2: dropped the unused keyIsSuggested field; v1 entries are rejected and recompute.
+        const val FORMAT_VERSION = 2
         const val DEFAULT_MAX_BYTES: Long = 64L * 1024 * 1024
         private const val FILE_EXTENSION = "grp"
     }

@@ -132,15 +132,14 @@ class GridBurstScreenshotTest {
         rule.dumpScreenshot("grid-burst-ungrouped")
     }
 
-    @Test fun `the similarity lens shows the sparkle glyph and a Pick tag on the suggested frame`() {
+    @Test fun `the similarity lens shows the sparkle glyph on the collapsed stack`() {
         // Toolbar set to "Similar": the same b|c|d run collapses, keyIndex 0 marks b (the
-        // suggested-sharpest) as representative, and keyIsSuggested drives a "Pick" tag. Eyeball
-        // build/screenshots/grid-similarity-collapsed.png - the 2nd tile shows b's cyan, its count
-        // pill carries the SPARKLE glyph (not stacked frames), a "Pick" tag rides above the pill, and
-        // the segmented toolbar control reads "Similar".
+        // suggested-sharpest) as the cover. Eyeball build/screenshots/grid-similarity-collapsed.png -
+        // the 2nd tile shows b's cyan, its count pill carries the SPARKLE glyph (not stacked frames),
+        // and the segmented toolbar control reads "Similar".
         val similarityGroups = listOf(
             PhotoGroup.Single(photos[0]),
-            PhotoGroup.Burst(listOf(photos[1], photos[2], photos[3]), keyIndex = 0, keyIsSuggested = true),
+            PhotoGroup.Burst(listOf(photos[1], photos[2], photos[3]), keyIndex = 0),
             PhotoGroup.Single(photos[4]),
             PhotoGroup.Single(photos[5]),
         )

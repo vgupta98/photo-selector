@@ -13,7 +13,6 @@ import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class CachingPhotoGrouperTest {
 
@@ -33,7 +32,7 @@ class CachingPhotoGrouperTest {
     // a | [b c] burst | d
     private val groups = listOf(
         PhotoGroup.Single(photos[0]),
-        PhotoGroup.Burst(photos.subList(1, 3), keyIndex = 0, keyIsSuggested = true),
+        PhotoGroup.Burst(photos.subList(1, 3), keyIndex = 0),
         PhotoGroup.Single(photos[3]),
     )
 
@@ -64,7 +63,7 @@ class CachingPhotoGrouperTest {
         assertEquals(1, delegate.calls, "the second pass must not re-run the model")
         assertEquals(groups.map { it.groupId }, second.map { it.groupId })
         val burst = second[1] as PhotoGroup.Burst
-        assertTrue(burst.keyIsSuggested)
+        assertEquals(0, burst.keyIndex)
     }
 
     @Test fun `an incomplete pass that throws is never cached`() = runBlocking {
