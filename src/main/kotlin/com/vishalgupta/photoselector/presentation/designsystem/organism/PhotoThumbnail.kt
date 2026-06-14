@@ -133,8 +133,8 @@ fun PhotoThumbnail(
 
     // Hover drives the "Review N →" CTA on a collapsed group. The hoverable is attached only when
     // [onReview] is wired (groups), and the [hovered] state is read only behind that same null-check
-    // below, so a single photo never subscribes to hover and stays recomposition-for-recomposition the
-    // pre-CTA tile.
+    // below — so although every tile collects the source, a single never attaches the hoverable and
+    // never reads [hovered], so it never recomposes on hover and stays the pre-CTA tile.
     val hoverSource = remember { MutableInteractionSource() }
     val hovered by hoverSource.collectIsHoveredAsState()
 
@@ -382,7 +382,10 @@ private fun ReviewChip(count: Int, onClick: () -> Unit, modifier: Modifier = Mod
         Text(
             text = "Review $count →",
             style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = AppTheme.dimens.badgeInset, vertical = 1.dp),
+            modifier = Modifier.padding(
+                horizontal = AppTheme.dimens.badgeInset,
+                vertical = AppTheme.dimens.badgeVerticalInset,
+            ),
         )
     }
 }
@@ -397,7 +400,10 @@ private fun CategoryBadge(label: String) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = AppTheme.dimens.badgeInset, vertical = 1.dp),
+            modifier = Modifier.padding(
+                horizontal = AppTheme.dimens.badgeInset,
+                vertical = AppTheme.dimens.badgeVerticalInset,
+            ),
         )
     }
 }
