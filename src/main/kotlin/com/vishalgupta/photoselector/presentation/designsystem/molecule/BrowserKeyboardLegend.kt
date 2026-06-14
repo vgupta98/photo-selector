@@ -17,7 +17,9 @@ import kotlinx.collections.immutable.toImmutableList
  * The hints are truthful to the browser's key handler and verbs are platform-neutral ("Reveal",
  * "Open") so the strip stays short and reads correctly on a future Windows build. Filing
  * hints are dropped when they can't do anything: `F` and `1–9` are hidden in [readOnly], and
- * `1–9` only shows when [hasCustomCategories].
+ * `1–9` only shows when [hasCustomCategories]; `C` is hidden when it can't [canCompare] (embedded
+ * in Inspect, where `C` is inert), and a `Grid` hint appears instead when there's an overview to
+ * return to ([canReturnToGrid]).
  */
 @Composable
 fun BrowserKeyboardLegend(
@@ -26,12 +28,20 @@ fun BrowserKeyboardLegend(
     modifier: Modifier = Modifier,
     // True only when browsing a category, where `A` jumps to the photo in the All Photos grid.
     canShowInAllPhotos: Boolean = false,
+    // True in the standalone browser, where `C` opens the current photo + neighbour in Inspect.
+    // False when embedded in Inspect's browse facet, where `C` is inert.
+    canCompare: Boolean = true,
+    // True when embedded in Inspect with an overview grid behind the toggle, where `G` / `Esc`
+    // return to it.
+    canReturnToGrid: Boolean = false,
 ) {
     KeyboardLegend(
         hints = browserHints(
             hasCustomCategories = hasCustomCategories,
             readOnly = readOnly,
             canShowInAllPhotos = canShowInAllPhotos,
+            canCompare = canCompare,
+            canReturnToGrid = canReturnToGrid,
         ),
         modifier = modifier,
         shape = PillShape,
@@ -46,13 +56,16 @@ private fun browserHints(
     hasCustomCategories: Boolean,
     readOnly: Boolean,
     canShowInAllPhotos: Boolean,
+    canCompare: Boolean,
+    canReturnToGrid: Boolean,
 ): ImmutableList<KeyHint> = buildList {
     add(KeyHint("← →", "Move"))
     if (!readOnly) {
         add(KeyHint("F", "Favourite"))
         if (hasCustomCategories) add(KeyHint("1–9", "Categories"))
     }
-    add(KeyHint("C", "Compare"))
+    if (canCompare) add(KeyHint("C", "Compare"))
+    if (canReturnToGrid) add(KeyHint("G", "Grid"))
     if (canShowInAllPhotos) add(KeyHint("A", "All Photos"))
     add(KeyHint("R", "Reveal"))
     add(KeyHint("O", "Open"))

@@ -1069,7 +1069,36 @@ class ScreenSplitScreenshotTest {
         rule.onNodeWithText("Favourite").assertIsDisplayed()
         rule.onNodeWithText("Categories").assertIsDisplayed()
         rule.onNodeWithText("Reveal").assertIsDisplayed()
+        // Standalone browser: `C` opens Inspect, so the hint shows and the grid-return hint doesn't.
+        rule.onNodeWithText("Compare").assertIsDisplayed()
+        rule.onNodeWithText("Grid").assertDoesNotExist()
         rule.dumpScreenshot("browser-keyboard-legend")
+    }
+
+    @Test
+    fun browser_keyboardLegendEmbedded() {
+        // Embedded in Inspect's browse facet: `C` is inert, so the "Compare" hint drops out, and a
+        // "Grid" hint takes its place pointing back to the overview behind the toggle.
+        rule.setContent {
+            AppTheme {
+                Box(
+                    Modifier.size(1100.dp, 120.dp).background(Color.Black),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BrowserKeyboardLegend(
+                        hasCustomCategories = true,
+                        readOnly = false,
+                        canCompare = false,
+                        canReturnToGrid = true,
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("Compare").assertDoesNotExist()
+        rule.onNodeWithText("Grid").assertIsDisplayed()
+        rule.dumpScreenshot("browser-keyboard-legend-embedded")
     }
 
     @Test

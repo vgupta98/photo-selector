@@ -46,6 +46,13 @@ class InspectViewModel(
     private var gridVmOrNull: SurveyViewModel? = null
     private var browseVmOrNull: BrowserViewModel? = null
 
+    // gridViewModel()/browseViewModel() are called from InspectScreen's composition to hand the live
+    // facet to the child screen. First call constructs the facet; the result is cached in a plain (non
+    // snapshot) field, so the construction is intentionally side-effecting but idempotent — reads after
+    // the first are pure, it triggers no recomposition, and an abandoned composition is still cleared
+    // because onClear() cascades to whatever was built. Keep these read-mostly; do the actual mode flip
+    // (which seeds the cursor) in openBrowse()/openGrid(), not here.
+
     /** The grid facet, built (and seeded at the shared cursor) on first use. Only call when [gridAvailable]. */
     fun gridViewModel(): SurveyViewModel =
         gridVmOrNull ?: requireNotNull(makeGrid) { "grid is unavailable for this set" }

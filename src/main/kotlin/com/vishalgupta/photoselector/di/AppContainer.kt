@@ -272,8 +272,9 @@ class AppContainer {
      * Inspect over the photos at [indices] in scope. Both facets run on a *subset* list (the selected
      * photos, re-indexed 0..n-1) so browse pages only this set and the grid's "n / N" reads as position
      * within it. The grid facet is built only when the set fits [MAX_INSPECT_GRID_PHOTOS]; a larger set
-     * is browse-only (the factory returns null for the grid). The browse facet never persists a scroll
-     * position (it's an ephemeral set, not the All-Photos reel) but still purges deletes from the scan.
+     * is browse-only (the factory returns null for the grid). The browse facet neither persists a scroll
+     * position (it's an ephemeral set, not the All-Photos reel) nor deletes (move-to-Trash is disabled
+     * while embedded), so both its scan hooks are null.
      */
     fun inspectViewModel(
         root: RootFolder,
@@ -312,7 +313,9 @@ class AppContainer {
                 isReadOnly = isReadOnly,
                 parentJob = folderJob,
                 onPositionChanged = null,
-                onPhotosDeleted = { ids -> removeScannedPhotos(ids) },
+                // Embedded browse disables move-to-Trash (BrowserScreen gates it on !embedded), so
+                // there is no delete path to purge from the scan here.
+                onPhotosDeleted = null,
             )
         }
 

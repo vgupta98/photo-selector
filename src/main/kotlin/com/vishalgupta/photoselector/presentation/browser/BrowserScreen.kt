@@ -229,7 +229,9 @@ fun BrowserScreen(
                         true
                     }
                     Key.G -> if (meta) false else { onBackToGrid(); true }
-                    Key.C -> if (meta) false else { onCompare(); true }
+                    // Embedded in Inspect, `C` is inert (no nested Inspect), so fall through rather
+                    // than silently swallow it — the legend hides the hint to match.
+                    Key.C -> if (meta || embedded) false else { onCompare(); true }
                     // A: reveal this photo in the All Photos grid. Only when browsing a category (the
                     // handler is null in the All-Photos browser), so plain A is inert there.
                     Key.A -> if (meta || onShowInAllPhotos == null) false else { onShowInAllPhotos(); true }
@@ -333,6 +335,8 @@ fun BrowserScreen(
                             hasCustomCategories = state.categories.customCategories().isNotEmpty(),
                             readOnly = state.readOnly,
                             canShowInAllPhotos = onShowInAllPhotos != null,
+                            canCompare = !embedded,
+                            canReturnToGrid = embedded && onSwitchToGrid != null,
                         )
                     }
                 }
