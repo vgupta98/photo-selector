@@ -133,7 +133,7 @@ jobs:
           {
             echo "## Install"
             echo
-            echo "Download \`PhotoSelector-${VERSION}.dmg\` from the assets below. First launch requires the macOS Gatekeeper override documented in the README."
+            echo "Download \`Rhenium-${VERSION}.dmg\` from the assets below. First launch requires the macOS Gatekeeper override documented in the README."
             echo
             echo "## Full Changelog"
             echo

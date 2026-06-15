@@ -1,6 +1,6 @@
-# Photo Selector
+# Rhenium
 
-A fast, keyboard-driven macOS desktop app for triaging large photo folders (e.g. wedding shoots with thousands of JPEGs). Open a folder, swipe through photos, sort them into categories (**Favourites** plus any you create — Selects, Maybes, …), then export a category as either a `.txt` of relative paths or a copied folder that preserves your subfolder structure.
+Rhenium is a fast, keyboard-driven macOS desktop app for triaging large photo folders (e.g. wedding shoots with thousands of JPEGs). Open a folder, swipe through photos, sort them into categories (**Favourites** plus any you create — Selects, Maybes, …), then export a category as either a `.txt` of relative paths or a copied folder that preserves your subfolder structure.
 
 Built with Kotlin + Compose Multiplatform Desktop, following Clean Architecture.
 
@@ -35,12 +35,12 @@ For developers:
 
 ## Install & run (end user)
 
-1. Download `PhotoSelector-1.0.0.dmg` from the [Releases](https://github.com/vgupta98/photo-selector/releases) page (or build it yourself — see below).
-2. Open the DMG and drag **Photo Selector.app** to `/Applications`.
-3. **First launch — get past the Gatekeeper warning.** The app is not notarised by Apple, so on the very first launch macOS will show a dialog like *"Apple could not verify 'PhotoSelector' is free of malware…"*. To allow it:
+1. Download `Rhenium-1.0.0.dmg` from the [Releases](https://github.com/vgupta98/photo-selector/releases) page (or build it yourself — see below).
+2. Open the DMG and drag **Rhenium.app** to `/Applications`.
+3. **First launch — get past the Gatekeeper warning.** The app is not notarised by Apple, so on the very first launch macOS will show a dialog like *"Apple could not verify 'Rhenium' is free of malware…"*. To allow it:
    1. Click **Done** to dismiss the dialog.
    2. Open **System Settings → Privacy & Security**.
-   3. Scroll down to the **Security** section — you'll see a message like *"PhotoSelector was blocked to protect your Mac."*
+   3. Scroll down to the **Security** section — you'll see a message like *"Rhenium was blocked to protect your Mac."*
    4. Click **Open Anyway**, then confirm with Touch ID / password.
    5. Double-click the app again — this time it launches normally. You only need to do this once.
 4. Click **"Choose folder…"**, point it at your photo root, wait for the scan, then start browsing.
@@ -81,7 +81,7 @@ cd photo-selector
 
 # Build a redistributable DMG
 ./gradlew packageDmg
-# → build/compose/binaries/main/dmg/PhotoSelector-1.0.0.dmg
+# → build/compose/binaries/main/dmg/Rhenium-1.0.0.dmg
 ```
 
 The DMG is built for the host architecture only. Build on Apple Silicon for an arm64 DMG, on Intel for an x86_64 DMG.

@@ -86,14 +86,14 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg)
-            packageName = "PhotoSelector"
+            packageName = "Rhenium"
             packageVersion = project.version.toString()
             description = "Browse, favourite and export wedding photos."
+            copyright = "Copyright (c) 2026 Vishal Gupta"
             modules("java.desktop", "java.naming", "jdk.unsupported")
 
             macOS {
                 bundleID = "com.vishalgupta.photoselector"
-                dockName = "Photo Selector"
                 appCategory = "public.app-category.photography"
                 iconFile.set(project.file("src/main/resources/icon/AppIcon.icns"))
             }
