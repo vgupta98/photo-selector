@@ -1,8 +1,13 @@
 package com.vishalgupta.photoselector.presentation.grid
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.focusable
@@ -47,6 +52,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isMetaPressed
@@ -56,6 +62,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.model.Category
@@ -606,7 +613,12 @@ fun GridScreen(
 
         // First-run callout for the Similarity lens — a dismissible card under the toolbar (near the
         // lens toggle), not a modal: the user can ignore it and keep culling. Shown once, then never.
-        if (state.showSimilarityCoachmark) {
+        // Eases in (and out on dismiss) so it doesn't snap the grid down beneath it.
+        AnimatedVisibility(
+            visible = state.showSimilarityCoachmark,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
+        ) {
             SimilarityCoachmark(onDismiss = onDismissSimilarityCoachmark)
         }
 
@@ -654,17 +666,29 @@ fun GridScreen(
                             }
                         },
                     ) { item ->
+                        // Placement-only reflow shared by every render item, so the whole row set
+                        // slides as one when a burst unfolds/folds or the lens regroups. The fade is
+                        // off (null specs); an unfolding burst's frames pop in instead (below).
+                        val itemMotion = Modifier.animateItem(
+                            fadeInSpec = null,
+                            placementSpec = GRID_ITEM_PLACEMENT_SPEC,
+                            fadeOutSpec = null,
+                        )
                         when (item) {
                             is GridRenderItem.BurstHeader -> BurstExpandedHeader(
                                 frameCount = item.burst.photos.size,
                                 onCollapse = onCollapseBurst,
+                                modifier = itemMotion,
                             )
-                            is GridRenderItem.BurstFooter -> BurstExpandedFooter()
+                            is GridRenderItem.BurstFooter -> BurstExpandedFooter(modifier = itemMotion)
                             is GridRenderItem.Tile -> {
                                 val group = item.group
                                 val index = item.displayIndex
                                 val keyPhoto = group.keyPhoto
                                 PhotoThumbnail(
+                                    // An unfolded burst frame pops in (scale); every other tile just
+                                    // slides via the shared placement spring.
+                                    modifier = if (item.expandedFrame) itemMotion.gridAppearPop() else itemMotion,
                                     photo = keyPhoto,
                                     loader = imageLoader,
                                     isMarked = keyPhoto.id in state.markedIds,
@@ -876,6 +900,48 @@ private fun GridEmptyState(
  * resolves, and holds the last non-null [toast] so its text survives the exit fade. Colour
  * encodes added vs removed; favourites also keep their star — matching the browser's pill.
  */
+// Motion for grid item reflow — the burst expand/collapse and the lens regroup. A no-bounce
+// placement spring slides each surviving tile to its new home; the fade-on-appear/disappear is
+// switched off (null specs on `animateItem`) so the only built-in motion is that calm slide. The
+// grid only reshapes after its initial layout, so this animates the *transition*, never the cold
+// first paint. Hoisted as a constant (not rebuilt per recomposition) so `Modifier.animateItem`
+// yields a structurally-equal modifier each pass and the tiles stay skippable on the hot
+// scroll/selection path.
+private val GRID_ITEM_PLACEMENT_SPEC = spring<IntOffset>(
+    dampingRatio = Spring.DampingRatioNoBouncy,
+    stiffness = Spring.StiffnessMediumLow,
+)
+
+// A burst's unfolded frames "pop" in — scaling up from [APPEAR_INITIAL_SCALE] to full size instead
+// of fading — so opening a burst reads as the frames springing out of the collapsed stack. A calm
+// (no-bounce) medium spring keeps it crisp rather than springy. Applied only to the expanded frame
+// tiles (see [gridAppearPop]); scale is a draw-phase transform, so it never reflows neighbours.
+private val APPEAR_SCALE_SPEC = spring<Float>(
+    dampingRatio = Spring.DampingRatioNoBouncy,
+    stiffness = Spring.StiffnessMedium,
+)
+private const val APPEAR_INITIAL_SCALE = 0.85f
+
+/**
+ * Entrance "pop" for a freshly unfolded burst frame: scales from [APPEAR_INITIAL_SCALE] to 1 on first
+ * composition (a one-shot, hence the `Unit` key — there is no input to restart on). The scale is read
+ * inside [graphicsLayer]'s lambda — a deferred draw-phase read — so the spring runs without recomposing
+ * the tile each frame.
+ *
+ * The caller gates this to expanded frame tiles only ([GridRenderItem.Tile.expandedFrame]). Those
+ * render items exist *only* while a burst is open, so a tile's first composition coincides with the
+ * expand: an ordinary tile scrolling into view is never an expanded frame and so never pops.
+ */
+@Composable
+private fun Modifier.gridAppearPop(): Modifier {
+    val scale = remember { Animatable(APPEAR_INITIAL_SCALE) }
+    LaunchedEffect(Unit) { scale.animateTo(targetValue = 1f, animationSpec = APPEAR_SCALE_SPEC) }
+    return graphicsLayer {
+        scaleX = scale.value
+        scaleY = scale.value
+    }
+}
+
 /** How long a [GridMessagePill] result/notice stays up before it fades out. */
 private const val TOAST_DURATION_MS = 2500L
 
