@@ -85,4 +85,62 @@ class BrowserKeyboardTest {
 
         assertEquals(listOf(selectsId, Category.FAVOURITES_ID), toggled)
     }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun aKey_showsInAllPhotos_onlyWhenBrowsingACategory() {
+        var jumps = 0
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    BrowserScreen(
+                        state = state(),
+                        toast = null,
+                        onPrevious = {},
+                        onNext = {},
+                        onToggleCategory = {},
+                        onViewportSizeChanged = {},
+                        onOpenFavourites = {},
+                        onChangeFolder = {},
+                        onBackToGrid = {},
+                        onShowInAllPhotos = { jumps++ },
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        rule.onRoot().performKeyInput { pressKey(Key.A) }
+        rule.waitForIdle()
+
+        assertEquals("A jumps to the photo in All Photos when the handler is wired", 1, jumps)
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun aKey_isInert_inTheAllPhotosBrowser() {
+        // No onShowInAllPhotos (the All-Photos browser): plain A must do nothing, not crash or consume.
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    BrowserScreen(
+                        state = state(),
+                        toast = null,
+                        onPrevious = {},
+                        onNext = {},
+                        onToggleCategory = {},
+                        onViewportSizeChanged = {},
+                        onOpenFavourites = {},
+                        onChangeFolder = {},
+                        onBackToGrid = {},
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        // Nothing to assert beyond "doesn't throw / consume into an action": the handler is null, so A
+        // falls through. Pressing it must not blow up.
+        rule.onRoot().performKeyInput { pressKey(Key.A) }
+        rule.waitForIdle()
+    }
 }

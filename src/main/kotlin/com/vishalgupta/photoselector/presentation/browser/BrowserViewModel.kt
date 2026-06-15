@@ -9,8 +9,11 @@ import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.BrowsePosition
 import com.vishalgupta.photoselector.domain.repository.CategoriesRepository
+import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
 import com.vishalgupta.photoselector.presentation.StateHolder
 import com.vishalgupta.photoselector.presentation.common.CategoryToggle
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -24,6 +27,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.swing.Swing
 
 data class BrowserUiState(
     val photos: List<Photo>,
@@ -55,14 +59,18 @@ data class BrowserUiState(
 
 class BrowserViewModel(
     private val root: RootFolder,
-    private val photos: List<Photo>,
+    // Mutable: deleting the current photo drops it here and re-points the index at its neighbour.
+    private var photos: List<Photo>,
     private val initialIndex: Int,
     private val categories: CategoriesRepository,
+    private val moveToTrash: MovePhotosToTrashUseCase,
     private val imageLoader: ImageLoader,
     private val isReadOnly: StateFlow<Boolean>,
     parentJob: Job? = null,
+    dispatcher: CoroutineDispatcher = Dispatchers.Swing,
     private val onPositionChanged: ((BrowsePosition) -> Unit)? = null,
-) : StateHolder(parentJob) {
+    private val onPhotosDeleted: ((Set<PhotoId>) -> Unit)? = null,
+) : StateHolder(parentJob, dispatcher) {
 
     // The HUD shows every category and toggles any of them; F still maps to the built-in
     // Favourites regardless of which category grid the user paged in from.
@@ -96,6 +104,11 @@ class BrowserViewModel(
 
     private val _toggleEvents = Channel<CategoryToggle>(Channel.BUFFERED)
     val toggleEvents: Flow<CategoryToggle> = _toggleEvents.receiveAsFlow()
+
+    // One-shot, single-consumer message after a delete (confirmation or failure) — same handoff
+    // shape as [toggleEvents]; the screen surfaces it as a transient pill.
+    private val _deleteEvents = Channel<String>(Channel.BUFFERED)
+    val deleteEvents: Flow<String> = _deleteEvents.receiveAsFlow()
 
     private var loadJob: Job? = null
     private var positionSaveJob: Job? = null
@@ -190,6 +203,71 @@ class BrowserViewModel(
                     added = added,
                 ),
             )
+        }
+    }
+
+    /**
+     * Moves the current photo to the Trash, removes it from the reel, and lands on its neighbour
+     * (the next photo, or the previous one if it was last). Purges it from every category and
+     * tells the container. Best-effort: a failure leaves the photo in place and reports via
+     * [deleteEvents]. The screen confirms first; this performs the delete.
+     */
+    fun deleteCurrent() {
+        // Snapshot the target and its index together, before the suspend: if the user navigates
+        // while the move is in flight, the deleted photo and the landing position must come from
+        // the same frame, or focus lands a slot off the reel.
+        val snapshot = _state.value
+        val photo = snapshot.currentPhoto ?: return
+        val idx = snapshot.currentIndex
+        scope.launch {
+            val report = try {
+                moveToTrash.invoke(listOf(photo))
+            } catch (t: Throwable) {
+                _deleteEvents.trySend("Delete failed: ${t.message}")
+                return@launch
+            }
+            if (report.trashed == 0) {
+                _deleteEvents.trySend("Couldn't move to Trash")
+                return@launch
+            }
+            val deletedId = photo.id
+            photos = photos.filterNot { it.id == deletedId }
+            categories.removeMemberships(root, setOf(deletedId))
+            onPhotosDeleted?.invoke(setOf(deletedId))
+            if (photos.isEmpty()) {
+                imageLoader.unpinAllExcept(null)
+                _state.update {
+                    it.copy(
+                        photos = emptyList(),
+                        currentIndex = 0,
+                        currentPhoto = null,
+                        currentBitmap = null,
+                        isLoadingBitmap = false,
+                        isCurrentFavourite = false,
+                        currentMemberships = emptySet(),
+                    )
+                }
+            } else {
+                val newIndex = idx.coerceAtMost(photos.size - 1)
+                val newPhoto = photos[newIndex]
+                _state.update {
+                    it.copy(
+                        photos = photos,
+                        currentIndex = newIndex,
+                        currentPhoto = newPhoto,
+                        currentBitmap = null,
+                        isLoadingBitmap = true,
+                        isCurrentFavourite = newPhoto.id in favourites(),
+                        currentMemberships = membershipsOf(newPhoto),
+                    )
+                }
+                imageLoader.unpinAllExcept(newPhoto.id)
+                imageLoader.pin(newPhoto.id)
+                loadCurrent()
+                prefetchAround()
+                scheduleSavePosition()
+            }
+            _deleteEvents.trySend("Moved to Trash")
         }
     }
 

@@ -2,7 +2,6 @@ package com.vishalgupta.photoselector.presentation.designsystem.molecule
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -32,16 +31,11 @@ data class KeyHint(val keys: String, val label: String)
  * [containerColor]) and key-cap colours, so the two stay one component rather than two that
  * drift apart. The list is an [ImmutableList] so a structurally-equal set of hints lets the
  * strip skip recomposition.
- *
- * An optional [status] is shown right-aligned (status-bar style) — used to surface a quiet
- * cull-progress tally without crowding the top bar. It needs the caller to give the strip a
- * width (e.g. `fillMaxWidth`) for the spacer to push it to the edge.
  */
 @Composable
 fun KeyboardLegend(
     hints: ImmutableList<KeyHint>,
     modifier: Modifier = Modifier,
-    status: String? = null,
     shape: Shape = RectangleShape,
     containerColor: Color = MaterialTheme.colorScheme.surface,
     contentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -69,14 +63,6 @@ fun KeyboardLegend(
                         softWrap = false,
                     )
                 }
-            }
-            if (status != null) {
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = status,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = contentColor,
-                )
             }
         }
     }

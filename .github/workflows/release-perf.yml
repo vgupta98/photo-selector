@@ -54,8 +54,12 @@ jobs:
 
       - name: Detect harness on release branch
         id: release-check
+        # The build applies the JMH plugin via the version-catalog alias
+        # (`alias(libs.plugins.jmh)`), so the `me.champeau.jmh` plugin id lives in
+        # gradle/libs.versions.toml, NOT build.gradle.kts. Grep the catalog, or this
+        # always reports "no harness" and silently skips the whole perf job.
         run: |
-          if grep -q "me.champeau.jmh" release/build.gradle.kts 2>/dev/null; then
+          if grep -q "me.champeau.jmh" release/gradle/libs.versions.toml 2>/dev/null; then
             echo "has-harness=true" >> "$GITHUB_OUTPUT"
           else
             echo "has-harness=false" >> "$GITHUB_OUTPUT"
@@ -66,7 +70,7 @@ jobs:
         id: baseline-check
         if: steps.release-check.outputs.has-harness == 'true'
         run: |
-          if grep -q "me.champeau.jmh" baseline/build.gradle.kts 2>/dev/null; then
+          if grep -q "me.champeau.jmh" baseline/gradle/libs.versions.toml 2>/dev/null; then
             echo "has-harness=true" >> "$GITHUB_OUTPUT"
           else
             echo "has-harness=false" >> "$GITHUB_OUTPUT"

@@ -28,6 +28,19 @@ data class Dimens(
     val scrollbarThickness: Dp = 8.dp,
     val scrollbarMinHeight: Dp = 48.dp,
     val progressIndicatorLg: Dp = 48.dp,
+    // Thickness of the little drag-style handle that closes an expanded burst (one of the 3dp
+    // hairline family alongside focusBorderWidth / lastViewedIndicatorHeight).
+    val burstHandleHeight: Dp = 3.dp,
+    // Horizontal inset inside the small overlay badges (burst count, category chip). Tighter than
+    // the spacing scale by design, shared so both badges stay visually identical.
+    val badgeInset: Dp = 5.dp,
+    // Vertical counterpart to [badgeInset]: a 1dp hairline pad so the badge text isn't flush to the
+    // chip edge. Off the spacing scale (even xxs reads too tall here), shared by every overlay badge.
+    val badgeVerticalInset: Dp = 1.dp,
+    // How far the stacked-deck cards behind a collapsed group tile peek out toward the top-right.
+    // The whole deck is drawn *inside* the cell (the cover photo is inset by this much on its top
+    // and end), so the peeking edges never bleed into the grid gutters or the neighbouring tile.
+    val burstStackInset: Dp = 10.dp,
 )
 
 val LocalDimens = staticCompositionLocalOf { Dimens() }

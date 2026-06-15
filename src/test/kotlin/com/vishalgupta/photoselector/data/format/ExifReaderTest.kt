@@ -110,5 +110,94 @@ class ExifReaderTest {
             assertEquals(o, parsed.orientation, "orientation $o")
         }
     }
+
+    // --- capture info (Make/Model/DateTimeOriginal/SubSecTimeOriginal) ---
+
+    @Test fun `capture happy path little-endian reads all fields`() {
+        val bytes = buildCaptureExifJpeg(
+            littleEndian = true,
+            make = "Canon",
+            model = "Canon EOS R5",
+            dateTimeOriginal = "2024:01:02 03:04:05",
+            subSec = "047",
+            orientation = 6,
+        )
+        val info = ExifReader.parseCapture(ByteArrayInputStream(bytes))!!
+        assertEquals("Canon", info.make)
+        assertEquals("Canon EOS R5", info.model)
+        assertEquals("2024:01:02 03:04:05", info.dateTimeOriginal)
+        assertEquals("047", info.subSecTimeOriginal)
+        assertEquals(6, info.orientation)
+    }
+
+    @Test fun `capture happy path big-endian reads all fields`() {
+        val bytes = buildCaptureExifJpeg(
+            littleEndian = false,
+            make = "NIKON CORPORATION",
+            model = "NIKON Z 6",
+            dateTimeOriginal = "2023:12:25 18:30:00",
+            subSec = "5",
+        )
+        val info = ExifReader.parseCapture(ByteArrayInputStream(bytes))!!
+        assertEquals("NIKON CORPORATION", info.make)
+        assertEquals("NIKON Z 6", info.model)
+        assertEquals("2023:12:25 18:30:00", info.dateTimeOriginal)
+        assertEquals("5", info.subSecTimeOriginal)
+    }
+
+    @Test fun `capture reads inline ascii that fits the value field`() {
+        // "HTC" + NUL == 4 bytes -> stored inline, not at an offset.
+        val bytes = buildCaptureExifJpeg(make = "HTC", model = "One")
+        val info = ExifReader.parseCapture(ByteArrayInputStream(bytes))!!
+        assertEquals("HTC", info.make)
+        assertEquals("One", info.model)
+    }
+
+    @Test fun `capture without sub-ifd still reads make and model`() {
+        val bytes = buildCaptureExifJpeg(make = "Apple", model = "iPhone 15 Pro")
+        val info = ExifReader.parseCapture(ByteArrayInputStream(bytes))!!
+        assertEquals("Apple", info.make)
+        assertEquals("iPhone 15 Pro", info.model)
+        assertNull(info.dateTimeOriginal)
+        assertNull(info.subSecTimeOriginal)
+    }
+
+    @Test fun `capture datetime without subsec`() {
+        val bytes = buildCaptureExifJpeg(
+            make = "Sony",
+            dateTimeOriginal = "2022:06:01 09:00:00",
+        )
+        val info = ExifReader.parseCapture(ByteArrayInputStream(bytes))!!
+        assertEquals("2022:06:01 09:00:00", info.dateTimeOriginal)
+        assertNull(info.subSecTimeOriginal)
+    }
+
+    @Test fun `capture with only orientation still returns info`() {
+        val bytes = buildCaptureExifJpeg(orientation = 3)
+        val info = ExifReader.parseCapture(ByteArrayInputStream(bytes))!!
+        assertEquals(3, info.orientation)
+        assertNull(info.make)
+        assertNull(info.dateTimeOriginal)
+    }
+
+    @Test fun `capture on a non-JPEG returns null`() {
+        assertNull(ExifReader.parseCapture(ByteArrayInputStream(byteArrayOf(0x12, 0x34, 0x56, 0x78))))
+    }
+
+    @Test fun `capture on JPEG with no APP1 returns null`() {
+        assertNull(ExifReader.parseCapture(ByteArrayInputStream(tinyJpeg)))
+    }
+
+    @Test fun `capture skips non-EXIF app1 then reads the real one`() {
+        val nonExifApp1 = byteArrayOf(
+            0xFF.toByte(), 0xE1.toByte(), 0x00, 0x09, 'X'.code.toByte(), 'M'.code.toByte(),
+            'P'.code.toByte(), 0x00, 0x01, 0x02, 0x03,
+        )
+        val real = buildCaptureExifJpeg(make = "Fujifilm", model = "X-T5")
+        val merged = real.copyOfRange(0, 2) + nonExifApp1 + real.copyOfRange(2, real.size)
+        val info = ExifReader.parseCapture(ByteArrayInputStream(merged))!!
+        assertEquals("Fujifilm", info.make)
+        assertEquals("X-T5", info.model)
+    }
 }
 

@@ -5,7 +5,9 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -192,6 +194,116 @@ class GridRecompositionTest {
         assertEquals("c should skip", before["c"], tracker["c"])
         assertEquals("d should skip", before["d"], tracker["d"])
     }
+
+    /**
+     * Guards [GridScreen]'s `openTile` shape: the onClick is `{ openTile(index) }`, and `openTile`
+     * is a resolver that captures the (unstable) tile lists. If that resolver is rebuilt every
+     * recomposition (a bare val, the regression), every tile's onClick changes identity on any
+     * unrelated state flip and no tile can skip. Remembering it on the tile lists - which don't
+     * change on a favourite flip - keeps the onClick stable, so only the flipped tile recomposes.
+     * The earlier [KeyedGrid] tests miss this because they pass a stable top-level onTileClick.
+     */
+    @Test
+    fun togglingFavourite_withACapturedClickResolver_recomposesOnlyThatTile() {
+        val tracker = RecompositionTracker()
+        val favourites = mutableStateOf(emptySet<PhotoId>())
+        // Stands in for GridScreen's tileFlatStart: an unstable list the resolver captures. It does
+        // not change when a favourite flips, exactly as in the real grid.
+        val flats = photos.indices.toList()
+
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    ResolvedClickGrid(
+                        photos = photos,
+                        favourites = favourites.value,
+                        flats = flats,
+                        loader = noOpImageLoader,
+                        tracker = tracker,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        val before = photos.associate { it.id.value to tracker[it.id.value] }
+
+        rule.runOnIdle { favourites.value = setOf(PhotoId("b")) }
+        rule.waitForIdle()
+
+        assertEquals("b should recompose (its favourite flipped)", before["b"]!! + 1, tracker["b"])
+        assertEquals("a should skip (resolver stable -> onClick identity held)", before["a"], tracker["a"])
+        assertEquals("c should skip", before["c"], tracker["c"])
+        assertEquals("d should skip", before["d"], tracker["d"])
+    }
+
+    /**
+     * Deleting the tail of the list (the delete path's re-emit of a shorter [photos] list) must
+     * not recompose any surviving tile: every survivor keeps its index, so every per-tile input is
+     * unchanged. Guards the claim that a move-to-Trash drops only the deleted tiles, not the grid.
+     */
+    @Test
+    fun deletingLastPhoto_recomposesNoSurvivingTile() {
+        val tracker = RecompositionTracker()
+        val visible = mutableStateOf(photos)
+
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    KeyedGrid(
+                        photos = visible.value,
+                        focusedIndex = -1,
+                        loader = noOpImageLoader,
+                        tracker = tracker,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        val before = photos.associate { it.id.value to tracker[it.id.value] }
+
+        rule.runOnIdle { visible.value = photos.dropLast(1) } // delete "d"
+        rule.waitForIdle()
+
+        assertEquals("a should skip", before["a"], tracker["a"])
+        assertEquals("b should skip", before["b"], tracker["b"])
+        assertEquals("c should skip", before["c"], tracker["c"])
+    }
+
+    /**
+     * Deleting from the middle recomposes only the tiles whose index shifts (their index-capturing
+     * click lambda changes, exactly as in GridScreen) — never the tiles ahead of the cut. This is
+     * the floor the delete path can't beat: shifted positions must re-run, unchanged ones must not.
+     */
+    @Test
+    fun deletingMiddlePhoto_recomposesOnlyTilesWhoseIndexShifted() {
+        val tracker = RecompositionTracker()
+        val visible = mutableStateOf(photos)
+
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    KeyedGrid(
+                        photos = visible.value,
+                        focusedIndex = -1,
+                        loader = noOpImageLoader,
+                        tracker = tracker,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        val before = photos.associate { it.id.value to tracker[it.id.value] }
+
+        rule.runOnIdle { visible.value = photos.filterNot { it.id.value == "b" } } // delete "b"
+        rule.waitForIdle()
+
+        assertEquals("a should skip (index 0 unchanged)", before["a"], tracker["a"])
+        assertEquals("c should recompose (index 2 -> 1)", before["c"]!! + 1, tracker["c"])
+        assertEquals("d should recompose (index 3 -> 2)", before["d"]!! + 1, tracker["d"])
+    }
 }
 
 /** One tile per photo, with per-tile inputs computed as in GridScreen. */
@@ -245,6 +357,40 @@ private fun GridWithBadges(
 }
 
 /**
+ * As [Grid], but the click handler is resolved through a list the lambda captures - the exact shape
+ * of GridScreen's `openTile` (Single -> open, Burst -> expand). The resolver is remember-keyed on the
+ * captured list, so an unrelated state flip (a favourite) must not hand any tile a fresh onClick. A
+ * regression that drops the remember (a bare-val resolver) rebuilds it every recomposition and churns
+ * every tile - flipping the "should skip" assertions in [togglingFavourite_withACapturedClickResolver_recomposesOnlyThatTile].
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ResolvedClickGrid(
+    photos: List<Photo>,
+    favourites: Set<PhotoId>,
+    flats: List<Int>,
+    loader: ImageLoader,
+    tracker: RecompositionTracker,
+) {
+    val openTile: (Int) -> Unit = remember(photos, flats) { { _ -> } }
+    FlowRow {
+        photos.forEachIndexed { index, photo ->
+            key(photo.id.value) {
+                CountedThumbnail(
+                    tracker = tracker,
+                    tag = photo.id.value,
+                    photo = photo,
+                    loader = loader,
+                    isFavourite = photo.id in favourites,
+                    isFocused = false,
+                    onClick = { openTile(index) },
+                )
+            }
+        }
+    }
+}
+
+/**
  * Records one recomposition then renders the real [PhotoThumbnail] with the same
  * params. [record] sits in this scope's body (not behind a content lambda), so it
  * ticks exactly when this skippable composable recomposes — i.e. when one of the
@@ -260,6 +406,7 @@ private fun CountedThumbnail(
     isFocused: Boolean,
     isSelected: Boolean = false,
     categoryBadges: ImmutableList<Int> = persistentListOf(),
+    onClick: () -> Unit = {},
 ) {
     tracker.record(tag)
     PhotoThumbnail(
@@ -268,10 +415,43 @@ private fun CountedThumbnail(
         isMarked = isFavourite,
         isFocused = isFocused,
         isSelected = isSelected,
-        onClick = {},
+        onClick = onClick,
         onToggleSelect = {},
         onRangeSelect = {},
         modifier = Modifier.size(AppTheme.dimens.thumbnailMinCell),
         categoryBadges = categoryBadges,
     )
+}
+
+/**
+ * As [Grid], but keyed by photo id with an index-capturing click lambda — the exact shape of
+ * GridScreen's LazyVerticalGrid items. Keying lets a deletion preserve surviving tiles'
+ * composition state (the way the lazy grid does), and the index capture means a tile whose
+ * position shifts receives a fresh `onClick` and must recompose, while a tile whose index is
+ * unchanged keeps an equal `onClick` and skips.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun KeyedGrid(
+    photos: List<Photo>,
+    focusedIndex: Int,
+    loader: ImageLoader,
+    tracker: RecompositionTracker,
+    onTileClick: (Int) -> Unit = {},
+) {
+    FlowRow {
+        photos.forEachIndexed { index, photo ->
+            key(photo.id.value) {
+                CountedThumbnail(
+                    tracker = tracker,
+                    tag = photo.id.value,
+                    photo = photo,
+                    loader = loader,
+                    isFavourite = false,
+                    isFocused = index == focusedIndex,
+                    onClick = { onTileClick(index) },
+                )
+            }
+        }
+    }
 }

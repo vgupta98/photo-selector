@@ -118,6 +118,21 @@ class JsonCategoriesRepository(
         }
     }
 
+    override suspend fun removeMemberships(root: RootFolder, photos: Collection<PhotoId>) {
+        if (boundRoot?.path != root.path) bind(root)
+        if (photos.isEmpty()) return
+        val toRemove = photos.toSet()
+        mutex.withLock {
+            val current = membershipsFlow.value
+            val next = current.mapValues { (_, ids) -> ids - toRemove }
+            // Nothing was filed anywhere — skip the write so a delete of un-categorised photos
+            // leaves the file untouched.
+            if (next == current) return@withLock
+            membershipsFlow.value = next
+            writeToDisk(root)
+        }
+    }
+
     override suspend fun clearContext() {
         mutex.withLock {
             boundRoot = null

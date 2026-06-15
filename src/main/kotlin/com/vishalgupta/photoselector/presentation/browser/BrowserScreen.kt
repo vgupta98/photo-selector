@@ -51,6 +51,7 @@ import com.vishalgupta.photoselector.presentation.common.digitSlot
 import com.vishalgupta.photoselector.presentation.designsystem.atom.FavouriteStar
 import com.vishalgupta.photoselector.presentation.designsystem.atom.LoadingIndicator
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BrowserKeyboardLegend
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.ConfirmDialog
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ErrorPlaceholder
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToast
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToastDefaults
@@ -71,10 +72,20 @@ fun BrowserScreen(
     onChangeFolder: () -> Unit,
     onBack: () -> Unit,
     onCompare: () -> Unit,
+    // Non-null only when browsing a category: jumps to this photo in the All Photos grid. Null hides
+    // the affordance (and disables its key) in the All-Photos browser, which is already All Photos.
+    onShowInAllPhotos: (() -> Unit)? = null,
+    // True when embedded in Inspect's browse mode: trims the browser to the fixed set (no library
+    // chrome, no delete). [onSwitchToGrid] is the toggle back to the overview (null for a browse-only
+    // set). [manageLifecycle] is false there so Inspect, not a per-toggle dispose, clears the VM.
+    embedded: Boolean = false,
+    onSwitchToGrid: (() -> Unit)? = null,
+    manageLifecycle: Boolean = true,
 ) {
-    DisposableEffect(viewModel) { onDispose { viewModel.onClear() } }
+    DisposableEffect(viewModel, manageLifecycle) { onDispose { if (manageLifecycle) viewModel.onClear() } }
     val state by viewModel.state.collectAsState()
     var toast by remember { mutableStateOf<CategoryToastState?>(null) }
+    var deleteMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.loadIfNeeded()
@@ -88,6 +99,14 @@ fun BrowserScreen(
         }
     }
 
+    LaunchedEffect(viewModel) {
+        viewModel.deleteEvents.collectLatest { message ->
+            deleteMessage = message
+            delay(1600)
+            deleteMessage = null
+        }
+    }
+
     LaunchedEffect(state.currentPhoto?.id) {
         toast = null
     }
@@ -95,15 +114,20 @@ fun BrowserScreen(
     BrowserScreen(
         state = state,
         toast = toast,
+        deleteMessage = deleteMessage,
         systemActions = systemActions,
         onPrevious = viewModel::previous,
         onNext = viewModel::next,
         onToggleCategory = viewModel::toggleCategory,
+        onDeleteCurrent = viewModel::deleteCurrent,
         onViewportSizeChanged = viewModel::setViewportLongEdgePx,
         onOpenFavourites = onOpenFavourites,
         onChangeFolder = onChangeFolder,
         onBackToGrid = onBack,
         onCompare = onCompare,
+        onShowInAllPhotos = onShowInAllPhotos,
+        embedded = embedded,
+        onSwitchToGrid = onSwitchToGrid,
     )
 }
 
@@ -121,10 +145,20 @@ fun BrowserScreen(
     onChangeFolder: () -> Unit,
     onBackToGrid: () -> Unit,
     onCompare: () -> Unit = {},
+    onShowInAllPhotos: (() -> Unit)? = null,
+    // True when embedded in Inspect's browse mode: hides the library chrome and disables move-to-Trash
+    // (a fixed inspect set isn't where you cull files). [onSwitchToGrid] is the toggle back to the
+    // overview, shown only when there is a grid to return to.
+    embedded: Boolean = false,
+    onSwitchToGrid: (() -> Unit)? = null,
+    deleteMessage: String? = null,
+    onDeleteCurrent: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val focusRequester = remember { FocusRequester() }
     val zoom = rememberZoomState()
+    // Open/closed state of the move-to-Trash confirmation; Cmd+Delete arms it.
+    var confirmingDelete by remember { mutableStateOf(false) }
 
     // The HUD auto-hides; any handled keystroke (and, via HoverOverlay, mouse movement)
     // reveals it. Bumping this token restarts the hide timer.
@@ -154,6 +188,10 @@ fun BrowserScreen(
     var displayedToast by remember { mutableStateOf<CategoryToastState?>(null) }
     if (toast != null) displayedToast = toast
 
+    // Same latch for the delete confirmation/failure message.
+    var displayedDeleteMessage by remember { mutableStateOf<String?>(null) }
+    if (deleteMessage != null) displayedDeleteMessage = deleteMessage
+
     Box(
         modifier
             .fillMaxSize()
@@ -170,14 +208,18 @@ fun BrowserScreen(
                     revealHud++
                     return@onPreviewKeyEvent true
                 }
+                // Cmd+Delete (Cmd+Backspace on a Mac keyboard) arms the move-to-Trash confirmation
+                // for the photo on screen — the macOS "move to trash" chord. Disabled when embedded
+                // in Inspect: the grid facet has no delete, so a delete there would desync the two.
+                if (!embedded && meta && (event.key == Key.Backspace || event.key == Key.Delete)) {
+                    if (state.currentPhoto != null) confirmingDelete = true
+                    revealHud++
+                    return@onPreviewKeyEvent true
+                }
                 val handled = when (event.key) {
                     Key.DirectionLeft -> { onPrevious(); true }
                     Key.DirectionRight -> { onNext(); true }
                     Key.F -> if (meta) false else { onToggleCategory(Category.FAVOURITES_ID); true }
-                    Key.Spacebar -> if (meta) false else {
-                        state.currentPhoto?.absolutePath?.let { systemActions?.preview(it) }
-                        true
-                    }
                     Key.R -> if (meta) false else {
                         state.currentPhoto?.absolutePath?.let { systemActions?.revealInFileManager(it) }
                         true
@@ -187,7 +229,12 @@ fun BrowserScreen(
                         true
                     }
                     Key.G -> if (meta) false else { onBackToGrid(); true }
-                    Key.C -> if (meta) false else { onCompare(); true }
+                    // Embedded in Inspect, `C` is inert (no nested Inspect), so fall through rather
+                    // than silently swallow it — the legend hides the hint to match.
+                    Key.C -> if (meta || embedded) false else { onCompare(); true }
+                    // A: reveal this photo in the All Photos grid. Only when browsing a category (the
+                    // handler is null in the All-Photos browser), so plain A is inert there.
+                    Key.A -> if (meta || onShowInAllPhotos == null) false else { onShowInAllPhotos(); true }
                     Key.Escape -> { onBackToGrid(); true }
                     Key.Equals, Key.Plus -> { zoom.zoomIn(); true }
                     Key.Minus -> { zoom.zoomOut(); true }
@@ -206,7 +253,10 @@ fun BrowserScreen(
             readOnly = state.readOnly,
             onBack = onBackToGrid,
             onOpenFavourites = onOpenFavourites,
+            onShowInAllPhotos = onShowInAllPhotos,
             onChangeFolder = onChangeFolder,
+            embedded = embedded,
+            onSwitchToGrid = onSwitchToGrid,
             modifier = Modifier.fillMaxWidth(),
         )
 
@@ -284,6 +334,9 @@ fun BrowserScreen(
                         BrowserKeyboardLegend(
                             hasCustomCategories = state.categories.customCategories().isNotEmpty(),
                             readOnly = state.readOnly,
+                            canShowInAllPhotos = onShowInAllPhotos != null,
+                            canCompare = !embedded,
+                            canReturnToGrid = embedded && onSwitchToGrid != null,
                         )
                     }
                 }
@@ -321,6 +374,31 @@ fun BrowserScreen(
                     },
                 )
             }
+        }
+
+        AnimatedVisibility(
+            visible = deleteMessage != null,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = AppTheme.dimens.browserToastBottomInset),
+        ) {
+            displayedDeleteMessage?.let { PillToast(text = it, colors = PillToastDefaults.removedColors()) }
+        }
+
+        if (confirmingDelete) {
+            ConfirmDialog(
+                title = "Move this photo to Trash?",
+                message = "It will be moved to the macOS Trash. You can restore it from there.",
+                confirmLabel = "Move to Trash",
+                confirmDestructive = true,
+                onConfirm = {
+                    confirmingDelete = false
+                    onDeleteCurrent()
+                },
+                onDismiss = { confirmingDelete = false },
+            )
         }
     }
 }

@@ -1,11 +1,18 @@
 package com.vishalgupta.photoselector.presentation.grid
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,61 +23,77 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.BurstMode
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.domain.model.Photo
+import com.vishalgupta.photoselector.domain.model.PhotoGroup
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
 import com.vishalgupta.photoselector.presentation.common.CategoryToggle
+import com.vishalgupta.photoselector.presentation.common.GroupingMode
 import com.vishalgupta.photoselector.presentation.common.NativeFileDialogs
 import com.vishalgupta.photoselector.presentation.common.customCategories
 import com.vishalgupta.photoselector.presentation.common.digitSlot
 import com.vishalgupta.photoselector.presentation.designsystem.atom.AppOutlinedButton
 import com.vishalgupta.photoselector.presentation.designsystem.atom.FavouriteStar
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.BurstExpandedFooter
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.BurstExpandedHeader
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BusyBar
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.ConfirmDialog
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.EmptyState
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.GridKeyboardLegend
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.GroupingProgressBanner
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.KeyHint
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToast
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToastDefaults
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.SimilarityCoachmark
 import com.vishalgupta.photoselector.presentation.designsystem.organism.GridSelectionTopBar
 import com.vishalgupta.photoselector.presentation.designsystem.organism.GridTopBar
 import com.vishalgupta.photoselector.presentation.designsystem.organism.PhotoThumbnail
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
-import com.vishalgupta.photoselector.presentation.navigation.MAX_SURVEY_PHOTOS
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -85,10 +108,20 @@ fun GridScreen(
     onTileClick: (index: Int) -> Unit,
     onChangeFolder: () -> Unit,
     onSelectCategory: (currentScrollIndex: Int, id: CategoryId) -> Unit,
-    onCompareSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit,
+    onInspectSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit,
     onBack: (() -> Unit)?,
+    // The scroll state retained for this (root, scope) across the session, supplied by the host so it
+    // survives a Grid -> Browser -> Grid round trip. [anchorInitialScroll] is true only on the first
+    // (cold) visit, where [initialScrollIndex] still needs to be applied as grouping settles; on a
+    // warm return the retained state already holds the exact position, so re-anchoring is skipped.
+    // The view model is retained too (it is NOT cleared here on navigate-away — the host evicts it on
+    // a root change), so the grid returns with its groups, focus and scroll intact.
+    gridState: LazyGridState,
+    anchorInitialScroll: Boolean,
+    // A photo to scroll into view on a warm return, regardless of the keyboard ring (resume / "Show in
+    // All Photos"). See [Screen.Grid.revealPhotoId].
+    revealPhotoId: PhotoId? = null,
 ) {
-    DisposableEffect(viewModel) { onDispose { viewModel.onClear() } }
     val state by viewModel.state.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
@@ -102,15 +135,29 @@ fun GridScreen(
         }
     }
 
+    // The "what the lens found" notice, fired once per user lens pick (see GroupingOutcome). collectLatest
+    // so a quick second lens pick replaces the previous notice rather than queueing it behind the timer.
+    var groupingNotice by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(viewModel) {
+        viewModel.groupingOutcomes.collectLatest { outcome ->
+            groupingNotice = groupingNoticeText(outcome)
+            delay(GROUPING_NOTICE_MS)
+            groupingNotice = null
+        }
+    }
+
     GridScreen(
         state = state,
         initialScrollIndex = initialScrollIndex,
+        retainedGridState = gridState,
+        anchorInitialScroll = anchorInitialScroll,
+        revealPhotoId = revealPhotoId,
         categoryToast = categoryToast,
+        groupingNotice = groupingNotice,
         onTileClick = onTileClick,
         onChangeFolder = onChangeFolder,
         onSelectCategory = onSelectCategory,
-        onCompareSelection = onCompareSelection,
-        onSelectionTooLargeToCompare = viewModel::notifySurveyCapExceeded,
+        onInspectSelection = onInspectSelection,
         onCreateCategory = viewModel::createCategory,
         onRenameCategory = viewModel::renameCategory,
         onDeleteCategory = viewModel::deleteCategory,
@@ -136,6 +183,10 @@ fun GridScreen(
         },
         onDismissToast = viewModel::dismissToast,
         onFirstVisibleItemChanged = viewModel::onFirstVisibleItemChanged,
+        onSelectGroupingMode = viewModel::setGroupingMode,
+        onToggleBurstExpansion = viewModel::toggleBurstExpansion,
+        onCollapseBurst = viewModel::collapseBurst,
+        onDismissSimilarityCoachmark = viewModel::dismissSimilarityCoachmark,
         imageLoader = viewModel.imageLoader,
         onToggleSelection = viewModel::toggleSelection,
         onSelectRange = viewModel::selectRange,
@@ -143,6 +194,7 @@ fun GridScreen(
         onClearSelection = viewModel::clearSelection,
         onFileSelectionIntoFavourites = viewModel::fileSelectionIntoFavourites,
         onFileSelectionIntoCustom = viewModel::fileSelectionIntoCustom,
+        onDeleteSelection = viewModel::deleteSelection,
         onCopySelection = { policy ->
             coroutineScope.launch {
                 val dir = NativeFileDialogs.pickDirectory("Copy selected photos to…")
@@ -153,10 +205,20 @@ fun GridScreen(
     )
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun GridScreen(
     state: GridUiState,
     initialScrollIndex: Int,
+    // The host-retained scroll state for this (root, scope), or null for the stateless hosting (tests,
+    // previews) that owns no retention — then the grid makes its own, seeded from [initialScrollIndex].
+    retainedGridState: LazyGridState? = null,
+    // True only on a cold first visit, where [initialScrollIndex] is re-anchored as grouping settles;
+    // false on a warm return, where [retainedGridState] already holds the exact position.
+    anchorInitialScroll: Boolean = true,
+    // A photo to scroll into view once on a warm return, regardless of the keyboard ring. See
+    // [Screen.Grid.revealPhotoId]; ignored on a cold visit (initialScrollIndex places the photo there).
+    revealPhotoId: PhotoId? = null,
     onTileClick: (index: Int) -> Unit,
     onChangeFolder: () -> Unit,
     onSelectCategory: (currentScrollIndex: Int, id: CategoryId) -> Unit,
@@ -171,8 +233,15 @@ fun GridScreen(
     onCopyToFolder: (ConflictPolicy) -> Unit,
     onDismissToast: () -> Unit,
     onFirstVisibleItemChanged: (Int) -> Unit = {},
+    onSelectGroupingMode: (GroupingMode) -> Unit = {},
+    onToggleBurstExpansion: (PhotoId) -> Unit = {},
+    onCollapseBurst: () -> Unit = {},
+    onDismissSimilarityCoachmark: () -> Unit = {},
     imageLoader: ImageLoader,
     categoryToast: CategoryToggle? = null,
+    // A one-shot "what the lens found" notice (summary or empty result), already rendered to copy by
+    // the stateful host from a [GroupingOutcome]. Null when there's nothing to announce.
+    groupingNotice: String? = null,
     // Multi-select plumbing. Defaulted so the stateless screen can be hosted (tests, previews)
     // without wiring selection — a grid with no selection handlers simply never selects.
     onToggleSelection: (Int) -> Unit = {},
@@ -181,13 +250,53 @@ fun GridScreen(
     onClearSelection: () -> Unit = {},
     onFileSelectionIntoFavourites: () -> Unit = {},
     onFileSelectionIntoCustom: (slot: Int) -> Unit = {},
+    onDeleteSelection: () -> Unit = {},
     onCopySelection: (ConflictPolicy) -> Unit = {},
-    onCompareSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit = { _, _ -> },
-    onSelectionTooLargeToCompare: () -> Unit = {},
+    onInspectSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit = { _, _ -> },
+    // The scrollbar's drag interactions, hoisted so a test can drive a scrollbar-drag-during-settle
+    // (emit DragInteraction.Start) without a real thin-scrollbar gesture; production uses the default.
+    scrollbarInteraction: MutableInteractionSource = remember { MutableInteractionSource() },
     modifier: Modifier = Modifier,
 ) {
-    val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = initialScrollIndex)
+    // The collapsed grouping. The view model populates [GridUiState.groups] (singles, then bursts
+    // once grouping resolves); a state with no groups computed yet (e.g. a test or a static preview)
+    // falls back to one tile per photo so the grid still renders and navigates.
+    val baseGroups = remember(state.groups, state.photos) {
+        state.groups.ifEmpty { state.photos.map(PhotoGroup::Single) }
+    }
+    // The renderable items: headers + tiles, with the expanded burst (if any) unfolded in place.
+    val renderItems = remember(baseGroups, state.expandedBurstId) {
+        buildRenderItems(baseGroups, state.expandedBurstId)
+    }
+    // The tiles-only index space focus / selection / clicks address, in lock-step with the view
+    // model's [GridUiState.displayGroups]. A collapsed burst is one tile; an open burst's frames are
+    // individual tiles.
+    val tiles = remember(baseGroups, state.expandedBurstId) {
+        displayGroupsFor(baseGroups, state.expandedBurstId)
+    }
+    // Flat index in [state.photos] where each display tile's frames begin - the bridge between the
+    // flat photo index the rest of the app speaks (browser, Compare, Survey, persisted scroll) and
+    // the grid's own tile index.
+    val tileFlatStart = remember(tiles) {
+        var acc = 0
+        tiles.map { group -> acc.also { acc += group.photos.size } }
+    }
+    // initialScrollIndex is a FLAT photo index (which photo to reveal); convert to its tile, since a
+    // burst makes the two diverge. Grouping settles asynchronously, so a later effect re-anchors.
+    // Prefer the host-retained scroll state (so a warm return keeps the exact position); fall back to
+    // a self-owned one seeded from initialScrollIndex for the stateless hosting that has no retention.
+    val ownGridState = rememberLazyGridState(
+        initialFirstVisibleItemIndex = tileIndexForFlat(tileFlatStart, initialScrollIndex),
+    )
+    val gridState = retainedGridState ?: ownGridState
+    // What we hand back to the browser / Compare / Survey / persistence is a FLAT photo index, so no
+    // caller needs to know tiles exist. firstVisibleItemIndex is a renderItems index (header/footer
+    // included when a burst is open), so map it through the tile space before the flat lookup.
+    fun firstVisibleFlat() = flatIndexForRenderItem(renderItems, tileFlatStart, gridState.firstVisibleItemIndex)
     val focusRequester = remember { FocusRequester() }
+    // Open/closed state of the destructive delete confirmation. The Delete button and Cmd+Delete
+    // both arm it; confirming calls [onDeleteSelection], which performs the move to Trash.
+    var confirmingDelete by remember { mutableStateOf(false) }
 
     val currentCategory: Category? = (state.scope as? CategoryScope.Category)
         ?.let { sc -> state.categories.firstOrNull { it.id == sc.id } }
@@ -196,6 +305,41 @@ fun GridScreen(
     // Custom categories in slot order — drives both the per-tile numbered badges and the
     // 1..9 digit mapping, so a tile's "2" chip always matches the key that toggled it.
     val customCategories = state.categories.customCategories()
+
+    // Opening a tile: a collapsed burst unfolds in place into its frames; a single photo - including
+    // an open burst's frame - opens the browser at that photo. There is no frame-count cap: even a
+    // huge burst is culled inline. (Inspect stays reachable by selecting frames and pressing C, exactly
+    // as for any multi-select.)
+    // Remembered, not a bare val: this resolver captures the unstable tiles / tileFlatStart lists, so
+    // rebuilding it every recomposition would hand every tile a fresh { openTile(index) } onClick and
+    // defeat per-tile skipping on any unrelated state flip (favourite, focus, selection). tiles and
+    // tileFlatStart only change on a regroup/expansion, which is exactly when the resolver *should*
+    // be rebuilt - so key on them (and the two stable callbacks) and the onClick identity holds steady
+    // through the hot path.
+    val openTile: (Int) -> Unit = remember(tiles, tileFlatStart, onTileClick, onToggleBurstExpansion) {
+        open@{ tileIndex ->
+            val group = tiles.getOrNull(tileIndex) ?: return@open
+            when (group) {
+                is PhotoGroup.Single -> onTileClick(tileFlatStart[tileIndex])
+                is PhotoGroup.Burst -> onToggleBurstExpansion(group.groupId)
+            }
+        }
+    }
+
+    // "Review" a collapsed group: open its frames straight into Inspect, the "decide now" path next to
+    // expand-in-place. The group is a contiguous run of the flat photo list, so its flat indices are
+    // [tileFlatStart] .. +frameCount — resolved HERE, the sole tile->flat translator (never put a tile
+    // index on the nav wire). Any size opens: Inspect itself shows a long burst (past the grid cap) in
+    // browse mode rather than declining. Remembered like [openTile] so the hover CTA and the
+    // focused-group `C` share one stable resolver and the tiles keep skipping.
+    val openReview: (Int) -> Unit =
+        remember(tiles, tileFlatStart, renderItems, gridState, onInspectSelection) {
+            review@{ tileIndex ->
+                val group = tiles.getOrNull(tileIndex) as? PhotoGroup.Burst ?: return@review
+                val start = tileFlatStart[tileIndex]
+                onInspectSelection((start until start + group.photos.size).toList(), firstVisibleFlat())
+            }
+        }
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -208,56 +352,149 @@ fun GridScreen(
         }
     }
 
-    LaunchedEffect(state.focusedIndex) {
-        val idx = state.focusedIndex
-        if (idx < 0) return@LaunchedEffect
-        val layout = gridState.layoutInfo
-        val item = layout.visibleItemsInfo.firstOrNull { it.index == idx }
-        val isFullyVisible = item != null &&
-            item.offset.y >= layout.viewportStartOffset &&
-            item.offset.y + item.size.height <= layout.viewportEndOffset
-        if (!isFullyVisible) {
-            gridState.animateScrollToItem(idx)
-        }
+    // The viewport re-pin across a grouping reshape - the cold settle and a lens switch - lives in one
+    // holder (see [GridViewportAnchor]). It keeps the viewport on one photo by IDENTITY, re-read from the
+    // live top only when the user has actually scrolled (re-deriving it every reshape degrades a collapsed
+    // burst to its first frame and walks the viewport upward across switches). Cold seed: the returned
+    // photo's id *if the photos are already loaded* - on a real cold launch they arrive after mount, so
+    // this is null and [coldFlatFallback] (the flat index) carries the restore until an identity anchor
+    // exists; on a warm return both are null so the retained pixel position is left untouched.
+    // A warm return (resume) or a "Show in All Photos" jump carries [revealPhotoId]: the anchor scrolls
+    // that photo on-screen by IDENTITY on the first reconcile, ring or no ring (the old resume rode the
+    // keyboard ring's focus-into-view, so a mouse-only user - focusedIndex == -1 - silently got no resume).
+    // Gated to a warm return; a cold first visit places the photo via initialAnchor / coldFlatFallback.
+    val anchor = rememberGridViewportAnchor(
+        gridState = gridState,
+        initialAnchor = if (anchorInitialScroll) state.photos.getOrNull(initialScrollIndex)?.id else null,
+        coldFlatFallback = initialScrollIndex.takeIf { anchorInitialScroll },
+        revealPhotoId = revealPhotoId.takeIf { !anchorInitialScroll },
+    )
+    // Moves the keyboard cursor: tells the anchor the user took the viewport over (releases the re-pin) and,
+    // on an actual change, arms the focus-into-view scroll. The no-op-at-edge guard lives here because the
+    // change is relative to the current focus; the holder owns the flag and the scroll itself.
+    val moveFocus: (Int) -> Unit = { target ->
+        anchor.onCursorMove(focusChanged = target != state.focusedIndex)
+        onSetFocusedIndex(target)
+    }
+    // A scrollbar drag reaches [gridState] through the scrollable, NOT the Column's pointer modifier
+    // below, so observe the scrollbar's own drag interactions to release the re-pin too (the gap that
+    // used to let a scrollbar-drag-during-settle get yanked back). Distinct from gridState.isScrollInProgress,
+    // which a programmatic re-pin also trips - this fires only on a real user drag.
+    LaunchedEffect(scrollbarInteraction) {
+        scrollbarInteraction.interactions.collect { if (it is DragInteraction.Start) anchor.onUserScroll() }
     }
 
+    // Persisted scroll position is a FLAT photo index - the 50k-photo resume point, written on every
+    // scroll. The subscription is start-once (gridState is stable), but renderItems / tileFlatStart
+    // change on every regroup/expansion - so read the latest via rememberUpdatedState rather than
+    // capture a stale snapshot that would persist a wrong position after a burst expands.
+    val latestRenderItems by rememberUpdatedState(renderItems)
+    val latestTileFlatStart by rememberUpdatedState(tileFlatStart)
+    val latestTiles by rememberUpdatedState(tiles)
     LaunchedEffect(gridState) {
         snapshotFlow { gridState.firstVisibleItemIndex }
-            .collect { index -> onFirstVisibleItemChanged(index) }
+            .collect { index -> onFirstVisibleItemChanged(flatIndexForRenderItem(latestRenderItems, latestTileFlatStart, index)) }
     }
+
+    // The one-shot reveal (warm-return resume / "Show in All Photos") scrolls a photo on-screen by identity,
+    // ring or not. It lives in its OWN mount effect, keyed on Unit, NOT the focusedIndex-keyed reconcile
+    // below: the jump seats the ring on arrival (flipping focusedIndex), which would re-key reconcile and
+    // cancel a reveal scroll running there mid-animation. Reads the latest tiles/renderItems so a regroup
+    // that lands first still resolves the photo.
+    LaunchedEffect(Unit) {
+        anchor.scrollRevealIntoView(latestRenderItems, latestTiles)
+    }
+
+    // Every programmatic viewport move goes through the anchor's single [reconcile], keyed on BOTH the
+    // collapsed grouping (a reshape) and the focused tile (a cursor move) so it is the lone decision point:
+    // exactly one of re-pin / focus-into-view runs per change, and the two can no longer race. Keyed on
+    // baseGroups (not the display tiles), so merely expanding a burst - which changes neither key - doesn't
+    // reconcile; that case is left to the LazyGrid's own key retention.
+    LaunchedEffect(baseGroups, state.focusedIndex) {
+        anchor.reconcile(renderItems, tiles, tileFlatStart, state.focusedIndex, baseGroups)
+    }
+
+    // A toolbar lens switch reshapes the whole grid: capture the photo at the live top before the reshape,
+    // then re-pin to it after. Remembered (not a bare lambda), keyed on the unstable renderItems / tiles it
+    // reads plus the wrapped callback, so the toolbar keeps skipping through the hot path - like [openTile].
+    val onSelectGroupingModeAnchored: (GroupingMode) -> Unit =
+        remember(renderItems, tiles, onSelectGroupingMode) {
+            { mode ->
+                anchor.captureTop(renderItems, tiles)
+                onSelectGroupingMode(mode)
+            }
+        }
 
     Column(
         modifier
             .fillMaxSize()
             .focusRequester(focusRequester)
             .focusable()
+            // A two-finger / wheel scroll (the app's scroll gestures) releases the re-pin: a programmatic
+            // scroll or a grouping reshape doesn't emit this, so neither is mistaken for the user taking
+            // over. (Scrollbar drags reach the grid through the scrollable, not here - those are caught via
+            // the scrollbar's interactionSource above.)
+            .onPointerEvent(PointerEventType.Scroll) { anchor.onUserScroll() }
             .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (event.type != KeyEventType.KeyDown) {
+                    // A tile's `Modifier.clickable` activates on the Enter / Space KEY-UP, and a mouse
+                    // click leaves Compose focus on that tile - which differs from our keyboard cursor.
+                    // If we let the key-up through, the focused tile re-fires its onClick and re-opens
+                    // the mouse-clicked tile, undoing the cursor's action: the "Enter always re-expands
+                    // the burst I opened with the mouse" bug. The grid owns Enter/Space (handled on the
+                    // key-down below), so swallow their key-ups too and the tile clickable never sees them.
+                    return@onPreviewKeyEvent event.key == Key.Enter ||
+                        event.key == Key.NumPadEnter ||
+                        event.key == Key.Spacebar
+                }
                 val meta = event.isMetaPressed
                 val hasSelection = state.hasSelection
-                val cols = computeColumnCount(gridState)
-                val maxIndex = state.photos.size - 1
+                // Keyboard focus moves over tiles (groups), not the flat photo list — a collapsed
+                // burst is one stop.
+                val maxIndex = tiles.size - 1
                 // Cmd+A arms a multi-select over the whole scope.
                 if (meta && event.key == Key.A) {
                     if (maxIndex >= 0) onSelectAll()
                     return@onPreviewKeyEvent true
                 }
-                // C opens the multi-selection side by side: 2 tiles -> Compare, 3+ -> Survey. The
-                // indices are taken in scope (reading) order; only fires with a 2+ selection. Past
-                // the cap it declines with a toast instead of opening an unusable wall of tiles.
+                // Cmd+Delete (Cmd+Backspace on a Mac keyboard) over a selection arms the move-to-
+                // Trash confirmation — the macOS "move to trash" chord, applied to the whole pick.
+                if (meta && (event.key == Key.Backspace || event.key == Key.Delete) && hasSelection) {
+                    confirmingDelete = true
+                    return@onPreviewKeyEvent true
+                }
+                // C opens the multi-selection in Inspect (a 2-tile selection opens its overview grid the
+                // same as any larger one). The indices are taken in scope (reading) order; only fires
+                // with a 2+ selection. A large selection isn't declined — Inspect opens it browse-only.
                 if (!meta && event.key == Key.C && state.selection.size >= 2) {
-                    if (state.selection.size <= MAX_SURVEY_PHOTOS) {
-                        val indices = state.photos.indices.filter { state.photos[it].id in state.selection }
-                        onCompareSelection(indices, gridState.firstVisibleItemIndex)
-                    } else {
-                        onSelectionTooLargeToCompare()
-                    }
+                    val indices = state.photos.indices.filter { state.photos[it].id in state.selection }
+                    onInspectSelection(indices, firstVisibleFlat())
+                    return@onPreviewKeyEvent true
+                }
+                // C with no multi-select but a collapsed group focused: review that group's run with
+                // no prior multi-select — the group's frames ARE the selection (the keyboard fallback
+                // for the hover "Review" CTA). Singles fall through to no-op.
+                if (!meta && event.key == Key.C && !hasSelection &&
+                    tiles.getOrNull(state.focusedIndex) is PhotoGroup.Burst
+                ) {
+                    openReview(state.focusedIndex)
+                    return@onPreviewKeyEvent true
+                }
+                // G cycles the lens Single -> Bursts -> Similar -> Single without the mouse. Goes through
+                // the anchored selector so the viewport re-pins across the reshape, exactly like the
+                // toolbar. Suppressed during a multi-select (the toolbar is hidden then anyway).
+                if (!meta && event.key == Key.G && !hasSelection) {
+                    val modes = GroupingMode.entries
+                    onSelectGroupingModeAnchored(modes[(state.groupingMode.ordinal + 1) % modes.size])
                     return@onPreviewKeyEvent true
                 }
                 val isArrow = event.key == Key.DirectionLeft || event.key == Key.DirectionRight ||
                     event.key == Key.DirectionUp || event.key == Key.DirectionDown
                 if (isArrow && state.focusedIndex < 0 && maxIndex >= 0) {
-                    onSetFocusedIndex(gridState.firstVisibleItemIndex.coerceIn(0, maxIndex))
+                    // Seed focus on the first visible TILE. firstVisibleItemIndex is render-item space
+                    // (header/footer included when a burst is open), so map it into tile space first.
+                    val seed = tileDisplayIndexForRenderItem(renderItems, gridState.firstVisibleItemIndex) ?: 0
+                    moveFocus(seed.coerceIn(0, maxIndex))
                     return@onPreviewKeyEvent true
                 }
                 // Bare 1..9 files into the Nth custom category: the whole selection when one is
@@ -274,24 +511,24 @@ fun GridScreen(
                 }
                 when (event.key) {
                     Key.DirectionLeft -> {
-                        onSetFocusedIndex((state.focusedIndex - 1).coerceAtLeast(0))
+                        moveFocus((state.focusedIndex - 1).coerceAtLeast(0))
                         true
                     }
                     Key.DirectionRight -> {
-                        onSetFocusedIndex((state.focusedIndex + 1).coerceAtMost(maxIndex))
+                        moveFocus((state.focusedIndex + 1).coerceAtMost(maxIndex))
                         true
                     }
                     Key.DirectionUp -> {
-                        onSetFocusedIndex((state.focusedIndex - cols).coerceAtLeast(0))
+                        moveFocus(verticalNavTarget(gridState, renderItems, state.focusedIndex, maxIndex, down = false))
                         true
                     }
                     Key.DirectionDown -> {
-                        onSetFocusedIndex((state.focusedIndex + cols).coerceAtMost(maxIndex))
+                        moveFocus(verticalNavTarget(gridState, renderItems, state.focusedIndex, maxIndex, down = true))
                         true
                     }
                     Key.Enter -> {
                         if (state.focusedIndex in 0..maxIndex) {
-                            onTileClick(state.focusedIndex)
+                            openTile(state.focusedIndex)
                         }
                         true
                     }
@@ -303,10 +540,15 @@ fun GridScreen(
                         if (hasSelection) onFileSelectionIntoFavourites() else onToggleMembershipAtFocus()
                         true
                     }
-                    // Esc clears an active selection first; only an already-empty grid pops the screen.
+                    // Esc peels one layer at a time: clear a selection, then fold an open burst,
+                    // then pop the screen. Each press undoes the most recent thing the user did.
                     Key.Escape -> when {
                         hasSelection -> {
                             onClearSelection()
+                            true
+                        }
+                        state.expandedBurstId != null -> {
+                            onCollapseBurst()
                             true
                         }
                         onBack != null -> {
@@ -326,6 +568,7 @@ fun GridScreen(
                 onFileIntoFavourites = onFileSelectionIntoFavourites,
                 onFileIntoCustom = onFileSelectionIntoCustom,
                 onCopySelection = onCopySelection,
+                onDeleteSelection = { confirmingDelete = true },
                 onClearSelection = onClearSelection,
             )
         } else {
@@ -336,18 +579,47 @@ fun GridScreen(
                 categoryEntries = categoryEntries,
                 isBusy = state.isBusy,
                 onBack = onBack,
-                onSelectCategory = { id -> onSelectCategory(gridState.firstVisibleItemIndex, id) },
+                onSelectCategory = { id -> onSelectCategory(firstVisibleFlat(), id) },
                 onCreateCategory = onCreateCategory,
                 onRenameCategory = onRenameCategory,
                 onDeleteCategory = onDeleteCategory,
                 onExportTxt = onExportTxt,
                 onCopyToFolder = onCopyToFolder,
                 onChangeFolder = onChangeFolder,
+                groupingMode = state.groupingMode,
+                onSelectGroupingMode = onSelectGroupingModeAnchored,
             )
         }
 
         if (state.isBusy) {
             BusyBar(label = state.progressLabel ?: "Working…")
+        }
+
+        // Non-blocking determinate progress while a grouping lens computes. Unlike the busy bar above
+        // it doesn't lock the toolbar — the user can keep scrolling the singles grid while the model
+        // works. The cold Similarity pass is a ~minute-long on-device run, so it gets the framing
+        // banner (what's happening + the privacy line); the Time regroup is sub-second and never earns
+        // it, so it stays the bare bar.
+        state.grouping?.takeIf { it.total > 0 }?.let { g ->
+            if (state.groupingMode == GroupingMode.Similarity) {
+                GroupingProgressBanner(processed = g.processed, total = g.total)
+            } else {
+                BusyBar(
+                    label = "Grouping ${g.processed} / ${g.total}",
+                    progress = g.processed.toFloat() / g.total,
+                )
+            }
+        }
+
+        // First-run callout for the Similarity lens — a dismissible card under the toolbar (near the
+        // lens toggle), not a modal: the user can ignore it and keep culling. Shown once, then never.
+        // Eases in (and out on dismiss) so it doesn't snap the grid down beneath it.
+        AnimatedVisibility(
+            visible = state.showSimilarityCoachmark,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
+        ) {
+            SimilarityCoachmark(onDismiss = onDismissSimilarityCoachmark)
         }
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -375,26 +647,82 @@ fun GridScreen(
                     verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs),
                     horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs),
                 ) {
-                    itemsIndexed(
-                        items = state.photos,
-                        key = { _, photo -> photo.id.value },
-                    ) { index, photo ->
-                        PhotoThumbnail(
-                            photo = photo,
-                            loader = imageLoader,
-                            isMarked = photo.id in state.markedIds,
-                            isFocused = index == state.focusedIndex,
-                            isLastViewed = photo.id == state.lastViewedPhotoId,
-                            isSelected = photo.id in state.selection,
-                            onClick = { onTileClick(index) },
-                            onToggleSelect = { onToggleSelection(index) },
-                            onRangeSelect = { onSelectRange(index) },
-                            categoryBadges = categoryBadgesFor(photo, customCategories, state.memberships),
+                    items(
+                        items = renderItems,
+                        // The burst header spans the full row so the frames beneath it read as one
+                        // section; tiles take a single cell.
+                        span = { item ->
+                            when (item) {
+                                is GridRenderItem.BurstHeader -> GridItemSpan(maxLineSpan)
+                                is GridRenderItem.BurstFooter -> GridItemSpan(maxLineSpan)
+                                is GridRenderItem.Tile -> GridItemSpan(1)
+                            }
+                        },
+                        key = { item ->
+                            when (item) {
+                                is GridRenderItem.BurstHeader -> "burst-header:" + item.burst.groupId.value
+                                is GridRenderItem.BurstFooter -> "burst-footer:" + item.burst.groupId.value
+                                is GridRenderItem.Tile -> item.group.groupId.value
+                            }
+                        },
+                    ) { item ->
+                        // Placement-only reflow shared by every render item, so the whole row set
+                        // slides as one when a burst unfolds/folds or the lens regroups. The fade is
+                        // off (null specs); an unfolding burst's frames pop in instead (below).
+                        val itemMotion = Modifier.animateItem(
+                            fadeInSpec = null,
+                            placementSpec = GRID_ITEM_PLACEMENT_SPEC,
+                            fadeOutSpec = null,
                         )
+                        when (item) {
+                            is GridRenderItem.BurstHeader -> BurstExpandedHeader(
+                                frameCount = item.burst.photos.size,
+                                onCollapse = onCollapseBurst,
+                                modifier = itemMotion,
+                            )
+                            is GridRenderItem.BurstFooter -> BurstExpandedFooter(modifier = itemMotion)
+                            is GridRenderItem.Tile -> {
+                                val group = item.group
+                                val index = item.displayIndex
+                                val keyPhoto = group.keyPhoto
+                                PhotoThumbnail(
+                                    // An unfolded burst frame pops in (scale); every other tile just
+                                    // slides via the shared placement spring.
+                                    modifier = if (item.expandedFrame) itemMotion.gridAppearPop() else itemMotion,
+                                    photo = keyPhoto,
+                                    loader = imageLoader,
+                                    isMarked = keyPhoto.id in state.markedIds,
+                                    isFocused = index == state.focusedIndex,
+                                    // Any frame of the run counts: a collapsed burst shows the
+                                    // middle frame as its key, but you may have opened (and last
+                                    // viewed) a different frame, so match against the whole run.
+                                    isLastViewed = group.photos.any { it.id == state.lastViewedPhotoId },
+                                    // A collapsed burst reads as selected only when its whole run is
+                                    // selected, matching the whole-burst pick in toggleSelection.
+                                    isSelected = group.photos.all { it.id in state.selection },
+                                    onClick = { openTile(index) },
+                                    onToggleSelect = { onToggleSelection(index) },
+                                    onRangeSelect = { onSelectRange(index) },
+                                    categoryBadges = categoryBadgesFor(keyPhoto, customCategories, state.memberships),
+                                    burstCount = (group as? PhotoGroup.Burst)?.photos?.size,
+                                    // The glyph echoes the active lens, and onReview opens the run
+                                    // side by side. Both null for singles and for an expanded burst's
+                                    // individual frames (those open the browser, not a review).
+                                    groupGlyph = if (group is PhotoGroup.Burst) groupGlyphFor(state.groupingMode) else null,
+                                    onReview = if (group is PhotoGroup.Burst) {
+                                        { openReview(index) }
+                                    } else {
+                                        null
+                                    },
+                                    withinBurst = item.expandedFrame,
+                                )
+                            }
+                        }
                     }
                 }
                 VerticalScrollbar(
                     adapter = rememberScrollbarAdapter(gridState),
+                    interactionSource = scrollbarInteraction,
                     modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().padding(end = AppTheme.spacing.xs),
                     style = ScrollbarStyle(
                         minimalHeight = AppTheme.dimens.scrollbarMinHeight,
@@ -426,42 +754,89 @@ fun GridScreen(
                     .align(Alignment.BottomCenter)
                     .padding(bottom = AppTheme.spacing.lg),
             )
+
+            // The grouping payoff / empty-result notice, fired once per user lens pick. Sits a row
+            // higher than the action pills above so a coincident toggle/result pill doesn't collide.
+            GridMessagePill(
+                message = groupingNotice,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = GROUPING_NOTICE_BOTTOM_PADDING),
+            )
         }
 
         if (state.photos.isNotEmpty()) {
             GridKeyboardLegend(
-                hints = rememberLegendHints(state.scope, currentCategory, onBack != null),
-                // Cull progress only makes sense over the whole library, not inside a finished bucket.
-                status = if (state.scope == CategoryScope.AllPhotos) {
-                    "${state.markedIds.size} favourited"
-                } else {
-                    null
-                },
+                hints = rememberLegendHints(
+                    scope = state.scope,
+                    canGoBack = onBack != null,
+                    // A focused *collapsed* burst is a Burst in tile space (an open burst's frames are
+                    // Singles), so Enter expands it rather than opening the browser.
+                    focusedBurstCollapsed = tiles.getOrNull(state.focusedIndex) is PhotoGroup.Burst,
+                    burstExpanded = state.expandedBurstId != null,
+                ),
             )
         }
+    }
+
+    // When a selection clears, two cleanups: drop the delete-confirm latch so it can't hang over
+    // nothing, and reclaim keyboard focus for the grid. A Cmd-click moves Compose's *actual* focus
+    // onto the clicked tile (distinct from our keyboard cursor); deleting that tile removes the
+    // focused node, and Compose does NOT fall focus back to the grid - it orphans, so arrows and
+    // Enter stop reaching onPreviewKeyEvent until something re-grabs focus. Clearing a selection is
+    // the discrete moment after which the grid should own focus again, so re-request it here. Done
+    // in an effect (not composition) to avoid a back-write.
+    LaunchedEffect(state.hasSelection) {
+        if (!state.hasSelection) {
+            confirmingDelete = false
+            focusRequester.requestFocus()
+        }
+    }
+
+    // Destructive speed bump in front of the move-to-Trash.
+    if (confirmingDelete && state.hasSelection) {
+        val count = state.selection.size
+        ConfirmDialog(
+            title = if (count == 1) "Move 1 photo to Trash?" else "Move $count photos to Trash?",
+            message = "The selected " +
+                (if (count == 1) "photo" else "photos") +
+                " will be moved to the macOS Trash. You can restore " +
+                (if (count == 1) "it" else "them") +
+                " from there.",
+            confirmLabel = "Move to Trash",
+            confirmDestructive = true,
+            onConfirm = {
+                confirmingDelete = false
+                onDeleteSelection()
+            },
+            onDismiss = { confirmingDelete = false },
+        )
     }
 }
 
 /**
- * The truthful set of grid shortcuts for the current [scope]. `F` toggles membership in the
- * scope's active category (Favourites in All Photos, the viewed category otherwise), and the
- * `1..9` filing keys only do anything from All Photos, so they're only advertised there.
+ * The truthful set of grid shortcuts for the current [scope]. `F` always toggles Favourites
+ * membership (see `GridViewModel.toggleMembershipAtFocus`) — it is the keeper key in every
+ * scope, not a "toggle this category" key — and the `1..9` filing keys only do anything from
+ * All Photos, so they're only advertised there.
+ *
+ * The grouping keys stay honest too: `G` (cycle lens) always applies, but Enter is labelled
+ * **Expand** only when a collapsed burst is focused ([focusedBurstCollapsed]) and `Esc` advertises
+ * **Collapse** only while a burst is open ([burstExpanded]) — where Esc peels the burst before backing out.
  */
 @Composable
 private fun rememberLegendHints(
     scope: CategoryScope,
-    currentCategory: Category?,
     canGoBack: Boolean,
+    focusedBurstCollapsed: Boolean,
+    burstExpanded: Boolean,
 ): ImmutableList<KeyHint> = buildList {
     add(KeyHint("← → ↑ ↓", "Move"))
-    add(KeyHint("↵", "Open"))
-    add(
-        KeyHint(
-            keys = "F",
-            label = if (scope == CategoryScope.AllPhotos) "Favourite" else "Toggle ${currentCategory?.name ?: "category"}",
-        ),
-    )
+    add(KeyHint("↵", if (focusedBurstCollapsed) "Expand" else "Open"))
+    add(KeyHint(keys = "F", label = "Favourite"))
     if (scope == CategoryScope.AllPhotos) add(KeyHint("1–9", "Categories"))
+    add(KeyHint("G", "Group"))
+    if (burstExpanded) add(KeyHint("Esc", "Collapse"))
     if (canGoBack) add(KeyHint("Esc", "Back"))
 }.toImmutableList()
 
@@ -525,8 +900,74 @@ private fun GridEmptyState(
  * resolves, and holds the last non-null [toast] so its text survives the exit fade. Colour
  * encodes added vs removed; favourites also keep their star — matching the browser's pill.
  */
+// Motion for grid item reflow — the burst expand/collapse and the lens regroup. A no-bounce
+// placement spring slides each surviving tile to its new home; the fade-on-appear/disappear is
+// switched off (null specs on `animateItem`) so the only built-in motion is that calm slide. The
+// grid only reshapes after its initial layout, so this animates the *transition*, never the cold
+// first paint. Hoisted as a constant (not rebuilt per recomposition) so `Modifier.animateItem`
+// yields a structurally-equal modifier each pass and the tiles stay skippable on the hot
+// scroll/selection path.
+private val GRID_ITEM_PLACEMENT_SPEC = spring<IntOffset>(
+    dampingRatio = Spring.DampingRatioNoBouncy,
+    stiffness = Spring.StiffnessMediumLow,
+)
+
+// A burst's unfolded frames "pop" in — scaling up from [APPEAR_INITIAL_SCALE] to full size instead
+// of fading — so opening a burst reads as the frames springing out of the collapsed stack. A calm
+// (no-bounce) medium spring keeps it crisp rather than springy. Applied only to the expanded frame
+// tiles (see [gridAppearPop]); scale is a draw-phase transform, so it never reflows neighbours.
+private val APPEAR_SCALE_SPEC = spring<Float>(
+    dampingRatio = Spring.DampingRatioNoBouncy,
+    stiffness = Spring.StiffnessMedium,
+)
+private const val APPEAR_INITIAL_SCALE = 0.85f
+
+/**
+ * Entrance "pop" for a freshly unfolded burst frame: scales from [APPEAR_INITIAL_SCALE] to 1 on first
+ * composition (a one-shot, hence the `Unit` key — there is no input to restart on). The scale is read
+ * inside [graphicsLayer]'s lambda — a deferred draw-phase read — so the spring runs without recomposing
+ * the tile each frame.
+ *
+ * The caller gates this to expanded frame tiles only ([GridRenderItem.Tile.expandedFrame]). Those
+ * render items exist *only* while a burst is open, so a tile's first composition coincides with the
+ * expand: an ordinary tile scrolling into view is never an expanded frame and so never pops.
+ */
+@Composable
+private fun Modifier.gridAppearPop(): Modifier {
+    val scale = remember { Animatable(APPEAR_INITIAL_SCALE) }
+    LaunchedEffect(Unit) { scale.animateTo(targetValue = 1f, animationSpec = APPEAR_SCALE_SPEC) }
+    return graphicsLayer {
+        scaleX = scale.value
+        scaleY = scale.value
+    }
+}
+
 /** How long a [GridMessagePill] result/notice stays up before it fades out. */
 private const val TOAST_DURATION_MS = 2500L
+
+/** How long the grouping summary / empty-result notice stays up — a touch longer, it's the payoff line. */
+private const val GROUPING_NOTICE_MS = 4000L
+
+/** Bottom offset that lifts the grouping notice above the action/toggle pills so they never collide. */
+private val GROUPING_NOTICE_BOTTOM_PADDING = 64.dp
+
+/**
+ * The user-facing copy for a completed grouping pass. An empty result (no stacks) explains why nothing
+ * collapsed rather than leaving a silently flat grid; a productive pass names the payoff. Wording
+ * follows the lens — "stacks" for Similar, "bursts" for Time.
+ */
+internal fun groupingNoticeText(outcome: GroupingOutcome): String {
+    if (outcome.burstCount == 0) {
+        return if (outcome.mode == GroupingMode.Similarity) {
+            "No similar shots found — these all look unique."
+        } else {
+            "No bursts here — nothing was shot rapid-fire."
+        }
+    }
+    val stack = if (outcome.mode == GroupingMode.Similarity) "stack" else "burst"
+    val noun = if (outcome.burstCount == 1) stack else "${stack}s"
+    return "${outcome.photosInBursts} photos → ${outcome.burstCount} $noun. Review to cut duplicates."
+}
 
 /**
  * Result/notice pill for bulk and library-level actions (export saved, copy report, the survey
@@ -583,6 +1024,15 @@ private fun GridTogglePill(toast: CategoryToggle?, modifier: Modifier = Modifier
 }
 
 /**
+ * The count-pill glyph for a collapsed group under [mode]: a sparkle for the Similarity lens (an
+ * on-device-AI cluster), the stacked-frames glyph otherwise (a time burst). So a grouped tile
+ * silently says *why* it grouped, echoing the lens the toolbar names. A returned Material icon is a
+ * cached singleton, so the param stays stable and the tile skippable.
+ */
+private fun groupGlyphFor(mode: GroupingMode): ImageVector =
+    if (mode == GroupingMode.Similarity) Icons.Filled.AutoAwesome else Icons.Filled.BurstMode
+
+/**
  * The digit slots (1..9) of the custom categories [photo] belongs to, for its tile badges.
  * Slot `i+1` matches the key that toggles the i-th custom category. Returns an immutable list
  * so an unchanged result compares equal and the tile stays skippable across membership churn.
@@ -598,15 +1048,57 @@ private fun categoryBadgesFor(
     }.toImmutableList()
 }
 
-// Derives the column count from the rendered grid (count of leading visible items
-// sharing the first row's y-offset) so the keyboard model matches what
-// GridCells.Adaptive actually laid out — recomputing from viewport width drifts
-// once contentPadding / horizontalArrangement spacing are taken into account.
-// Returns 1 before first layout (visibleItemsInfo empty), which is safe: the
-// user can't have pressed an arrow yet.
+// Maps a flat photo index (the navigation / persistence currency) onto the tile that
+// contains it. Tiles are contiguous runs of the flat list, so [tileFlatStart] - each
+// tile's first flat index, ascending - is binary-searchable: an exact hit is that tile,
+// otherwise the insertion point minus one is the tile whose run straddles the index.
+// The grid is the sole translator between flat photo space and its own tile space.
+internal fun tileIndexForFlat(tileFlatStart: List<Int>, flatIndex: Int): Int {
+    if (tileFlatStart.isEmpty()) return 0
+    val i = tileFlatStart.binarySearch(flatIndex)
+    return if (i >= 0) i else (-i - 2).coerceIn(0, tileFlatStart.lastIndex)
+}
+
+/**
+ * Vertical (up/down) keyboard move for the grid cursor, resolved against the *actual* laid-out tile
+ * positions rather than `focusedIndex ± columns`. An expanded burst inserts full-width header/footer
+ * rows and the partial rows they create, which the arithmetic model can't represent (it made down
+ * behave like right). So from the focused tile we pick the nearest tile - by horizontal offset - in
+ * the closest tile row in the chosen direction, skipping the non-focusable header/footer items.
+ *
+ * Falls back to a column-count step only when the focused tile isn't currently laid out (e.g. it was
+ * scrolled off after a non-keyboard scroll): the step nudges [focusedIndex] so the focus effect can
+ * scroll it back into view, after which geometry resumes. [renderItems] is the LazyGrid's item list
+ * (headers/footers included), so an item's `index` there maps to a tile's `displayIndex`.
+ */
+private fun verticalNavTarget(
+    gridState: LazyGridState,
+    renderItems: List<GridRenderItem>,
+    focusedIndex: Int,
+    maxIndex: Int,
+    down: Boolean,
+): Int {
+    // The laid-out tile cells (headers/footers excluded), mapped to the tile index space.
+    val tilePositions = gridState.layoutInfo.visibleItemsInfo.mapNotNull { info ->
+        (renderItems.getOrNull(info.index) as? GridRenderItem.Tile)
+            ?.let { TilePosition(it.displayIndex, info.offset.x, info.offset.y) }
+    }
+    pickVerticalTarget(tilePositions, focusedIndex, down)?.let { return it }
+    // No on-screen tile beyond the cursor (a true edge, or the next row is just off-screen): step by
+    // a row so the focus effect can scroll a fresh target into view. Clamps to a no-op at the very
+    // top/bottom.
+    val columns = computeColumnCount(gridState)
+    return if (down) (focusedIndex + columns).coerceAtMost(maxIndex)
+    else (focusedIndex - columns).coerceAtLeast(0)
+}
+
+// The grid's column count, read from the *widest* laid-out row so a full-width burst header/footer
+// row (one spanning item) or a partial row never undercounts it. Used only as the fallback step when
+// geometry-based [verticalNavTarget] has no on-screen anchor. Matches what GridCells.Adaptive
+// actually laid out (recomputing from viewport width drifts once padding/spacing are accounted for).
+// Returns 1 before first layout (visibleItemsInfo empty), which is safe: no arrow can have fired yet.
 private fun computeColumnCount(gridState: LazyGridState): Int {
     val visible = gridState.layoutInfo.visibleItemsInfo
     if (visible.isEmpty()) return 1
-    val firstRowY = visible.first().offset.y
-    return visible.count { it.offset.y == firstRowY }.coerceAtLeast(1)
+    return visible.groupingBy { it.offset.y }.eachCount().values.maxOrNull()?.coerceAtLeast(1) ?: 1
 }

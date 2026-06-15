@@ -12,13 +12,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.withKeyDown
 import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.model.Category
@@ -28,10 +34,6 @@ import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.presentation.browser.BrowserScreen
 import com.vishalgupta.photoselector.presentation.browser.BrowserUiState
 import com.vishalgupta.photoselector.presentation.browser.CategoryToastState
-import com.vishalgupta.photoselector.presentation.compare.ComparePane
-import com.vishalgupta.photoselector.presentation.compare.ComparePaneSide
-import com.vishalgupta.photoselector.presentation.compare.CompareScreen
-import com.vishalgupta.photoselector.presentation.compare.CompareUiState
 import com.vishalgupta.photoselector.presentation.common.CategoryToggle
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BrowserKeyboardLegend
 import com.vishalgupta.photoselector.presentation.designsystem.organism.BrowserCategoryHud
@@ -263,6 +265,34 @@ class ScreenSplitScreenshotTest {
     }
 
     @Test
+    fun grid_deleteConfirm() {
+        // The Delete button in the selection bar is a destructive action, so it opens an
+        // error-tinted confirm naming the count before anything is moved to the Trash. Capture
+        // the dialog so the copy and the destructive styling stay honest.
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(1100.dp, 700.dp)) {
+                    Grid(
+                        state = GridUiState(
+                            photos = manyPhotos,
+                            scope = CategoryScope.AllPhotos,
+                            categories = categories,
+                            selection = setOf(PhotoId("p2"), PhotoId("p3"), PhotoId("p6")),
+                        ),
+                        onBack = null,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("Delete").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("Move 3 photos to Trash?").assertIsDisplayed()
+        // The dialog renders in its own popup root; capture that, not the base screen.
+        rule.dumpScreenshot("grid-delete-confirm", rule.onAllNodes(isRoot()).onLast())
+    }
+
+    @Test
     fun grid_densityNarrow() {
         rule.setContent {
             AppTheme {
@@ -376,9 +406,13 @@ class ScreenSplitScreenshotTest {
         // Clicking "Change folder" must not tear the session down on a stray click — it opens
         // a confirm dialog first. Capture the dialog so the guard's copy stays honest (it
         // promises favourites/categories are saved, which they are).
+        // Use the real app window width (1280dp): this test clicks "Change folder", the rightmost
+        // top-bar control. At the cramped 800dp other tests use, the bar overflows under CI's wider
+        // Linux font metrics — the weight(1f) spacer collapses and the button slides off-screen, so
+        // the click misses and no dialog opens. A realistic width keeps the interaction reliable.
         rule.setContent {
             AppTheme {
-                Surface(Modifier.size(800.dp, 600.dp)) {
+                Surface(Modifier.size(1280.dp, 600.dp)) {
                     Grid(
                         state = GridUiState(
                             photos = testPhotos,
@@ -439,6 +473,11 @@ class ScreenSplitScreenshotTest {
             }
         }
         rule.waitForIdle()
+        // The footer legend's F hint is always "Favourite": F files into Favourites in every
+        // scope (GridViewModel.toggleMembershipAtFocus), so it must never claim to toggle the
+        // viewed custom category.
+        rule.onNodeWithText("Favourite").assertIsDisplayed()
+        rule.onNodeWithText("Toggle Selects").assertDoesNotExist()
         rule.onNodeWithContentDescription("Category actions").performClick()
         rule.waitForIdle()
         rule.onNodeWithText("Rename…").assertIsDisplayed()
@@ -644,6 +683,42 @@ class ScreenSplitScreenshotTest {
     }
 
     @Test
+    fun browser_showInAllPhotos() {
+        // Browsing a category photo: the top bar gains a muted "Show in All Photos" action that jumps to
+        // the photo in the main grid. Wired (non-null) only in a category browser, so capture it there.
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(900.dp, 600.dp)) {
+                    BrowserScreen(
+                        state = BrowserUiState(
+                            photos = testPhotos,
+                            currentIndex = 0,
+                            currentPhoto = testPhotos[0],
+                            currentBitmap = ImageBitmap(200, 150),
+                            isLoadingBitmap = false,
+                            isCurrentFavourite = true,
+                            favouriteCount = 1,
+                            readOnly = false,
+                        ),
+                        toast = null,
+                        onPrevious = {},
+                        onNext = {},
+                        onToggleCategory = {},
+                        onViewportSizeChanged = {},
+                        onOpenFavourites = {},
+                        onChangeFolder = {},
+                        onBackToGrid = {},
+                        onShowInAllPhotos = {},
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("Show in All Photos").assertIsDisplayed()
+        rule.dumpScreenshot("browser-show-in-all-photos")
+    }
+
+    @Test
     fun browser_changeFolderConfirm() {
         // The browser's "Change folder" runs the same session-teardown as the grid's, so it
         // gets the same confirm guard — captured here over the photo scrim.
@@ -680,125 +755,45 @@ class ScreenSplitScreenshotTest {
         rule.dumpScreenshot("browser-change-folder-confirm", rule.onAllNodes(isRoot()).onLast())
     }
 
-    // --- CompareScreen ---
-
-    private fun comparePane(
-        index: Int,
-        photo: Photo,
-        loaded: Boolean = true,
-        isFavourite: Boolean = false,
-        memberships: Set<CategoryId> = emptySet(),
-    ) = ComparePane(
-        index = index,
-        photo = photo,
-        bitmap = if (loaded) ImageBitmap(200, 150) else null,
-        isLoading = !loaded,
-        isFavourite = isFavourite,
-        memberships = memberships,
-    )
-
-    @androidx.compose.runtime.Composable
-    private fun Compare(state: CompareUiState) {
-        CompareScreen(
-            state = state,
-            onSetActive = {},
-            onToggleActive = {},
-            onAdvanceActive = {},
-            onToggleCategory = {},
-            onViewportSizeChanged = {},
-            onExit = {},
-        )
-    }
-
+    @OptIn(ExperimentalTestApi::class)
     @Test
-    fun compare_twoUp() {
+    fun browser_deleteConfirm() {
+        // Cmd+Delete in the browser arms the same destructive move-to-Trash confirm as the grid,
+        // scoped to the single photo on screen. Driven by the keyboard since there's no button.
         rule.setContent {
             AppTheme {
-                Surface(Modifier.fillMaxSize()) {
-                    Compare(
-                        CompareUiState(
-                            left = comparePane(0, testPhotos[0], isFavourite = true, memberships = setOf(Category.FAVOURITES_ID)),
-                            right = comparePane(1, testPhotos[1]),
-                            activeSide = ComparePaneSide.LEFT,
-                            totalInScope = testPhotos.size,
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    BrowserScreen(
+                        state = BrowserUiState(
+                            photos = testPhotos,
+                            currentIndex = 0,
+                            currentPhoto = testPhotos[0],
+                            currentBitmap = ImageBitmap(200, 150),
+                            isLoadingBitmap = false,
+                            isCurrentFavourite = false,
+                            favouriteCount = 0,
                             readOnly = false,
-                            categories = categories,
                         ),
+                        toast = null,
+                        onPrevious = {},
+                        onNext = {},
+                        onToggleCategory = {},
+                        onViewportSizeChanged = {},
+                        onOpenFavourites = {},
+                        onChangeFolder = {},
+                        onBackToGrid = {},
                     )
                 }
             }
         }
         rule.waitForIdle()
-        rule.dumpScreenshot("compare-two-up")
-    }
-
-    @Test
-    fun compare_rightActive() {
-        rule.setContent {
-            AppTheme {
-                Surface(Modifier.fillMaxSize()) {
-                    Compare(
-                        CompareUiState(
-                            left = comparePane(0, testPhotos[0]),
-                            right = comparePane(1, testPhotos[1], memberships = setOf(selectsId)),
-                            activeSide = ComparePaneSide.RIGHT,
-                            totalInScope = testPhotos.size,
-                            readOnly = false,
-                            categories = categories,
-                        ),
-                    )
-                }
-            }
-        }
+        rule.onRoot().performKeyInput { withKeyDown(Key.MetaLeft) { pressKey(Key.Backspace) } }
         rule.waitForIdle()
-        rule.dumpScreenshot("compare-right-active")
+        rule.onNodeWithText("Move this photo to Trash?").assertIsDisplayed()
+        rule.dumpScreenshot("browser-delete-confirm", rule.onAllNodes(isRoot()).onLast())
     }
 
-    @Test
-    fun compare_loadingPane() {
-        rule.setContent {
-            AppTheme {
-                Surface(Modifier.fillMaxSize()) {
-                    Compare(
-                        CompareUiState(
-                            left = comparePane(0, testPhotos[0], isFavourite = true, memberships = setOf(Category.FAVOURITES_ID)),
-                            right = comparePane(1, testPhotos[1], loaded = false),
-                            activeSide = ComparePaneSide.LEFT,
-                            totalInScope = testPhotos.size,
-                            readOnly = false,
-                            categories = categories,
-                        ),
-                    )
-                }
-            }
-        }
-        rule.waitForIdle()
-        rule.dumpScreenshot("compare-loading-pane")
-    }
-
-    @Test
-    fun compare_readOnly() {
-        rule.setContent {
-            AppTheme {
-                Surface(Modifier.fillMaxSize()) {
-                    Compare(
-                        CompareUiState(
-                            left = comparePane(0, testPhotos[0]),
-                            right = comparePane(1, testPhotos[1]),
-                            activeSide = ComparePaneSide.LEFT,
-                            totalInScope = testPhotos.size,
-                            readOnly = true,
-                            categories = categories,
-                        ),
-                    )
-                }
-            }
-        }
-        rule.waitForIdle()
-        rule.dumpScreenshot("compare-read-only")
-    }
-
-    // --- Survey (3+ tiles overview) ---
+    // --- Inspect: grid mode (the overview-pick grid facet) ---
 
     private fun surveyTile(
         index: Int,
@@ -815,6 +810,8 @@ class ScreenSplitScreenshotTest {
         memberships = memberships,
     )
 
+    // The grid is always hosted as Inspect's grid facet, so it carries Inspect's title and the
+    // browse toggle (the Fullscreen button + the `Enter` legend hint).
     @androidx.compose.runtime.Composable
     private fun Survey(state: SurveyUiState) {
         SurveyScreen(
@@ -824,11 +821,13 @@ class ScreenSplitScreenshotTest {
             onToggleCategory = {},
             onViewportSizeChanged = {},
             onExit = {},
+            title = "Inspect",
+            onOpenActive = {},
         )
     }
 
     @Test
-    fun survey_threeUp() {
+    fun inspectGrid_threeUp() {
         rule.setContent {
             AppTheme {
                 Surface(Modifier.fillMaxSize()) {
@@ -849,11 +848,11 @@ class ScreenSplitScreenshotTest {
             }
         }
         rule.waitForIdle()
-        rule.dumpScreenshot("survey-three-up")
+        rule.dumpScreenshot("inspect-grid-three-up")
     }
 
     @Test
-    fun survey_fourUpWithLoadingTile() {
+    fun inspectGrid_fourUpWithLoadingTile() {
         rule.setContent {
             AppTheme {
                 Surface(Modifier.fillMaxSize()) {
@@ -875,13 +874,14 @@ class ScreenSplitScreenshotTest {
             }
         }
         rule.waitForIdle()
-        rule.dumpScreenshot("survey-four-up")
+        rule.dumpScreenshot("inspect-grid-four-up")
     }
 
     @Test
-    fun survey_twelveUp() {
-        // The dense end of the range (the MAX_SURVEY_PHOTOS cap) lays out 4x3. This is where tiles
-        // get smallest, so capture it to confirm the chrome and fitted tiles still read at that size.
+    fun inspectGrid_twelveUp() {
+        // The dense end of the grid range (the MAX_INSPECT_GRID_PHOTOS cap) lays out 4x3. This is where
+        // tiles get smallest, so capture it to confirm the chrome and fitted tiles still read at that
+        // size. Past this a set opens browse-only instead (see inspectBrowse_* below).
         rule.setContent {
             AppTheme {
                 Surface(Modifier.fillMaxSize()) {
@@ -905,7 +905,85 @@ class ScreenSplitScreenshotTest {
             }
         }
         rule.waitForIdle()
-        rule.dumpScreenshot("survey-twelve-up")
+        rule.dumpScreenshot("inspect-grid-twelve-up")
+    }
+
+    // --- Inspect: browse mode (the embedded full-screen browser facet) ---
+
+    @Test
+    fun inspectBrowse_withGridToggle() {
+        // A grid-sized set in browse mode: the top bar drops the library chrome (Favourites / Change
+        // folder) and shows only the "grid view" toggle back to the overview. "2 / 5" reads as the
+        // position within the inspected set, not the whole folder.
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(900.dp, 600.dp)) {
+                    BrowserScreen(
+                        state = BrowserUiState(
+                            photos = manyPhotos.take(5),
+                            currentIndex = 1,
+                            currentPhoto = manyPhotos[1],
+                            currentBitmap = ImageBitmap(200, 150),
+                            isLoadingBitmap = false,
+                            isCurrentFavourite = false,
+                            favouriteCount = 0,
+                            readOnly = false,
+                            categories = categories,
+                        ),
+                        toast = null,
+                        onPrevious = {},
+                        onNext = {},
+                        onToggleCategory = {},
+                        onViewportSizeChanged = {},
+                        onOpenFavourites = {},
+                        onChangeFolder = {},
+                        onBackToGrid = {},
+                        embedded = true,
+                        onSwitchToGrid = {},
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithContentDescription("Grid view").assertIsDisplayed()
+        rule.dumpScreenshot("inspect-browse-with-grid-toggle")
+    }
+
+    @Test
+    fun inspectBrowse_browseOnly() {
+        // A set past the grid cap is browse-only: still embedded (no library chrome) but with no grid
+        // to return to, so the grid-view toggle is absent too — only Back remains.
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(900.dp, 600.dp)) {
+                    BrowserScreen(
+                        state = BrowserUiState(
+                            photos = manyPhotos,
+                            currentIndex = 0,
+                            currentPhoto = manyPhotos[0],
+                            currentBitmap = ImageBitmap(200, 150),
+                            isLoadingBitmap = false,
+                            isCurrentFavourite = false,
+                            favouriteCount = 0,
+                            readOnly = false,
+                            categories = categories,
+                        ),
+                        toast = null,
+                        onPrevious = {},
+                        onNext = {},
+                        onToggleCategory = {},
+                        onViewportSizeChanged = {},
+                        onOpenFavourites = {},
+                        onChangeFolder = {},
+                        onBackToGrid = {},
+                        embedded = true,
+                        onSwitchToGrid = null,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.dumpScreenshot("inspect-browse-only")
     }
 
     // --- BrowserCategoryHud ---
@@ -990,9 +1068,61 @@ class ScreenSplitScreenshotTest {
         // Neutral verbs (no "Finder"/"Quick Look") plus the filing keys when categories exist.
         rule.onNodeWithText("Favourite").assertIsDisplayed()
         rule.onNodeWithText("Categories").assertIsDisplayed()
-        rule.onNodeWithText("Preview").assertIsDisplayed()
         rule.onNodeWithText("Reveal").assertIsDisplayed()
+        // Standalone browser: `C` opens Inspect, so the hint shows and the grid-return hint doesn't.
+        rule.onNodeWithText("Compare").assertIsDisplayed()
+        rule.onNodeWithText("Grid").assertDoesNotExist()
         rule.dumpScreenshot("browser-keyboard-legend")
+    }
+
+    @Test
+    fun browser_keyboardLegendEmbedded() {
+        // Embedded in Inspect's browse facet: `C` is inert, so the "Compare" hint drops out, and a
+        // "Grid" hint takes its place pointing back to the overview behind the toggle.
+        rule.setContent {
+            AppTheme {
+                Box(
+                    Modifier.size(1100.dp, 120.dp).background(Color.Black),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BrowserKeyboardLegend(
+                        hasCustomCategories = true,
+                        readOnly = false,
+                        canCompare = false,
+                        canReturnToGrid = true,
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("Compare").assertDoesNotExist()
+        rule.onNodeWithText("Grid").assertIsDisplayed()
+        rule.dumpScreenshot("browser-keyboard-legend-embedded")
+    }
+
+    @Test
+    fun browser_keyboardLegendInCategory() {
+        // Browsing a category adds the "A All Photos" hint (the jump to the main grid). Captured at the
+        // browser's real full-bleed width (1280dp) so the now-longer strip reads as one non-wrapping line.
+        rule.setContent {
+            AppTheme {
+                Box(
+                    Modifier.size(1280.dp, 120.dp).background(Color.Black),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BrowserKeyboardLegend(
+                        hasCustomCategories = true,
+                        readOnly = false,
+                        canShowInAllPhotos = true,
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("All Photos").assertIsDisplayed()
+        rule.dumpScreenshot("browser-keyboard-legend-in-category")
     }
 
     @Test
@@ -1015,7 +1145,7 @@ class ScreenSplitScreenshotTest {
         }
         rule.waitForIdle()
         rule.onNodeWithText("Move").assertIsDisplayed()
-        rule.onNodeWithText("Preview").assertIsDisplayed()
+        rule.onNodeWithText("Reveal").assertIsDisplayed()
         rule.dumpScreenshot("browser-keyboard-legend-read-only")
     }
 

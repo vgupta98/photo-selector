@@ -40,6 +40,19 @@ data class AppColors(
     val selectionRing: Color,
     /** Dim neutral marker for the last-viewed tile (weaker than [focusRing], by both brightness and shape). */
     val lastViewedIndicator: Color,
+    /**
+     * Dim ring bracketing the frames of an expanded burst so the unfolded run reads as one unit.
+     * Dimmer than [focusRing] and yields to it and the [selectionRing] when a frame is focused or
+     * selected.
+     */
+    val burstFrameRing: Color,
+    /**
+     * Fill of the offset "deck" cards drawn behind a collapsed group tile (burst or similarity), so
+     * a stack of frames reads as a stack at a glance rather than relying on the count badge alone.
+     * A mid neutral — light enough to separate from the near-black window behind the grid, hueless
+     * so it never competes with the photos. Card edges are separated by a [tileBackground] hairline.
+     */
+    val burstStackCard: Color,
     /** Backdrop behind a photo thumbnail while it decodes. */
     val tileBackground: Color,
     /** Neutral pill-toast background. */
@@ -80,6 +93,8 @@ val DarkAppColors = AppColors(
     focusRing = Color(0xFFF5F5F5),
     selectionRing = Accent,
     lastViewedIndicator = Color.White.copy(alpha = 0.5f),
+    burstFrameRing = Color.White.copy(alpha = 0.28f),
+    burstStackCard = Color(0xFF8C8C8C),
     tileBackground = Color(0xFF1E1E1E),
     toastBackground = Color(0xFF2A2A2A),
     toastContent = Color(0xFFE6E6E6),

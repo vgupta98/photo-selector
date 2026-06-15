@@ -3,6 +3,7 @@ package com.vishalgupta.photoselector
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyShortcut
 import androidx.compose.ui.unit.dp
@@ -18,8 +19,9 @@ fun main() = application {
     val windowState = rememberWindowState(width = 1280.dp, height = 800.dp)
     Window(
         onCloseRequest = ::exitApplication,
-        title = "Photo Selector",
+        title = "Rhenium",
         state = windowState,
+        icon = painterResource("icon/app-icon.png"),
     ) {
         val photoPath by container.currentPhotoPath.collectAsState()
         val actions = container.systemActions
@@ -36,12 +38,6 @@ fun main() = application {
                     enabled = photoPath != null,
                     shortcut = KeyShortcut(Key.O, meta = true),
                     onClick = { photoPath?.let { actions.openWithDefaultApp(it) } },
-                )
-                Item(
-                    PlatformLabels.preview,
-                    enabled = photoPath != null,
-                    shortcut = KeyShortcut(Key.Y, meta = true),
-                    onClick = { photoPath?.let { actions.preview(it) } },
                 )
             }
         }

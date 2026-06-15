@@ -14,9 +14,6 @@ object PlatformLabels {
     /** Menu label for "reveal this file in the OS file manager". */
     val revealInFileManager: String = if (isMac) "Reveal in Finder" else "Show in Explorer"
 
-    /** Menu label for the OS quick-preview action. */
-    val preview: String = if (isMac) "Quick Look" else "Preview"
-
     /** Menu label for "open with the OS default app" — platform-neutral already. */
     const val OPEN_WITH_DEFAULT_APP: String = "Open with Default App"
 }

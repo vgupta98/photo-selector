@@ -46,6 +46,13 @@ interface CategoriesRepository {
      */
     suspend fun addMemberships(root: RootFolder, id: CategoryId, photos: Collection<PhotoId>): Int
 
+    /**
+     * Drops [photos] from *every* category in a single write — the membership side of deleting
+     * the underlying files. A no-op (no write) when none of the ids are filed anywhere, so a
+     * delete of un-categorised photos doesn't churn the file.
+     */
+    suspend fun removeMemberships(root: RootFolder, photos: Collection<PhotoId>)
+
     suspend fun clearContext()
 
     /** True when the categories file cannot be written (e.g. read-only volume). */

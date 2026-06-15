@@ -15,8 +15,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 
 /**
- * The app's three button styles. Each takes an optional [leadingIcon] and lays
- * the icon out with Material's standard icon size and gap — replacing the older
+ * The app's three button styles. Each takes an optional [leadingIcon] and an
+ * optional [trailingIcon] (e.g. a `▾` caret to signal the button opens a menu),
+ * laid out with Material's standard icon size and gap — replacing the older
  * `Text("  Label")` string-padding hack.
  */
 
@@ -27,9 +28,10 @@ fun AppButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     leadingIcon: ImageVector? = null,
+    trailingIcon: ImageVector? = null,
 ) {
     Button(onClick = onClick, modifier = modifier, enabled = enabled) {
-        ButtonContent(text, leadingIcon)
+        ButtonContent(text, leadingIcon, trailingIcon)
     }
 }
 
@@ -40,9 +42,10 @@ fun AppOutlinedButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     leadingIcon: ImageVector? = null,
+    trailingIcon: ImageVector? = null,
 ) {
     OutlinedButton(onClick = onClick, modifier = modifier, enabled = enabled) {
-        ButtonContent(text, leadingIcon)
+        ButtonContent(text, leadingIcon, trailingIcon)
     }
 }
 
@@ -75,7 +78,7 @@ fun AppTextButton(
 }
 
 @Composable
-private fun ButtonContent(text: String, leadingIcon: ImageVector?) {
+private fun ButtonContent(text: String, leadingIcon: ImageVector?, trailingIcon: ImageVector? = null) {
     if (leadingIcon != null) {
         Icon(
             imageVector = leadingIcon,
@@ -85,4 +88,12 @@ private fun ButtonContent(text: String, leadingIcon: ImageVector?) {
         Spacer(Modifier.width(ButtonDefaults.IconSpacing))
     }
     Text(text)
+    if (trailingIcon != null) {
+        Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+        Icon(
+            imageVector = trailingIcon,
+            contentDescription = null,
+            modifier = Modifier.size(ButtonDefaults.IconSize),
+        )
+    }
 }

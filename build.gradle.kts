@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "com.vishalgupta.photoselector"
-version = "1.4.0"
+version = "1.5.0"
 
 kotlin {
     jvmToolchain(17)
@@ -36,6 +36,17 @@ dependencies {
     implementation(libs.kotlinx.coroutines.swing)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.collections.immutable)
+
+    // HEIC decode bridges into the macOS ImageIO/CoreGraphics system frameworks via JNA.
+    // No native libs are bundled (system frameworks are loaded by name); JNA ships its own
+    // jnidispatch. The decode path sits behind PhotoDecoder so a future Windows build adds
+    // its own decoder rather than replacing this.
+    implementation(libs.jna)
+
+    // ONNX Runtime powers the learned visual-similarity embedder (OnnxEmbeddingModel). The JAR
+    // bundles the JNI native library for every desktop platform, so it works behind the
+    // EmbeddingModel interface with no per-OS wiring; the model blob itself ships as a resource.
+    implementation(libs.onnxruntime)
 
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
@@ -75,15 +86,16 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg)
-            packageName = "PhotoSelector"
+            packageName = "Rhenium"
             packageVersion = project.version.toString()
             description = "Browse, favourite and export wedding photos."
+            copyright = "Copyright (c) 2026 Vishal Gupta"
             modules("java.desktop", "java.naming", "jdk.unsupported")
 
             macOS {
                 bundleID = "com.vishalgupta.photoselector"
-                dockName = "Photo Selector"
                 appCategory = "public.app-category.photography"
+                iconFile.set(project.file("src/main/resources/icon/AppIcon.icns"))
             }
         }
     }
