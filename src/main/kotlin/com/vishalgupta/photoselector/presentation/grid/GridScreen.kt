@@ -299,13 +299,22 @@ fun GridScreen(
     // both arm it; confirming calls [onDeleteSelection], which performs the move to Trash.
     var confirmingDelete by remember { mutableStateOf(false) }
 
-    val currentCategory: Category? = (state.scope as? CategoryScope.Category)
-        ?.let { sc -> state.categories.firstOrNull { it.id == sc.id } }
-    val categoryEntries = state.categories.map { it to (state.memberships[it.id]?.size ?: 0) }
+    // These three derive from a slice of state that only the toolbar reads, but the screen body
+    // recomposes on every cursor move (state.focusedIndex). Rebuilt unmemoized, each pass minted a
+    // fresh List identity, and a bare List is unstable - so the top bars (which compare these by
+    // ===) re-ran in full on every arrow key. Key each on exactly what it derives from so the
+    // toolbar identities hold steady across an unrelated state flip and the bars stay skippable.
+    val currentCategory: Category? = remember(state.scope, state.categories) {
+        (state.scope as? CategoryScope.Category)
+            ?.let { sc -> state.categories.firstOrNull { it.id == sc.id } }
+    }
+    val categoryEntries = remember(state.categories, state.memberships) {
+        state.categories.map { it to (state.memberships[it.id]?.size ?: 0) }
+    }
 
     // Custom categories in slot order — drives both the per-tile numbered badges and the
     // 1..9 digit mapping, so a tile's "2" chip always matches the key that toggled it.
-    val customCategories = state.categories.customCategories()
+    val customCategories = remember(state.categories) { state.categories.customCategories() }
 
     // Opening a tile: a collapsed burst unfolds in place into its frames; a single photo - including
     // an open burst's frame - opens the browser at that photo. There is no frame-count cap: even a
@@ -835,15 +844,17 @@ private fun rememberLegendHints(
     canGoBack: Boolean,
     focusedBurstCollapsed: Boolean,
     burstExpanded: Boolean,
-): ImmutableList<KeyHint> = buildList {
-    add(KeyHint("← → ↑ ↓", "Move"))
-    add(KeyHint("↵", if (focusedBurstCollapsed) "Expand" else "Open"))
-    add(KeyHint(keys = "F", label = "Favourite"))
-    if (scope == CategoryScope.AllPhotos) add(KeyHint("1–9", "Categories"))
-    add(KeyHint("G", "Group"))
-    if (burstExpanded) add(KeyHint("Esc", "Collapse"))
-    if (canGoBack) add(KeyHint("Esc", "Back"))
-}.toImmutableList()
+): ImmutableList<KeyHint> = remember(scope, canGoBack, focusedBurstCollapsed, burstExpanded) {
+    buildList {
+        add(KeyHint("← → ↑ ↓", "Move"))
+        add(KeyHint("↵", if (focusedBurstCollapsed) "Expand" else "Open"))
+        add(KeyHint(keys = "F", label = "Favourite"))
+        if (scope == CategoryScope.AllPhotos) add(KeyHint("1–9", "Categories"))
+        add(KeyHint("G", "Group"))
+        if (burstExpanded) add(KeyHint("Esc", "Collapse"))
+        if (canGoBack) add(KeyHint("Esc", "Back"))
+    }.toImmutableList()
+}
 
 /**
  * The empty-grid guidance, varying by [scope]. All Photos points at the only useful next step
