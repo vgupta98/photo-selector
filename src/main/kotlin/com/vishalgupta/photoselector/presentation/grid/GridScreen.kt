@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.foundation.v2.ScrollbarAdapter
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BurstMode
@@ -720,8 +721,12 @@ fun GridScreen(
                         }
                     }
                 }
+                val scrollbarAdapter = rememberScrollbarAdapter(gridState)
                 VerticalScrollbar(
-                    adapter = rememberScrollbarAdapter(gridState),
+                    // Wrapped to swallow the transient NaN the lazy-grid adapter emits while the grid
+                    // reshapes under animateItem (a lens regroup or burst expand/collapse) - see
+                    // [NanSafeScrollbarAdapter]. Without it the scrollbar crashes mid-measure.
+                    adapter = remember(scrollbarAdapter) { NanSafeScrollbarAdapter(scrollbarAdapter) },
                     interactionSource = scrollbarInteraction,
                     modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().padding(end = AppTheme.spacing.xs),
                     style = ScrollbarStyle(
@@ -921,6 +926,36 @@ private val APPEAR_SCALE_SPEC = spring<Float>(
     stiffness = Spring.StiffnessMedium,
 )
 private const val APPEAR_INITIAL_SCALE = 0.85f
+
+/**
+ * Guards [VerticalScrollbar] against a Compose-desktop crash on the regrouping grid.
+ *
+ * While the grid reshapes under [Modifier.animateItem] - a lens regroup (e.g. switching to the
+ * Similarity lens, which actually collapses singles into burst tiles) or a burst expand/collapse -
+ * the lazy-grid scrollbar adapter can momentarily see a visible window whose line count is zero or
+ * negative and divides by it (foundation 1.7.3,
+ * `LazyGridScrollbarAdapter.averageVisibleLineSize`). That feeds a NaN content size /scroll offset
+ * to the scrollbar, which rounds it while measuring and throws
+ * `IllegalArgumentException: Cannot round NaN value`. (The Time/Burst lens dodges it only because
+ * a folder with no JPEG capture times - e.g. HEIC/screenshots - forms no groups, so the grid never
+ * reshapes.)
+ *
+ * Sanitising the three doubles the scrollbar reads back to finite values turns that one bad frame
+ * into a harmless full-height thumb; the next layout pass recovers the real geometry. Remove once
+ * the upstream adapter no longer emits NaN.
+ */
+internal class NanSafeScrollbarAdapter(
+    private val delegate: ScrollbarAdapter,
+) : ScrollbarAdapter {
+    override val scrollOffset: Double
+        get() = delegate.scrollOffset.takeIf(Double::isFinite) ?: 0.0
+    override val contentSize: Double
+        get() = delegate.contentSize.takeIf(Double::isFinite) ?: 0.0
+    override val viewportSize: Double
+        get() = delegate.viewportSize.takeIf(Double::isFinite) ?: 0.0
+
+    override suspend fun scrollTo(scrollOffset: Double) = delegate.scrollTo(scrollOffset)
+}
 
 /**
  * Entrance "pop" for a freshly unfolded burst frame: scales from [APPEAR_INITIAL_SCALE] to 1 on first
