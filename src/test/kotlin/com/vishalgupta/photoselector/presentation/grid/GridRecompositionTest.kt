@@ -13,6 +13,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.data.image.ImageLoader
+import com.vishalgupta.photoselector.domain.model.Category
+import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.presentation.RecompositionTracker
@@ -304,6 +306,94 @@ class GridRecompositionTest {
         assertEquals("c should recompose (index 2 -> 1)", before["c"]!! + 1, tracker["c"])
         assertEquals("d should recompose (index 3 -> 2)", before["d"]!! + 1, tracker["d"])
     }
+
+    /**
+     * Guards GridScreen's toolbar-derived lists (`categoryEntries`, `customCategories`). The screen
+     * body recomposes on every cursor move (`focusedIndex`), but the top bar's inputs derive only
+     * from `categories` / `memberships`. Remembered on those, each keeps its instance identity, so a
+     * cursor move - which touches neither - must not recompose the top bar. The regression is
+     * dropping the `remember`: a bare `categories.map { … }` mints a fresh (unstable) List every
+     * pass, the bar compares it by identity, and the whole toolbar re-runs on every arrow key. This
+     * test bakes in the remembered shape and asserts the bar skips, so removing the remember flips it.
+     */
+    @Test
+    fun movingFocus_doesNotRecomposeTheToolbar() {
+        val tracker = RecompositionTracker()
+        val categories = listOf(
+            Category.favourites(),
+            Category(CategoryId("selects"), "Selects", builtIn = false),
+        )
+        val focusedIndex = mutableStateOf(0)
+
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    ToolbarHost(
+                        categories = categories,
+                        memberships = emptyMap(),
+                        focusedIndex = focusedIndex.value,
+                        tracker = tracker,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        val before = tracker["toolbar"]
+
+        rule.runOnIdle { focusedIndex.value = 1 } // a cursor move - touches neither categories nor memberships
+        rule.waitForIdle()
+
+        assertEquals("toolbar should skip (its inputs are unchanged across a cursor move)", before, tracker["toolbar"])
+    }
+}
+
+/**
+ * Reproduces GridScreen's toolbar-input derivation: the two Lists the top bar consumes are
+ * remembered on their real sources (`categories` / `memberships`), so a recomposition driven by an
+ * unrelated input ([focusedIndex]) hands the bar the same instances and it skips. [CountedBar]
+ * forwards those Lists into a skippable composable that records, so dropping either `remember`
+ * churns its identity and recomposes the bar.
+ */
+@Composable
+private fun ToolbarHost(
+    categories: List<Category>,
+    memberships: Map<CategoryId, Set<PhotoId>>,
+    focusedIndex: Int,
+    tracker: RecompositionTracker,
+) {
+    // Read focusedIndex so this host recomposes on a cursor move, exactly as GridScreen does.
+    @Suppress("UNUSED_EXPRESSION")
+    focusedIndex
+    val categoryEntries = remember(categories, memberships) {
+        categories.map { it to (memberships[it.id]?.size ?: 0) }
+    }
+    val customCategories = remember(categories) { categories.filter { !it.builtIn } }
+    CountedBar(
+        tracker = tracker,
+        tag = "toolbar",
+        categoryEntries = categoryEntries,
+        customCategories = customCategories,
+    )
+}
+
+/** A stand-in top bar: skippable, takes the two derived Lists, records each recomposition. */
+@Composable
+private fun CountedBar(
+    tracker: RecompositionTracker,
+    tag: String,
+    categoryEntries: List<Pair<Category, Int>>,
+    customCategories: List<Category>,
+) {
+    tracker.record(tag)
+    // Touch the params so they are real inputs the compiler must compare (not dead-code-eliminated).
+    Surface { FlowRowLabels(categoryEntries.size + customCategories.size) }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FlowRowLabels(count: Int) {
+    FlowRow { repeat(count) { Surface(Modifier.size(1.dp)) {} } }
 }
 
 /** One tile per photo, with per-tile inputs computed as in GridScreen. */

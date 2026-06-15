@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.foundation.v2.ScrollbarAdapter
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BurstMode
@@ -298,13 +299,22 @@ fun GridScreen(
     // both arm it; confirming calls [onDeleteSelection], which performs the move to Trash.
     var confirmingDelete by remember { mutableStateOf(false) }
 
-    val currentCategory: Category? = (state.scope as? CategoryScope.Category)
-        ?.let { sc -> state.categories.firstOrNull { it.id == sc.id } }
-    val categoryEntries = state.categories.map { it to (state.memberships[it.id]?.size ?: 0) }
+    // These three derive from a slice of state that only the toolbar reads, but the screen body
+    // recomposes on every cursor move (state.focusedIndex). Rebuilt unmemoized, each pass minted a
+    // fresh List identity, and a bare List is unstable - so the top bars (which compare these by
+    // ===) re-ran in full on every arrow key. Key each on exactly what it derives from so the
+    // toolbar identities hold steady across an unrelated state flip and the bars stay skippable.
+    val currentCategory: Category? = remember(state.scope, state.categories) {
+        (state.scope as? CategoryScope.Category)
+            ?.let { sc -> state.categories.firstOrNull { it.id == sc.id } }
+    }
+    val categoryEntries = remember(state.categories, state.memberships) {
+        state.categories.map { it to (state.memberships[it.id]?.size ?: 0) }
+    }
 
     // Custom categories in slot order — drives both the per-tile numbered badges and the
     // 1..9 digit mapping, so a tile's "2" chip always matches the key that toggled it.
-    val customCategories = state.categories.customCategories()
+    val customCategories = remember(state.categories) { state.categories.customCategories() }
 
     // Opening a tile: a collapsed burst unfolds in place into its frames; a single photo - including
     // an open burst's frame - opens the browser at that photo. There is no frame-count cap: even a
@@ -720,8 +730,12 @@ fun GridScreen(
                         }
                     }
                 }
+                val scrollbarAdapter = rememberScrollbarAdapter(gridState)
                 VerticalScrollbar(
-                    adapter = rememberScrollbarAdapter(gridState),
+                    // Wrapped to swallow the transient NaN the lazy-grid adapter emits while the grid
+                    // reshapes under animateItem (a lens regroup or burst expand/collapse) - see
+                    // [NanSafeScrollbarAdapter]. Without it the scrollbar crashes mid-measure.
+                    adapter = remember(scrollbarAdapter) { NanSafeScrollbarAdapter(scrollbarAdapter) },
                     interactionSource = scrollbarInteraction,
                     modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().padding(end = AppTheme.spacing.xs),
                     style = ScrollbarStyle(
@@ -830,15 +844,17 @@ private fun rememberLegendHints(
     canGoBack: Boolean,
     focusedBurstCollapsed: Boolean,
     burstExpanded: Boolean,
-): ImmutableList<KeyHint> = buildList {
-    add(KeyHint("← → ↑ ↓", "Move"))
-    add(KeyHint("↵", if (focusedBurstCollapsed) "Expand" else "Open"))
-    add(KeyHint(keys = "F", label = "Favourite"))
-    if (scope == CategoryScope.AllPhotos) add(KeyHint("1–9", "Categories"))
-    add(KeyHint("G", "Group"))
-    if (burstExpanded) add(KeyHint("Esc", "Collapse"))
-    if (canGoBack) add(KeyHint("Esc", "Back"))
-}.toImmutableList()
+): ImmutableList<KeyHint> = remember(scope, canGoBack, focusedBurstCollapsed, burstExpanded) {
+    buildList {
+        add(KeyHint("← → ↑ ↓", "Move"))
+        add(KeyHint("↵", if (focusedBurstCollapsed) "Expand" else "Open"))
+        add(KeyHint(keys = "F", label = "Favourite"))
+        if (scope == CategoryScope.AllPhotos) add(KeyHint("1–9", "Categories"))
+        add(KeyHint("G", "Group"))
+        if (burstExpanded) add(KeyHint("Esc", "Collapse"))
+        if (canGoBack) add(KeyHint("Esc", "Back"))
+    }.toImmutableList()
+}
 
 /**
  * The empty-grid guidance, varying by [scope]. All Photos points at the only useful next step
@@ -921,6 +937,36 @@ private val APPEAR_SCALE_SPEC = spring<Float>(
     stiffness = Spring.StiffnessMedium,
 )
 private const val APPEAR_INITIAL_SCALE = 0.85f
+
+/**
+ * Guards [VerticalScrollbar] against a Compose-desktop crash on the regrouping grid.
+ *
+ * While the grid reshapes under [Modifier.animateItem] - a lens regroup (e.g. switching to the
+ * Similarity lens, which actually collapses singles into burst tiles) or a burst expand/collapse -
+ * the lazy-grid scrollbar adapter can momentarily see a visible window whose line count is zero or
+ * negative and divides by it (foundation 1.7.3,
+ * `LazyGridScrollbarAdapter.averageVisibleLineSize`). That feeds a NaN content size /scroll offset
+ * to the scrollbar, which rounds it while measuring and throws
+ * `IllegalArgumentException: Cannot round NaN value`. (The Time/Burst lens dodges it only because
+ * a folder with no JPEG capture times - e.g. HEIC/screenshots - forms no groups, so the grid never
+ * reshapes.)
+ *
+ * Sanitising the three doubles the scrollbar reads back to finite values turns that one bad frame
+ * into a harmless full-height thumb; the next layout pass recovers the real geometry. Remove once
+ * the upstream adapter no longer emits NaN.
+ */
+internal class NanSafeScrollbarAdapter(
+    private val delegate: ScrollbarAdapter,
+) : ScrollbarAdapter {
+    override val scrollOffset: Double
+        get() = delegate.scrollOffset.takeIf(Double::isFinite) ?: 0.0
+    override val contentSize: Double
+        get() = delegate.contentSize.takeIf(Double::isFinite) ?: 0.0
+    override val viewportSize: Double
+        get() = delegate.viewportSize.takeIf(Double::isFinite) ?: 0.0
+
+    override suspend fun scrollTo(scrollOffset: Double) = delegate.scrollTo(scrollOffset)
+}
 
 /**
  * Entrance "pop" for a freshly unfolded burst frame: scales from [APPEAR_INITIAL_SCALE] to 1 on first

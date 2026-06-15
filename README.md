@@ -74,6 +74,28 @@ For developers:
 
 ## Install & run (end user)
 
+### Option A — Homebrew (recommended)
+
+```sh
+brew install --cask vgupta98/tap/photo-selector
+```
+
+This taps the repo and installs **Rhenium.app** into `/Applications`. Update it
+later with `brew upgrade --cask photo-selector`, or remove it with
+`brew uninstall --cask photo-selector`. (The cask keeps its original
+`photo-selector` token even though the app is now Rhenium.)
+
+Because the app isn't notarised by Apple, macOS Gatekeeper blocks it on the first
+launch. Homebrew prints the fix in its caveats — clear the quarantine flag once:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Rhenium.app"
+```
+
+or right-click the app in Finder and choose **Open**. You only need to do this once.
+
+### Option B — Download the DMG
+
 1. Download `Rhenium-1.0.0.dmg` from the [Releases](https://github.com/vgupta98/photo-selector/releases) page (or build it yourself — see below).
 2. Open the DMG and drag **Rhenium.app** to `/Applications`.
 3. **First launch — get past the Gatekeeper warning.** The app is not notarised by Apple, so on the very first launch macOS will show a dialog like *"Apple could not verify 'Rhenium' is free of malware…"*. To allow it:
@@ -82,7 +104,8 @@ For developers:
    3. Scroll down to the **Security** section — you'll see a message like *"Rhenium was blocked to protect your Mac."*
    4. Click **Open Anyway**, then confirm with Touch ID / password.
    5. Double-click the app again — this time it launches normally. You only need to do this once.
-4. Click **"Choose folder…"**, point it at your photo root, wait for the scan, then start browsing.
+
+Then, with either option: launch Rhenium, click **"Choose folder…"**, point it at your photo root, wait for the scan, then start browsing.
 
 ### Keyboard shortcuts
 
