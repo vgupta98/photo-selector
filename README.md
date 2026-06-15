@@ -1,6 +1,33 @@
 # Rhenium
 
-Rhenium is a fast, keyboard-driven macOS desktop app for triaging large photo folders (e.g. wedding shoots with thousands of JPEGs). Open a folder, swipe through photos, sort them into categories (**Favourites** plus any you create — Selects, Maybes, …), then export a category as either a `.txt` of relative paths or a copied folder that preserves your subfolder structure.
+**Cull thousands of shots in minutes — without your photos ever leaving your Mac.**
+
+Rhenium is a free, open-source, keyboard-driven photo culler for macOS. Open a
+folder of JPEG, HEIC or camera RAW, and Rhenium groups the near-identical frames
+for you — so you make one decision per *moment*, not one per frame. No account,
+no cloud, no subscription: the similarity model runs entirely on-device and
+nothing ever leaves your machine.
+
+> **macOS today — Windows support is on the roadmap.** Star and watch the repo to follow along.
+
+<!-- TODO(marketing): add a 10–15s screen-capture GIF of keyboard culling + the
+     "Similar" grouping lens right here. This is the single highest-impact thing
+     on the page — a culling app sells on motion, not prose. -->
+<!-- ![Rhenium in action](docs/demo.gif) -->
+
+## Why Rhenium
+
+- **It groups the duplicates for you.** An on-device similarity model — plus a
+  burst detector — collapses near-identical frames into one tile with the
+  sharpest shot suggested as the pick, so a 12-frame burst is one keystroke, not
+  twelve. No other open-source culler does this.
+- **Reads what you actually shoot.** JPEG, PNG, HEIC (the iPhone default) and
+  camera RAW — Canon, Sony, Nikon, Fujifilm, Adobe DNG, Panasonic and Olympus.
+- **Private by design.** 100% local: no upload, no account, no telemetry. Your
+  photos — and the model scoring them — never touch a network.
+- **Keyboard-first and built for scale.** Arrow through, file with one key, never
+  reach for the mouse. Handles 30k+ photo shoots with a cancellable scan and
+  bitmap cache.
 
 Built with Kotlin + Compose Multiplatform Desktop, following Clean Architecture.
 
