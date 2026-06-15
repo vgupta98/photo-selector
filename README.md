@@ -1,6 +1,18 @@
-# Rhenium
+<p align="center">
+  <img src="src/main/resources/icon/app-icon.png" width="140" alt="Rhenium app icon" />
+</p>
 
-**Cull thousands of shots in minutes — without your photos ever leaving your Mac.**
+<h1 align="center">Rhenium</h1>
+
+<p align="center">
+  <b>Cull thousands of shots in minutes — without your photos ever leaving your Mac.</b>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-macOS-111111" alt="Platform: macOS" />
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT" />
+  <img src="https://img.shields.io/github/stars/vgupta98/photo-selector?style=social" alt="GitHub stars" />
+</p>
 
 Rhenium is a free, open-source, keyboard-driven photo culler for macOS. Open a
 folder of JPEG, HEIC or camera RAW, and Rhenium groups the near-identical frames
