@@ -266,13 +266,16 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   so the on-disk cache re-keys. Don't bake model assumptions into callers.
 - **Sharpness (the suggested key frame) is scored on a dedicated 768px canonical canvas, not the 224px embedding decode** — variance-of-Laplacian is per-pixel, so sharing the embedding decode hid focus differences and scoring at native size let the *lowest-res* copy win; don't unify the two decodes or drop `scaleUpToLongEdge` (bump `EmbeddingCache.FORMAT_VERSION` if the score changes).
 - **ONNX Runtime is a bundled native dependency.** The
-  `com.microsoft.onnxruntime:onnxruntime` JAR ships a JNI `.dylib` (and the
-  win/linux equivalents) that jpackage rolls into the DMG. Unlike the HEIC
-  bridge (which loads system frameworks by name and bundles nothing), this is
-  real native code in the app bundle — so DMG signing/notarization has to cover
-  it, and `OnnxEmbeddingModel` construction must stay fail-soft (it falls back
-  to the classical embedder) in case the runtime can't initialise on a given
-  host.
+  `com.microsoft.onnxruntime:onnxruntime` JAR ships a JNI `.dylib` that jpackage
+  rolls into the DMG. The published jar is fat (all-platform natives + debug
+  symbols), so `build.gradle.kts` depends on the `slimOnnxRuntime` task — which
+  repackages it down to the macOS dylibs only — rather than the artifact
+  directly; if a Windows build is ever added it needs its own slimmed jar, not
+  the fat one. Unlike the HEIC bridge (which loads system frameworks by name and
+  bundles nothing), this is real native code in the app bundle — so DMG
+  signing/notarization has to cover it, and `OnnxEmbeddingModel` construction
+  must stay fail-soft (it falls back to the classical embedder) in case the
+  runtime can't initialise on a given host.
 
 ## Files worth knowing
 

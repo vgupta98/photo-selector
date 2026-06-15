@@ -1,3 +1,4 @@
+import org.gradle.api.file.DuplicatesStrategy
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 plugins {
@@ -28,6 +29,36 @@ composeCompiler {
     }
 }
 
+// Resolve the full, all-platforms ONNX Runtime artifact in isolation so we can repackage it.
+// Kept out of the app's own classpaths - only `slimOnnxRuntime` consumes it.
+val onnxRuntimeFull: Configuration by configurations.creating { isTransitive = false }
+
+dependencies {
+    onnxRuntimeFull(libs.onnxruntime)
+}
+
+// The published `onnxruntime` jar is a fat, all-platforms artifact (~89 MB): it bundles the
+// Windows (.dll + a ~290 MB uncompressed .pdb), Linux (.so) and macOS (.dylib) native libraries
+// plus macOS .dSYM debug bundles. jpackage rolls the whole jar into the DMG verbatim, so a
+// macOS-only build shipped Windows/Linux binaries and debug symbols it can never load - which
+// roughly doubled the DMG (103 MB -> 201 MB at v1.5.0). Repackage it keeping only the macOS
+// runtime dylibs (both arches, so a single DMG runs on Intel and Apple Silicon) and dropping the
+// rest. See CLAUDE.md "ONNX Runtime is a bundled native dependency".
+val slimOnnxRuntime = tasks.register<Jar>("slimOnnxRuntime") {
+    description = "Repackages the ONNX Runtime jar with only the macOS runtime libraries."
+    archiveBaseName.set("onnxruntime-slim")
+    destinationDirectory.set(layout.buildDirectory.dir("slim-libs"))
+    from({ onnxRuntimeFull.map(::zipTree) })
+    exclude(
+        "ai/onnxruntime/native/win-x64/**",
+        "ai/onnxruntime/native/linux-x64/**",
+        "ai/onnxruntime/native/linux-aarch64/**",
+    )
+    // macOS debug symbols (~18 MB of DWARF) - never loaded at runtime.
+    exclude("**/*.dSYM/**")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
 dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
@@ -43,10 +74,11 @@ dependencies {
     // its own decoder rather than replacing this.
     implementation(libs.jna)
 
-    // ONNX Runtime powers the learned visual-similarity embedder (OnnxEmbeddingModel). The JAR
-    // bundles the JNI native library for every desktop platform, so it works behind the
-    // EmbeddingModel interface with no per-OS wiring; the model blob itself ships as a resource.
-    implementation(libs.onnxruntime)
+    // ONNX Runtime powers the learned visual-similarity embedder (OnnxEmbeddingModel). The model
+    // blob itself ships as a resource. We depend on a slimmed repackaging of the runtime jar
+    // (see `slimOnnxRuntime` below) rather than the published artifact: that fat jar carries the
+    // native libs for every desktop platform plus debug symbols, none of which a macOS app loads.
+    implementation(files(slimOnnxRuntime))
 
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
