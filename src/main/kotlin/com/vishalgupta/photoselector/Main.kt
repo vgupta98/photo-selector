@@ -19,7 +19,7 @@ fun main() = application {
     val windowState = rememberWindowState(width = 1280.dp, height = 800.dp)
     Window(
         onCloseRequest = ::exitApplication,
-        title = "Photo Selector",
+        title = "Rhenium",
         state = windowState,
         icon = painterResource("icon/app-icon.png"),
     ) {

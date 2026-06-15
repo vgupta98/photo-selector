@@ -71,11 +71,17 @@ fun RootFolderPickerScreen(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(AppTheme.dimens.iconLg),
             )
-            Text("Photo Selector", style = MaterialTheme.typography.headlineLarge)
+            Text("Rhenium", style = MaterialTheme.typography.headlineLarge)
+            Text(
+                "Thousands of shots, down to your best.",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
 
             when (state.phase) {
                 RootPickerUiState.Phase.Idle, RootPickerUiState.Phase.Done -> {
-                    SupportingText("Pick a folder of photos to start culling. Subfolders are included.")
+                    SupportingText("Choose a folder to begin. Everything runs on your device - nothing is uploaded.")
                     AppButton(
                         text = "Choose folder…",
                         leadingIcon = Icons.Default.Folder,
