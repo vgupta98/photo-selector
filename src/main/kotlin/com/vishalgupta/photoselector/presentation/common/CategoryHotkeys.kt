@@ -18,6 +18,14 @@ import com.vishalgupta.photoselector.domain.model.Category
 /** Custom (non-built-in) categories in display order — the ones digit keys 1..9 bind to. */
 fun List<Category>.customCategories(): List<Category> = filter { !it.builtIn }
 
+/**
+ * The leading digit hint for the [slot]th custom category in a menu (`"1  "` .. `"9  "`), or
+ * `""` past slot 8. The visual counterpart of [digitSlot]: it keeps a menu entry's number
+ * matching the key that files into it, so the All-Photos and selection menus never disagree on
+ * the numbering.
+ */
+fun categorySlotPrefix(slot: Int): String = if (slot < 9) "${slot + 1}  " else ""
+
 /** Maps a number-row key to a zero-based digit slot (`1`→0 .. `9`→8), or null for non-digits. */
 fun digitSlot(key: Key): Int? = when (key) {
     Key.One -> 0

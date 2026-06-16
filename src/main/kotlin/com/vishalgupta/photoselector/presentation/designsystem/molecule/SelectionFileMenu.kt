@@ -11,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.vishalgupta.photoselector.domain.model.Category
+import com.vishalgupta.photoselector.presentation.common.categorySlotPrefix
 import com.vishalgupta.photoselector.presentation.designsystem.atom.AppOutlinedButton
 
 /**
@@ -31,9 +32,8 @@ fun SelectionFileMenu(
         AppOutlinedButton(text = "Add to category", onClick = { expanded = true })
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             customCategories.forEachIndexed { slot, category ->
-                val prefix = if (slot < 9) "${slot + 1}  " else ""
                 DropdownMenuItem(
-                    text = { Text("$prefix${category.name}") },
+                    text = { Text("${categorySlotPrefix(slot)}${category.name}") },
                     onClick = {
                         expanded = false
                         onSelectSlot(slot)
