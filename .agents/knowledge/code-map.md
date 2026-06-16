@@ -69,8 +69,8 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 - `rootpicker/` — `RootFolderPickerScreen` + `…ViewModel`.
 - `grid/` — **the heart of the app.** `GridViewModel` (focus/select/file; holds
   the `expandedBurstId` state; `refocus` re-anchors by identity), `GridScreen`
-  (render; defines `tileIndexForFlat`, the tile↔flat translation; reports its
-  flat scroll top out via `onCurrentFlatIndexChanged`), `LibraryRailViewModel`
+  (render; defines `tileIndexForFlat`, the tile↔flat translation),
+  `LibraryRailViewModel`
   (root-scoped: feeds the hoisted `LibraryRail` its category+count entries and
   owns create/rename/delete — see organism `LibraryRail`),
   `GridDisplayModel` (top-level tile-index *helpers*, not a class —

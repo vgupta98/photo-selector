@@ -15,7 +15,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -67,11 +66,6 @@ fun App(container: AppContainer) {
                     // It reads its own root-scoped view model, retained per root by the container.
                     val railVm = remember(s.root.path) { container.libraryRailViewModel(s.root) }
                     val railEntries by railVm.entries.collectAsState()
-                    // The active grid's current top as a FLAT photo index, reported up by GridScreen on
-                    // scroll. The rail records it as the returnScrollIndex when navigating to another
-                    // scope — it can't reach into the grid's tile<->flat translation, so the grid reports
-                    // it out. Branch-level (outside the key), so it survives scope switches.
-                    var currentFlatScroll by remember { mutableIntStateOf(s.initialScrollIndex.coerceAtLeast(0)) }
                     // Shared by the rail and the grid's empty-state CTA: drop the root and return to the picker.
                     val changeFolder: () -> Unit = {
                         coroutineScope.launch {
@@ -112,8 +106,8 @@ fun App(container: AppContainer) {
                                             scope = CategoryScope.Category(id),
                                             // No lastViewedPhotoId: a category's underline marks what was
                                             // browsed *in that category*, not what was last opened from All
-                                            // Photos. returnScrollIndex is the active grid's current top.
-                                            returnScrollIndex = currentFlatScroll,
+                                            // Photos. No returnScrollIndex either: backing out lands on the
+                                            // (warm) All Photos grid, which restores its own retained scroll.
                                         ),
                                     )
                                 },
@@ -162,7 +156,6 @@ fun App(container: AppContainer) {
                                 revealPhotoId = s.revealPhotoId,
                                 railCollapsed = railCollapsed,
                                 onToggleRail = { railCollapsed = !railCollapsed },
-                                onCurrentFlatIndexChanged = { currentFlatScroll = it },
                                 onTileClick = { index ->
                                     container.goTo(
                                         Screen.Browser(

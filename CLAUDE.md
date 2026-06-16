@@ -84,12 +84,11 @@ Clean architecture, single Gradle module, package
   (mounting it inside the key tore it down and rebuilt it on every switch — a
   visible flicker). `GridScreen` keeps only the top-bar collapse toggle
   (`railCollapsed`/`onToggleRail`, hoisted to `App` like `gridScrollStates` so it
-  survives scope switches and a Grid → Browser → Grid round trip). Two non-obvious
-  constraints: rail rows must stay **non-keyboard-focusable** or they steal the
-  grid's keyboard ring; and the rail can't compute the grid's tile→flat scroll
-  index itself, so `GridScreen` reports its current flat top up
-  (`onCurrentFlatIndexChanged`) for the rail to pass as a category's
-  `returnScrollIndex`.
+  survives scope switches and a Grid → Browser → Grid round trip). The one
+  non-obvious constraint: rail rows must stay **non-keyboard-focusable** or they
+  steal the grid's keyboard ring. (The rail does *not* set a category's
+  `returnScrollIndex` — backing out lands on the warm All Photos grid, which
+  restores its own retained scroll.)
 - **The grid is grouping/presentation only — mind the three index spaces.** The
   toolbar's segmented control picks a lens (`GridUiState.groupingMode`: `Off |
   Time | Similarity`, Time default); a non-`Off` mode resolves to one

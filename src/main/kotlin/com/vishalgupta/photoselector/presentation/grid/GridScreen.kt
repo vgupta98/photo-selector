@@ -116,9 +116,6 @@ fun GridScreen(
     // a scope switch and a Grid -> Browser -> Grid round trip.
     railCollapsed: Boolean,
     onToggleRail: () -> Unit,
-    // Reports the current top-of-grid as a FLAT photo index on every scroll, so the host can record
-    // it as the returnScrollIndex when the hoisted library rail navigates to another scope.
-    onCurrentFlatIndexChanged: (Int) -> Unit = {},
     // The scroll state retained for this (root, scope) across the session, supplied by the host so it
     // survives a Grid -> Browser -> Grid round trip. [anchorInitialScroll] is true only on the first
     // (cold) visit, where [initialScrollIndex] still needs to be applied as grouping settles; on a
@@ -166,7 +163,6 @@ fun GridScreen(
         groupingNotice = groupingNotice,
         railCollapsed = railCollapsed,
         onToggleRail = onToggleRail,
-        onCurrentFlatIndexChanged = onCurrentFlatIndexChanged,
         onTileClick = onTileClick,
         onChangeFolder = onChangeFolder,
         onInspectSelection = onInspectSelection,
@@ -233,9 +229,6 @@ fun GridScreen(
     // in the host beside this grid; defaulted so the stateless screen renders without the host wiring.
     railCollapsed: Boolean = false,
     onToggleRail: () -> Unit = {},
-    // The current top-of-grid as a FLAT photo index, reported on every scroll (see the stateful
-    // overload). Defaulted for the stateless hosting (tests, previews) with no host to record it.
-    onCurrentFlatIndexChanged: (Int) -> Unit = {},
     onTileClick: (index: Int) -> Unit,
     onChangeFolder: () -> Unit,
     onBack: (() -> Unit)?,
@@ -412,14 +405,7 @@ fun GridScreen(
     val latestTiles by rememberUpdatedState(tiles)
     LaunchedEffect(gridState) {
         snapshotFlow { gridState.firstVisibleItemIndex }
-            .collect { index ->
-                val flat = flatIndexForRenderItem(latestRenderItems, latestTileFlatStart, index)
-                onFirstVisibleItemChanged(flat)
-                // Mirror the flat top up to the host too: it records this as the returnScrollIndex
-                // when the hoisted rail leaves this scope (the rail can't reach into the grid's
-                // tile<->flat translation, so the grid reports it out).
-                onCurrentFlatIndexChanged(flat)
-            }
+            .collect { index -> onFirstVisibleItemChanged(flatIndexForRenderItem(latestRenderItems, latestTileFlatStart, index)) }
     }
 
     // The one-shot reveal (warm-return resume / "Show in All Photos") scrolls a photo on-screen by identity,
