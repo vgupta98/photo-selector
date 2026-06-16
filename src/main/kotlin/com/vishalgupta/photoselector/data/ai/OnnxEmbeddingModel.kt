@@ -17,8 +17,9 @@ import java.nio.FloatBuffer
  * The model blob ships as a classpath resource (see `tools/embedding-model/` for the reproducible
  * export); nothing is downloaded and no pixels leave the machine. Construction loads the session and
  * probes the output width, so [dimensions] always matches the bundled graph. Inference itself never
- * throws — a runtime failure yields the zero vector (cosine 0, hence ungroupable) so a single bad
- * frame can never crash the grid.
+ * throws — a runtime failure returns `null` so a single bad frame can never crash the grid, and the
+ * failure is *not* cached (see [PhotoFeatureExtractor]) so a transient hiccup re-embeds next pass
+ * rather than excluding the frame from grouping for the life of the file.
  *
  * Holds a native ONNX Runtime session; [close] releases it. In production it is an app-lifetime
  * singleton owned by `AppContainer`, so the OS reclaims it at exit; [close] exists for tests.
@@ -31,7 +32,7 @@ class OnnxEmbeddingModel private constructor(
     private val inputName: String,
 ) : EmbeddingModel, AutoCloseable {
 
-    override fun embed(image: DecodedImage): FloatArray = try {
+    override fun embed(image: DecodedImage): FloatArray? = try {
         val input = preprocess(image)
         OnnxTensor.createTensor(env, FloatBuffer.wrap(input), INPUT_SHAPE).use { tensor ->
             session.run(mapOf(inputName to tensor)).use { result ->
@@ -41,8 +42,8 @@ class OnnxEmbeddingModel private constructor(
             }
         }
     } catch (t: Throwable) {
-        System.err.println("OnnxEmbeddingModel.embed failed, returning zero vector: ${t.message}")
-        FloatArray(dimensions)
+        System.err.println("OnnxEmbeddingModel.embed failed, returning null (not cached): ${t.message}")
+        null
     }
 
     /**

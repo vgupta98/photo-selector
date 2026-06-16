@@ -6,6 +6,7 @@ import kotlin.math.sqrt
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -27,7 +28,7 @@ class OnnxEmbeddingModelTest {
 
     @Test
     fun embed_returnsAFiniteUnitVectorOfTheModelWidth() {
-        val vec = model.embed(ImageFixtures.ramp(96, 96))
+        val vec = assertNotNull(model.embed(ImageFixtures.ramp(96, 96)), "a valid image should embed")
 
         assertEquals(model.dimensions, vec.size)
         assertTrue(vec.all { it.isFinite() }, "embedding had non-finite components")
@@ -36,16 +37,16 @@ class OnnxEmbeddingModelTest {
 
     @Test
     fun embed_isDeterministic_soIdenticalImagesGroup() {
-        val a = model.embed(ImageFixtures.ramp(96, 96))
-        val b = model.embed(ImageFixtures.ramp(96, 96))
+        val a = assertNotNull(model.embed(ImageFixtures.ramp(96, 96)))
+        val b = assertNotNull(model.embed(ImageFixtures.ramp(96, 96)))
 
         assertTrue(cosine(a, b) > 0.999f, "identical images should embed to (almost) the same vector")
     }
 
     @Test
     fun embed_separatesVisuallyDifferentImages() {
-        val ramp = model.embed(ImageFixtures.ramp(96, 96))
-        val checker = model.embed(ImageFixtures.checker(96, 96))
+        val ramp = assertNotNull(model.embed(ImageFixtures.ramp(96, 96)))
+        val checker = assertNotNull(model.embed(ImageFixtures.checker(96, 96)))
 
         // A learned backbone should put a smooth ramp and a high-frequency checkerboard clearly
         // apart — well under the grouper's 0.85 merge threshold.

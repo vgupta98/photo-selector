@@ -38,12 +38,17 @@ class PhotoFeatureExtractor(
     suspend fun featuresFor(photo: Photo): PhotoFeatures? {
         cache.get(photo)?.let { return it }
         val embedImage = decodeForEmbedding(photo) ?: return null
+        // A null embedding is a *transient* inference failure, not a real feature. Leave the frame
+        // ungrouped for this pass and return WITHOUT caching, so the next pass re-embeds instead of
+        // reading a poisoned entry. Caching it would exclude the frame from grouping until the source
+        // file or model id changes.
+        val embedding = model.embed(embedImage) ?: return null
         // A failed sharpness decode leaves the frame unassessable (0), NOT scored on the 224px
         // embedding image: that smaller canvas isn't comparable with siblings scored at the canonical
         // size, so a fallback score there could spuriously win or lose the key-frame pick.
         val sharpness = decodeForSharpness(photo)?.let { SharpnessScorer.score(it) } ?: 0f
         val features = PhotoFeatures(
-            embedding = model.embed(embedImage),
+            embedding = embedding,
             sharpness = sharpness,
         )
         cache.put(photo, features)
