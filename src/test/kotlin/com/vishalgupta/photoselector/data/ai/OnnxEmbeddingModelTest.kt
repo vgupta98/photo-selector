@@ -4,7 +4,7 @@ import com.vishalgupta.photoselector.testing.ImageFixtures
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlin.math.abs
 import kotlin.math.sqrt
 import kotlin.test.AfterTest
@@ -58,11 +58,14 @@ class OnnxEmbeddingModelTest {
     }
 
     @Test
-    fun embed_isSafeUnderConcurrentRunsOnTheSharedSession() = runBlocking {
+    fun embed_isSafeUnderConcurrentRunsOnTheSharedSession() = runTest {
         // The cold Similarity pass (SimilarityPhotoGrouper) embeds frames in parallel against this one
         // shared OrtSession. ONNX Runtime supports concurrent Run() on a session; this is the brief's
         // load-bearing assumption, so prove it on the real native rather than trusting the doc.
         // Every concurrent embed of the same image must match the single-threaded result exactly.
+        //
+        // The real parallelism comes from async(Dispatchers.IO) below — those run on real OS threads
+        // independently of the test runner, so runTest (not runBlocking) is correct here.
         val reference = assertNotNull(model.embed(ImageFixtures.ramp(96, 96)))
 
         val results = (0 until 16).map {
