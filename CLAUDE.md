@@ -49,10 +49,16 @@ Clean architecture, single Gradle module, package
   `navigation/` and `common/` (non-UI plumbing: file dialogs, system
   actions, hover).
 - `presentation/designsystem/` — the Atomic Design system. `theme/`
-  (tokens: `AppColors`/`Spacing`/`Dimens` read via `AppTheme.*`, plus
-  `AppTypography`/`AppShapes`), then `atom/`, `molecule/`, `organism/`.
-  Screens are the "pages" tier. Build UI from these and add shared
-  tokens/components here rather than inlining literals in screens.
+  (tokens: `AppColors`/`Spacing`/`Dimens` plus `AppTypography`/`AppShapes`),
+  then `atom/`, `molecule/`, `organism/`. Screens are the "pages" tier. Build
+  UI from these and add shared tokens/components here rather than inlining
+  literals in screens. **Read every token through `AppTheme`** — the
+  app-specific `AppTheme.colors`/`spacing`/`dimens` *and* the Material-mapped
+  `AppTheme.colorScheme`/`typography`/`shapes` (which `AppTheme` re-exposes as
+  delegates). `MaterialTheme` is used only inside the `AppTheme` provider, never
+  at a call site, so the design system has one accessor. (Most of the tree
+  pre-dates this and still reads `MaterialTheme.*` directly — migrate a file's
+  reads to `AppTheme.*` when you touch it.)
 - `di/AppContainer.kt` — manual DI container. **No DI framework.** Add new
   wiring here.
 - Navigation is a sealed `Screen` interface (`RootPicker | Grid | Browser |

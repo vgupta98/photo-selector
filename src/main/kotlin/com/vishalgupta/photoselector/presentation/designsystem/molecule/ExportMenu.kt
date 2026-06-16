@@ -7,7 +7,6 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -58,8 +57,8 @@ fun ExportMenu(
             // export surface is one flat menu rather than a button-plus-popup.
             Text(
                 text = "Copy to folder — $ConflictPolicyHeader",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.labelMedium,
+                color = AppTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = AppTheme.spacing.lg, vertical = AppTheme.spacing.sm),
             )
             ConflictPolicyOptions.forEach { (label, policy) ->

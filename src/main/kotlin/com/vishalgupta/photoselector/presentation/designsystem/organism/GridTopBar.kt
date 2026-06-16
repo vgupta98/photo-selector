@@ -7,7 +7,6 @@ import androidx.compose.material.icons.automirrored.filled.MenuOpen
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -71,15 +70,15 @@ fun GridTopBar(
         ) {
             Text(
                 text = scopeName,
-                style = MaterialTheme.typography.titleLarge,
+                style = AppTheme.typography.titleLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
             )
             Text(
                 text = "$photoCount photo${if (photoCount == 1) "" else "s"}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodyMedium,
+                color = AppTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 softWrap = false,
             )

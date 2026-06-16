@@ -20,7 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -87,7 +86,7 @@ fun LibraryRail(
         modifier
             .width(AppTheme.dimens.libraryRailWidth)
             .fillMaxHeight()
-            .background(MaterialTheme.colorScheme.surface)
+            .background(AppTheme.colorScheme.surface)
             .verticalScroll(rememberScrollState())
             .padding(vertical = AppTheme.spacing.sm),
     ) {
@@ -149,7 +148,7 @@ fun LibraryRail(
             label = "New category",
             selected = false,
             onClick = { showCreateDialog = true },
-            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            contentColor = AppTheme.colorScheme.onSurfaceVariant,
             leading = {
                 Icon(
                     Icons.Filled.Add,
@@ -192,13 +191,13 @@ private fun RailHeader(rootName: String, onChangeFolder: () -> Unit) {
     Column(Modifier.padding(horizontal = AppTheme.spacing.md)) {
         Text(
             text = rootName,
-            style = MaterialTheme.typography.titleMedium,
+            style = AppTheme.typography.titleMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
         ChangeFolderButton(
             onChangeFolder = onChangeFolder,
-            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            contentColor = AppTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -208,8 +207,8 @@ private fun RailHeader(rootName: String, onChangeFolder: () -> Unit) {
 private fun RailSectionLabel(text: String) {
     Text(
         text = text.uppercase(),
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = AppTheme.typography.labelSmall,
+        color = AppTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(
             start = AppTheme.spacing.md,
             top = AppTheme.spacing.md,
@@ -228,8 +227,8 @@ private fun RailSlotBadge(slot: Int) {
         if (slot < 9) {
             Text(
                 text = "${slot + 1}",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.labelMedium,
+                color = AppTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -251,10 +250,10 @@ private fun RailRow(
     leading: @Composable () -> Unit,
     count: Int? = null,
     actions: (@Composable () -> Unit)? = null,
-    contentColor: Color = MaterialTheme.colorScheme.onSurface,
+    contentColor: Color = AppTheme.colorScheme.onSurface,
 ) {
     val fill = if (selected) {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+        AppTheme.colorScheme.onSurface.copy(alpha = 0.12f)
     } else {
         Color.Transparent
     }
@@ -263,7 +262,7 @@ private fun RailRow(
             .padding(horizontal = AppTheme.spacing.sm, vertical = 1.dp)
             .fillMaxWidth()
             .heightIn(min = RAIL_ROW_MIN_HEIGHT)
-            .clip(MaterialTheme.shapes.small)
+            .clip(AppTheme.shapes.small)
             .background(fill)
             // The grid owns the keyboard ring; a focusable rail row would steal it and kill arrows.
             .focusProperties { canFocus = false }
@@ -275,8 +274,8 @@ private fun RailRow(
         leading()
         Text(
             text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (selected) MaterialTheme.colorScheme.onSurface else contentColor,
+            style = AppTheme.typography.bodyMedium,
+            color = if (selected) AppTheme.colorScheme.onSurface else contentColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
@@ -284,8 +283,8 @@ private fun RailRow(
         if (count != null) {
             Text(
                 text = "$count",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodySmall,
+                color = AppTheme.colorScheme.onSurfaceVariant,
             )
         }
         actions?.invoke()
