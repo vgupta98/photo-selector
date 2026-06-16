@@ -68,8 +68,10 @@ import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 fun LibraryRail(
     rootName: String,
     scope: CategoryScope,
-    // Category + member count, Favourites first then custom in slot order — the same list the grid
-    // derives for its badges, so a rail count and a tile badge can never disagree.
+    // Category + member count, Favourites first then custom in slot order. Derived from the same
+    // CategoriesRepository membership flow the grid reads for its tile badges, so a rail count and a
+    // tile badge can never disagree (the rail is fed by its own root-scoped LibraryRailViewModel now,
+    // not the per-scope grid).
     entries: List<Pair<Category, Int>>,
     onSelectAllPhotos: () -> Unit,
     onSelectCategory: (CategoryId) -> Unit,

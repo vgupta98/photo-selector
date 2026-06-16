@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -37,6 +39,7 @@ import com.vishalgupta.photoselector.presentation.browser.CategoryToastState
 import com.vishalgupta.photoselector.presentation.common.CategoryToggle
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BrowserKeyboardLegend
 import com.vishalgupta.photoselector.presentation.designsystem.organism.BrowserCategoryHud
+import com.vishalgupta.photoselector.presentation.designsystem.organism.LibraryRail
 import com.vishalgupta.photoselector.presentation.grid.GridScreen
 import com.vishalgupta.photoselector.presentation.grid.GridUiState
 import com.vishalgupta.photoselector.presentation.survey.SurveyScreen
@@ -104,16 +107,13 @@ class ScreenSplitScreenshotTest {
         state: GridUiState,
         onBack: (() -> Unit)?,
         categoryToast: CategoryToggle? = null,
+        modifier: Modifier = Modifier,
     ) {
         GridScreen(
             state = state,
             initialScrollIndex = 0,
             onTileClick = {},
             onChangeFolder = {},
-            onSelectCategory = { _, _ -> },
-            onCreateCategory = {},
-            onRenameCategory = { _, _ -> },
-            onDeleteCategory = {},
             onBack = onBack,
             onSetFocusedIndex = {},
             onToggleMembershipAtFocus = {},
@@ -123,7 +123,29 @@ class ScreenSplitScreenshotTest {
             onDismissToast = {},
             imageLoader = noOpImageLoader,
             categoryToast = categoryToast,
+            modifier = modifier,
         )
+    }
+
+    // The rail beside the grid, assembled as the navigation host (App) does it — for the tests that
+    // exercise rail affordances (its rows, the "⋯" actions menu, "Change folder"). Other grid tests
+    // host the bare [Grid] since the rail is no longer part of GridScreen.
+    @androidx.compose.runtime.Composable
+    private fun RailAndGrid(state: GridUiState, onBack: (() -> Unit)?) {
+        Row(Modifier.fillMaxSize()) {
+            LibraryRail(
+                rootName = "Photos",
+                scope = state.scope,
+                entries = state.categories.map { it to (state.memberships[it.id]?.size ?: 0) },
+                onSelectAllPhotos = {},
+                onSelectCategory = {},
+                onCreateCategory = {},
+                onRenameCategory = { _, _ -> },
+                onDeleteCategory = {},
+                onChangeFolder = {},
+            )
+            Grid(state = state, onBack = onBack, modifier = Modifier.weight(1f).fillMaxHeight())
+        }
     }
 
     // --- RootFolderPickerScreen ---
@@ -371,10 +393,13 @@ class ScreenSplitScreenshotTest {
 
     @Test
     fun grid_libraryRail() {
+        // The rail is hoisted out of GridScreen into the navigation host (App): it sits beside the
+        // grid in a Row, surviving scope switches. Mirror that assembly here so the combined layout
+        // is exercised (the rail's own rendering is covered by LibraryRailScreenshotTest).
         rule.setContent {
             AppTheme {
                 Surface(Modifier.size(800.dp, 600.dp)) {
-                    Grid(
+                    RailAndGrid(
                         state = GridUiState(
                             photos = testPhotos,
                             scope = CategoryScope.AllPhotos,
@@ -411,7 +436,7 @@ class ScreenSplitScreenshotTest {
         rule.setContent {
             AppTheme {
                 Surface(Modifier.size(1280.dp, 600.dp)) {
-                    Grid(
+                    RailAndGrid(
                         state = GridUiState(
                             photos = testPhotos,
                             scope = CategoryScope.AllPhotos,
@@ -459,7 +484,7 @@ class ScreenSplitScreenshotTest {
         rule.setContent {
             AppTheme {
                 Surface(Modifier.size(800.dp, 600.dp)) {
-                    Grid(
+                    RailAndGrid(
                         state = GridUiState(
                             photos = testPhotos.take(1),
                             scope = CategoryScope.AllPhotos,

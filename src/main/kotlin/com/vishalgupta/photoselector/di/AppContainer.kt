@@ -46,6 +46,7 @@ import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
 import com.vishalgupta.photoselector.domain.usecase.ScanRootFolderUseCase
 import com.vishalgupta.photoselector.presentation.browser.BrowserViewModel
 import com.vishalgupta.photoselector.presentation.grid.GridViewModel
+import com.vishalgupta.photoselector.presentation.grid.LibraryRailViewModel
 import com.vishalgupta.photoselector.presentation.inspect.InspectMode
 import com.vishalgupta.photoselector.presentation.inspect.InspectViewModel
 import com.vishalgupta.photoselector.presentation.survey.SurveyViewModel
@@ -201,6 +202,11 @@ class AppContainer {
     // reuses the retained view model (and the App keeps its scroll position) so the grid returns
     // exactly as it was left, instead of rebuilding and re-anchoring. Cleared on a root change.
     private val retainedGrids = mutableMapOf<GridRetentionKey, GridViewModel>()
+
+    // The library rail is root-level chrome (same for every scope), so unlike the grids it is kept
+    // per *root* — the navigation host mounts it outside the per-scope retention key, so one instance
+    // serves every scope of a root and survives category switches. Cleared on a root change.
+    private val retainedRails = mutableMapOf<Path, LibraryRailViewModel>()
 
     // The grouping lens the user last picked, remembered for the session so the first grid built for
     // each (root, scope) opens in that lens rather than the default. Retained grids keep their own
@@ -380,11 +386,28 @@ class AppContainer {
         ).also { retainedGrids[key] = it }
     }
 
+    /**
+     * The library rail for [root], reused across every scope (and Grid -> Browser -> Grid round trip)
+     * for the session. Root-scoped on purpose: the rail is identical for All Photos and each category,
+     * so the host mounts one instance above the per-scope grid retention key.
+     */
+    fun libraryRailViewModel(root: RootFolder): LibraryRailViewModel =
+        retainedRails.getOrPut(root.path) {
+            LibraryRailViewModel(
+                root = root,
+                categories = categoriesRepository,
+                parentJob = folderJob,
+            )
+        }
+
     suspend fun resetForNewRoot() {
         // Flush each retained grid's pending scroll save, then drop them: a new root means a new set
         // of grids, and folderJob.cancel below tears their scopes down anyway.
         retainedGrids.values.forEach { it.onClear() }
         retainedGrids.clear()
+        // Rails hold no pending writes to flush; folderJob.cancel below tears their scopes down, so
+        // just drop the references for the new root.
+        retainedRails.clear()
         _folderJob.cancel()
         _folderJob = SupervisorJob(appScope.coroutineContext[Job])
         categoriesRepository.clearContext()

@@ -69,7 +69,10 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 - `rootpicker/` — `RootFolderPickerScreen` + `…ViewModel`.
 - `grid/` — **the heart of the app.** `GridViewModel` (focus/select/file; holds
   the `expandedBurstId` state; `refocus` re-anchors by identity), `GridScreen`
-  (render; defines `tileIndexForFlat`, the tile↔flat translation),
+  (render; defines `tileIndexForFlat`, the tile↔flat translation; reports its
+  flat scroll top out via `onCurrentFlatIndexChanged`), `LibraryRailViewModel`
+  (root-scoped: feeds the hoisted `LibraryRail` its category+count entries and
+  owns create/rename/delete — see organism `LibraryRail`),
   `GridDisplayModel` (top-level tile-index *helpers*, not a class —
   `displayGroupsFor`/`buildRenderItems` explode the open burst into per-frame
   tiles, plus `renderIndexForTile` etc.), `GridViewportAnchor` (scroll anchoring).
@@ -96,7 +99,8 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   `CategoryActionsMenu`, `ExportMenu` (txt + copy-to-folder, the
   exporter plugin-headroom slot), `ConflictPolicyButton`, `PillToast`,
   `SelectionFileMenu`, `ConfirmDialog`/`CategoryNameDialog`.
-- `organism/` — `LibraryRail` (left navigation column: scopes + category CRUD),
+- `organism/` — `LibraryRail` (left navigation column: scopes + category CRUD;
+  hoisted to `App` beside the grid, backed by `grid/LibraryRailViewModel`),
   `GridTopBar` (slim: rail toggle + identity + view/export) /
   `GridSelectionTopBar`, `BrowserTopBar`/`BrowserCategoryHud`, `PhotoThumbnail`,
   `SurveyTileView`, `TopBarScaffold`.
@@ -110,7 +114,7 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 | Grouping lens (Off / Time / Similarity) | `domain/grouping/`, `data/ai/SimilarityPhotoGrouper.kt`, `grid/GridViewModel.kt` |
 | Scroll position / index translation | `grid/GridScreen.kt` (`tileIndexForFlat`), `grid/GridViewportAnchor.kt`, `grid/GridDisplayModel.kt`, `data/browse/` |
 | Categories / Favourites | `data/categories/`, `domain/repository/CategoriesRepository.kt`, `common/CategoryHotkeys.kt`, `designsystem/organism/LibraryRail.kt` |
-| Grid chrome (rail / top bar / collapse) | `designsystem/organism/LibraryRail.kt`, `designsystem/organism/GridTopBar.kt`, `grid/GridScreen.kt`, `App.kt` (`railCollapsed`) |
+| Grid chrome (rail / top bar / collapse) | `designsystem/organism/LibraryRail.kt`, `grid/LibraryRailViewModel.kt`, `designsystem/organism/GridTopBar.kt`, `grid/GridScreen.kt`, `App.kt` (rail mounted beside the grid, `railCollapsed`) |
 | Decoding a new format | `domain/format/PhotoDecoder.kt`, `data/format/DefaultPhotoFormatRegistry.kt`, register in `di/AppContainer.kt` |
 | HEIC / RAW specifics | `data/format/HeicDecoder.kt`, `data/format/RawDecoder.kt`, `data/format/macos/MacImageIO.kt` |
 | Similarity embeddings / model swap | `data/ai/OnnxEmbeddingModel.kt`, `data/ai/EmbeddingCache.kt`, `tools/embedding-model/` |

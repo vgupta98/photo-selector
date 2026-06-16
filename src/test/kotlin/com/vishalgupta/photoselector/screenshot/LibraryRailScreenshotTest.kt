@@ -1,5 +1,8 @@
 package com.vishalgupta.photoselector.screenshot
 
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
@@ -16,6 +19,7 @@ import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoGroup
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.presentation.common.GroupingMode
+import com.vishalgupta.photoselector.presentation.designsystem.organism.LibraryRail
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import com.vishalgupta.photoselector.presentation.grid.GridScreen
 import com.vishalgupta.photoselector.presentation.grid.GridUiState
@@ -26,8 +30,9 @@ import org.junit.Test
 import java.nio.file.Path
 
 /**
- * Renders the redesigned grid shell — the left [com.vishalgupta.photoselector.presentation.designsystem.organism.LibraryRail]
- * beside the slimmed top bar — through the real [GridScreen]. Eyeball the PNGs under
+ * Renders the redesigned grid shell — the left [LibraryRail] beside the slimmed top bar — by
+ * assembling the rail next to the real [GridScreen] exactly as the navigation host (App) does (the
+ * rail is hoisted out of the grid so it survives scope switches). Eyeball the PNGs under
  * `build/screenshots/`:
  *  - `library-rail-all-photos`: rail expanded, "All Photos" active, Favourites + two custom
  *    categories with counts, the top bar carrying only identity + the grouping toggle (no Export
@@ -159,31 +164,45 @@ class LibraryRailScreenshotTest {
     }
 
     private fun renderShell(state: GridUiState, railCollapsed: Boolean = false) {
+        // Mirror the host: the rail sits beside the grid in a Row (and is simply absent when
+        // collapsed). entries are derived from the same categories+memberships the grid carries, so a
+        // rail count matches a tile badge — exactly the production invariant (now via a shared flow).
+        val entries = state.categories.map { it to (state.memberships[it.id]?.size ?: 0) }
         rule.setContent {
             AppTheme {
                 Surface(Modifier.size(1100.dp, 560.dp)) {
-                    GridScreen(
-                        state = state,
-                        initialScrollIndex = 0,
-                        rootName = "Iceland 2026",
-                        railCollapsed = railCollapsed,
-                        onToggleRail = {},
-                        onTileClick = {},
-                        onChangeFolder = {},
-                        onSelectAllPhotos = {},
-                        onSelectCategory = { _, _ -> },
-                        onCreateCategory = {},
-                        onRenameCategory = { _, _ -> },
-                        onDeleteCategory = {},
-                        onBack = if (state.scope is CategoryScope.Category) ({}) else null,
-                        onSetFocusedIndex = {},
-                        onToggleMembershipAtFocus = {},
-                        onToggleCustomCategoryAtFocus = {},
-                        onExportTxt = {},
-                        onCopyToFolder = {},
-                        onDismissToast = {},
-                        imageLoader = colorLoader,
-                    )
+                    Row(Modifier.fillMaxSize()) {
+                        if (!railCollapsed) {
+                            LibraryRail(
+                                rootName = "Iceland 2026",
+                                scope = state.scope,
+                                entries = entries,
+                                onSelectAllPhotos = {},
+                                onSelectCategory = {},
+                                onCreateCategory = {},
+                                onRenameCategory = { _, _ -> },
+                                onDeleteCategory = {},
+                                onChangeFolder = {},
+                            )
+                        }
+                        GridScreen(
+                            state = state,
+                            initialScrollIndex = 0,
+                            railCollapsed = railCollapsed,
+                            onToggleRail = {},
+                            onTileClick = {},
+                            onChangeFolder = {},
+                            onBack = if (state.scope is CategoryScope.Category) ({}) else null,
+                            onSetFocusedIndex = {},
+                            onToggleMembershipAtFocus = {},
+                            onToggleCustomCategoryAtFocus = {},
+                            onExportTxt = {},
+                            onCopyToFolder = {},
+                            onDismissToast = {},
+                            imageLoader = colorLoader,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                        )
+                    }
                 }
             }
         }

@@ -76,11 +76,20 @@ Clean architecture, single Gradle module, package
   never decodes the browser until the first toggle, a browse-only set never
   builds the grid.
 - **The grid screen is framed by `LibraryRail` (left nav: scopes + category
-  CRUD) and a slim `GridTopBar` (identity + lens toggle + `ExportMenu`).** Two
-  non-obvious constraints: the rail's collapse flag is hoisted to `App` (like
-  `gridScrollStates`) — inside `GridScreen` it resets on every scope switch and
-  Grid → Browser → Grid round trip; and rail rows must stay
-  **non-keyboard-focusable** or they steal the grid's keyboard ring.
+  CRUD) and a slim `GridTopBar` (identity + lens toggle + `ExportMenu`).** The
+  rail is **root-level chrome, mounted by `App` *beside* the grid — outside the
+  per-scope `key(GridRetentionKey)` — not by `GridScreen`.** It's backed by its
+  own root-scoped `LibraryRailViewModel` (retained per root in `AppContainer`),
+  so a category switch re-keys only the grid below and leaves the rail mounted
+  (mounting it inside the key tore it down and rebuilt it on every switch — a
+  visible flicker). `GridScreen` keeps only the top-bar collapse toggle
+  (`railCollapsed`/`onToggleRail`, hoisted to `App` like `gridScrollStates` so it
+  survives scope switches and a Grid → Browser → Grid round trip). Two non-obvious
+  constraints: rail rows must stay **non-keyboard-focusable** or they steal the
+  grid's keyboard ring; and the rail can't compute the grid's tile→flat scroll
+  index itself, so `GridScreen` reports its current flat top up
+  (`onCurrentFlatIndexChanged`) for the rail to pass as a category's
+  `returnScrollIndex`.
 - **The grid is grouping/presentation only — mind the three index spaces.** The
   toolbar's segmented control picks a lens (`GridUiState.groupingMode`: `Off |
   Time | Similarity`, Time default); a non-`Off` mode resolves to one

@@ -4,11 +4,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
@@ -95,7 +93,6 @@ import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToas
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.SimilarityCoachmark
 import com.vishalgupta.photoselector.presentation.designsystem.organism.GridSelectionTopBar
 import com.vishalgupta.photoselector.presentation.designsystem.organism.GridTopBar
-import com.vishalgupta.photoselector.presentation.designsystem.organism.LibraryRail
 import com.vishalgupta.photoselector.presentation.designsystem.organism.PhotoThumbnail
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
@@ -110,19 +107,18 @@ import kotlinx.coroutines.launch
 fun GridScreen(
     viewModel: GridViewModel,
     initialScrollIndex: Int,
-    // The open folder's display name, shown in the library rail header. Sourced by the host (App)
-    // from the root path — the grid's own state doesn't carry the root.
-    rootName: String,
     onTileClick: (index: Int) -> Unit,
     onChangeFolder: () -> Unit,
-    onSelectAllPhotos: () -> Unit,
-    onSelectCategory: (currentScrollIndex: Int, id: CategoryId) -> Unit,
     onInspectSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit,
     onBack: (() -> Unit)?,
-    // Whether the library rail is collapsed (hidden). Hoisted to the navigation host so it survives
-    // a scope switch (each scope is its own retained grid) and a Grid -> Browser -> Grid round trip.
+    // Whether the library rail (hoisted to the host, beside this grid) is collapsed. Drives only the
+    // top-bar toggle's icon state here; the rail itself is the host's concern. Hoisted so it survives
+    // a scope switch and a Grid -> Browser -> Grid round trip.
     railCollapsed: Boolean,
     onToggleRail: () -> Unit,
+    // Reports the current top-of-grid as a FLAT photo index on every scroll, so the host can record
+    // it as the returnScrollIndex when the hoisted library rail navigates to another scope.
+    onCurrentFlatIndexChanged: (Int) -> Unit = {},
     // The scroll state retained for this (root, scope) across the session, supplied by the host so it
     // survives a Grid -> Browser -> Grid round trip. [anchorInitialScroll] is true only on the first
     // (cold) visit, where [initialScrollIndex] still needs to be applied as grouping settles; on a
@@ -134,6 +130,7 @@ fun GridScreen(
     // A photo to scroll into view on a warm return, regardless of the keyboard ring (resume / "Show in
     // All Photos"). See [Screen.Grid.revealPhotoId].
     revealPhotoId: PhotoId? = null,
+    modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsState()
     val coroutineScope = rememberCoroutineScope()
@@ -162,7 +159,6 @@ fun GridScreen(
     GridScreen(
         state = state,
         initialScrollIndex = initialScrollIndex,
-        rootName = rootName,
         retainedGridState = gridState,
         anchorInitialScroll = anchorInitialScroll,
         revealPhotoId = revealPhotoId,
@@ -170,16 +166,13 @@ fun GridScreen(
         groupingNotice = groupingNotice,
         railCollapsed = railCollapsed,
         onToggleRail = onToggleRail,
+        onCurrentFlatIndexChanged = onCurrentFlatIndexChanged,
         onTileClick = onTileClick,
         onChangeFolder = onChangeFolder,
-        onSelectAllPhotos = onSelectAllPhotos,
-        onSelectCategory = onSelectCategory,
         onInspectSelection = onInspectSelection,
-        onCreateCategory = viewModel::createCategory,
-        onRenameCategory = viewModel::renameCategory,
-        onDeleteCategory = viewModel::deleteCategory,
         onBack = onBack,
         onSetFocusedIndex = viewModel::setFocusedIndex,
+        modifier = modifier,
         onToggleMembershipAtFocus = viewModel::toggleMembershipAtFocus,
         onToggleCustomCategoryAtFocus = viewModel::toggleCustomCategoryAtFocus,
         onExportTxt = {
@@ -236,20 +229,15 @@ fun GridScreen(
     // A photo to scroll into view once on a warm return, regardless of the keyboard ring. See
     // [Screen.Grid.revealPhotoId]; ignored on a cold visit (initialScrollIndex places the photo there).
     revealPhotoId: PhotoId? = null,
-    // The open folder's display name for the library rail header. Defaulted for the stateless
-    // hosting (tests, previews) that doesn't thread a root through.
-    rootName: String = "",
-    // Library rail collapse state + toggle. Defaulted so the stateless screen renders with the rail
-    // shown without the host wiring it.
+    // Library rail collapse state + toggle, for the top bar's collapse control. The rail itself lives
+    // in the host beside this grid; defaulted so the stateless screen renders without the host wiring.
     railCollapsed: Boolean = false,
     onToggleRail: () -> Unit = {},
+    // The current top-of-grid as a FLAT photo index, reported on every scroll (see the stateful
+    // overload). Defaulted for the stateless hosting (tests, previews) with no host to record it.
+    onCurrentFlatIndexChanged: (Int) -> Unit = {},
     onTileClick: (index: Int) -> Unit,
     onChangeFolder: () -> Unit,
-    onSelectAllPhotos: () -> Unit = {},
-    onSelectCategory: (currentScrollIndex: Int, id: CategoryId) -> Unit,
-    onCreateCategory: (String) -> Unit,
-    onRenameCategory: (CategoryId, String) -> Unit,
-    onDeleteCategory: (CategoryId) -> Unit,
     onBack: (() -> Unit)?,
     onSetFocusedIndex: (Int) -> Unit,
     onToggleMembershipAtFocus: () -> Unit,
@@ -331,9 +319,6 @@ fun GridScreen(
     val currentCategory: Category? = remember(state.scope, state.categories) {
         (state.scope as? CategoryScope.Category)
             ?.let { sc -> state.categories.firstOrNull { it.id == sc.id } }
-    }
-    val categoryEntries = remember(state.categories, state.memberships) {
-        state.categories.map { it to (state.memberships[it.id]?.size ?: 0) }
     }
 
     // Custom categories in slot order — drives both the per-tile numbered badges and the
@@ -427,7 +412,14 @@ fun GridScreen(
     val latestTiles by rememberUpdatedState(tiles)
     LaunchedEffect(gridState) {
         snapshotFlow { gridState.firstVisibleItemIndex }
-            .collect { index -> onFirstVisibleItemChanged(flatIndexForRenderItem(latestRenderItems, latestTileFlatStart, index)) }
+            .collect { index ->
+                val flat = flatIndexForRenderItem(latestRenderItems, latestTileFlatStart, index)
+                onFirstVisibleItemChanged(flat)
+                // Mirror the flat top up to the host too: it records this as the returnScrollIndex
+                // when the hoisted rail leaves this scope (the rail can't reach into the grid's
+                // tile<->flat translation, so the grid reports it out).
+                onCurrentFlatIndexChanged(flat)
+            }
     }
 
     // The one-shot reveal (warm-return resume / "Show in All Photos") scrolls a photo on-screen by identity,
@@ -459,33 +451,12 @@ fun GridScreen(
             }
         }
 
-    Row(modifier.fillMaxSize()) {
-        // The library rail (navigation + category management) sits left of the grid. The top-bar
-        // toggle collapses it; its open/closed state is hoisted to the navigation host so it
-        // survives scope switches and Grid -> Browser -> Grid round trips. Its rows are not
-        // keyboard-focusable, so the grid Column below keeps the keyboard ring. Show/hide animates
-        // the width (anchored at the start edge) so the grid slides open/closed rather than snapping.
-        AnimatedVisibility(
-            visible = !railCollapsed,
-            enter = expandHorizontally(expandFrom = Alignment.Start) + fadeIn(),
-            exit = shrinkHorizontally(shrinkTowards = Alignment.Start) + fadeOut(),
-        ) {
-            LibraryRail(
-                rootName = rootName,
-                scope = state.scope,
-                entries = categoryEntries,
-                onSelectAllPhotos = onSelectAllPhotos,
-                onSelectCategory = { id -> onSelectCategory(firstVisibleFlat(), id) },
-                onCreateCategory = onCreateCategory,
-                onRenameCategory = onRenameCategory,
-                onDeleteCategory = onDeleteCategory,
-                onChangeFolder = onChangeFolder,
-            )
-        }
+    // The library rail (navigation + category management) is hoisted to the navigation host and sits
+    // left of this grid; only the grid column lives here, so it keeps the keyboard ring. The host
+    // sizes us via [modifier] (it gives the grid the row's remaining width beside the rail).
     Column(
-        Modifier
-            .weight(1f)
-            .fillMaxHeight()
+        modifier
+            .fillMaxSize()
             .focusRequester(focusRequester)
             .focusable()
             // A two-finger / wheel scroll (the app's scroll gestures) releases the re-pin: a programmatic
@@ -834,7 +805,6 @@ fun GridScreen(
                 ),
             )
         }
-    }
     }
 
     // When a selection clears, two cleanups: drop the delete-confirm latch so it can't hang over
