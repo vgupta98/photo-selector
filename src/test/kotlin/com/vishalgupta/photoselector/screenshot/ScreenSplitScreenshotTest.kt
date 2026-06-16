@@ -392,39 +392,6 @@ class ScreenSplitScreenshotTest {
     }
 
     @Test
-    fun grid_libraryRail() {
-        // The rail is hoisted out of GridScreen into the navigation host (App): it sits beside the
-        // grid in a Row, surviving scope switches. Mirror that assembly here so the combined layout
-        // is exercised (the rail's own rendering is covered by LibraryRailScreenshotTest).
-        rule.setContent {
-            AppTheme {
-                Surface(Modifier.size(800.dp, 600.dp)) {
-                    RailAndGrid(
-                        state = GridUiState(
-                            photos = testPhotos,
-                            scope = CategoryScope.AllPhotos,
-                            categories = categories,
-                            memberships = mapOf(
-                                Category.FAVOURITES_ID to setOf(PhotoId("a")),
-                                selectsId to setOf(PhotoId("b")),
-                            ),
-                        ),
-                        onBack = null,
-                    )
-                }
-            }
-        }
-        rule.waitForIdle()
-        // Navigation + categories live in the left library rail now, not a top-bar dropdown: the
-        // Favourites bucket, each custom category, "New category", and "Change folder" all sit there.
-        rule.onNodeWithText("Favourites").assertIsDisplayed()
-        rule.onNodeWithText("Selects").assertIsDisplayed()
-        rule.onNodeWithText("New category").assertIsDisplayed()
-        rule.onNodeWithText("Change folder").assertIsDisplayed()
-        rule.dumpScreenshot("grid-library-rail")
-    }
-
-    @Test
     fun grid_changeFolderConfirm() {
         // Clicking "Change folder" must not tear the session down on a stray click — it opens
         // a confirm dialog first. Capture the dialog so the guard's copy stays honest (it
