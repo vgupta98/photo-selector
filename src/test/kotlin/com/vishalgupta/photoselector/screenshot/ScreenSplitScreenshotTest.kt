@@ -370,7 +370,7 @@ class ScreenSplitScreenshotTest {
     }
 
     @Test
-    fun grid_categoryMenuOpen() {
+    fun grid_libraryRail() {
         rule.setContent {
             AppTheme {
                 Surface(Modifier.size(800.dp, 600.dp)) {
@@ -390,15 +390,13 @@ class ScreenSplitScreenshotTest {
             }
         }
         rule.waitForIdle()
-        // Favourites is its own top-bar button now; the dropdown counts custom categories only.
-        rule.onNodeWithText("Favourites (1)").assertIsDisplayed()
-        rule.onNodeWithText("Categories (1)").performClick()
-        rule.waitForIdle()
-        // Custom categories get bare digits 1..9; Favourites no longer appears in the menu.
-        rule.onNodeWithText("1  Selects  (1)").assertIsDisplayed()
-        rule.onNodeWithText("New category…").assertIsDisplayed()
-        // The menu renders in its own popup root; capture that, not the base screen.
-        rule.dumpScreenshot("grid-category-menu-open", rule.onAllNodes(isRoot()).onLast())
+        // Navigation + categories live in the left library rail now, not a top-bar dropdown: the
+        // Favourites bucket, each custom category, "New category", and "Change folder" all sit there.
+        rule.onNodeWithText("Favourites").assertIsDisplayed()
+        rule.onNodeWithText("Selects").assertIsDisplayed()
+        rule.onNodeWithText("New category").assertIsDisplayed()
+        rule.onNodeWithText("Change folder").assertIsDisplayed()
+        rule.dumpScreenshot("grid-library-rail")
     }
 
     @Test
@@ -455,6 +453,7 @@ class ScreenSplitScreenshotTest {
         rule.dumpScreenshot("grid-favourites-category")
     }
 
+    @OptIn(ExperimentalTestApi::class)
     @Test
     fun grid_customCategoryActionsMenuOpen() {
         rule.setContent {
@@ -463,22 +462,24 @@ class ScreenSplitScreenshotTest {
                     Grid(
                         state = GridUiState(
                             photos = testPhotos.take(1),
-                            scope = CategoryScope.Category(selectsId),
+                            scope = CategoryScope.AllPhotos,
                             categories = categories,
                             memberships = mapOf(selectsId to setOf(PhotoId("a"))),
                         ),
-                        onBack = {},
+                        onBack = null,
                     )
                 }
             }
         }
         rule.waitForIdle()
         // The footer legend's F hint is always "Favourite": F files into Favourites in every
-        // scope (GridViewModel.toggleMembershipAtFocus), so it must never claim to toggle the
-        // viewed custom category.
+        // scope (GridViewModel.toggleMembershipAtFocus), so it must never claim to toggle a
+        // custom category.
         rule.onNodeWithText("Favourite").assertIsDisplayed()
         rule.onNodeWithText("Toggle Selects").assertDoesNotExist()
-        rule.onNodeWithContentDescription("Category actions").performClick()
+        // Rename / delete moved to the rail's per-category "⋯". The clickable row merges the button's
+        // semantics, so reach it through the unmerged tree, then open it.
+        rule.onNodeWithContentDescription("Category actions", useUnmergedTree = true).performClick()
         rule.waitForIdle()
         rule.onNodeWithText("Rename…").assertIsDisplayed()
         rule.onNodeWithText("Delete…").assertIsDisplayed()

@@ -8,8 +8,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.vishalgupta.photoselector.di.AppContainer
 import com.vishalgupta.photoselector.domain.model.Category
@@ -34,6 +36,12 @@ fun App(container: AppContainer) {
     // navigation away) so a Grid -> Browser -> Grid round trip returns to the exact same scroll.
     // Cleared on a root change, in lock-step with the container dropping its retained grids.
     val gridScrollStates = remember { mutableMapOf<GridRetentionKey, LazyGridState>() }
+
+    // Library-rail collapse state, held at the navigation-shell level (not inside the Grid branch,
+    // which leaves composition on every navigation away and re-keys per scope). Hoisting it here is
+    // what lets the rail stay collapsed across a scope switch and a Grid -> Browser -> Grid round
+    // trip, in lock-step with the retained scroll above.
+    var railCollapsed by remember { mutableStateOf(false) }
 
     AppTheme {
         Surface(Modifier.fillMaxSize()) {
@@ -72,9 +80,12 @@ fun App(container: AppContainer) {
                     GridScreen(
                         viewModel = vm,
                         initialScrollIndex = s.initialScrollIndex,
+                        rootName = s.root.path.fileName?.toString() ?: s.root.path.toString(),
                         gridState = gridState,
                         anchorInitialScroll = anchorInitialScroll,
                         revealPhotoId = s.revealPhotoId,
+                        railCollapsed = railCollapsed,
+                        onToggleRail = { railCollapsed = !railCollapsed },
                         onTileClick = { index ->
                             container.goTo(
                                 Screen.Browser(
@@ -91,6 +102,18 @@ fun App(container: AppContainer) {
                                 gridScrollStates.clear()
                                 container.goTo(Screen.RootPicker)
                             }
+                        },
+                        // Rail "All Photos": navigate to the All Photos scope. It is usually warm
+                        // (retained), so it restores its own scroll; the browse position is the cold
+                        // fallback. A no-op-ish re-navigation when already in All Photos (same key).
+                        onSelectAllPhotos = {
+                            container.goTo(
+                                Screen.Grid(
+                                    root = s.root,
+                                    scope = CategoryScope.AllPhotos,
+                                    initialScrollIndex = container.loadBrowsePosition(s.root).lastIndex,
+                                ),
+                            )
                         },
                         onSelectCategory = { currentScrollIndex, id ->
                             container.goTo(

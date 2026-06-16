@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -92,6 +93,7 @@ import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToas
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.SimilarityCoachmark
 import com.vishalgupta.photoselector.presentation.designsystem.organism.GridSelectionTopBar
 import com.vishalgupta.photoselector.presentation.designsystem.organism.GridTopBar
+import com.vishalgupta.photoselector.presentation.designsystem.organism.LibraryRail
 import com.vishalgupta.photoselector.presentation.designsystem.organism.PhotoThumbnail
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
@@ -106,11 +108,19 @@ import kotlinx.coroutines.launch
 fun GridScreen(
     viewModel: GridViewModel,
     initialScrollIndex: Int,
+    // The open folder's display name, shown in the library rail header. Sourced by the host (App)
+    // from the root path — the grid's own state doesn't carry the root.
+    rootName: String,
     onTileClick: (index: Int) -> Unit,
     onChangeFolder: () -> Unit,
+    onSelectAllPhotos: () -> Unit,
     onSelectCategory: (currentScrollIndex: Int, id: CategoryId) -> Unit,
     onInspectSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit,
     onBack: (() -> Unit)?,
+    // Whether the library rail is collapsed (hidden). Hoisted to the navigation host so it survives
+    // a scope switch (each scope is its own retained grid) and a Grid -> Browser -> Grid round trip.
+    railCollapsed: Boolean,
+    onToggleRail: () -> Unit,
     // The scroll state retained for this (root, scope) across the session, supplied by the host so it
     // survives a Grid -> Browser -> Grid round trip. [anchorInitialScroll] is true only on the first
     // (cold) visit, where [initialScrollIndex] still needs to be applied as grouping settles; on a
@@ -150,13 +160,17 @@ fun GridScreen(
     GridScreen(
         state = state,
         initialScrollIndex = initialScrollIndex,
+        rootName = rootName,
         retainedGridState = gridState,
         anchorInitialScroll = anchorInitialScroll,
         revealPhotoId = revealPhotoId,
         categoryToast = categoryToast,
         groupingNotice = groupingNotice,
+        railCollapsed = railCollapsed,
+        onToggleRail = onToggleRail,
         onTileClick = onTileClick,
         onChangeFolder = onChangeFolder,
+        onSelectAllPhotos = onSelectAllPhotos,
         onSelectCategory = onSelectCategory,
         onInspectSelection = onInspectSelection,
         onCreateCategory = viewModel::createCategory,
@@ -220,8 +234,16 @@ fun GridScreen(
     // A photo to scroll into view once on a warm return, regardless of the keyboard ring. See
     // [Screen.Grid.revealPhotoId]; ignored on a cold visit (initialScrollIndex places the photo there).
     revealPhotoId: PhotoId? = null,
+    // The open folder's display name for the library rail header. Defaulted for the stateless
+    // hosting (tests, previews) that doesn't thread a root through.
+    rootName: String = "",
+    // Library rail collapse state + toggle. Defaulted so the stateless screen renders with the rail
+    // shown without the host wiring it.
+    railCollapsed: Boolean = false,
+    onToggleRail: () -> Unit = {},
     onTileClick: (index: Int) -> Unit,
     onChangeFolder: () -> Unit,
+    onSelectAllPhotos: () -> Unit = {},
     onSelectCategory: (currentScrollIndex: Int, id: CategoryId) -> Unit,
     onCreateCategory: (String) -> Unit,
     onRenameCategory: (CategoryId, String) -> Unit,
@@ -435,9 +457,28 @@ fun GridScreen(
             }
         }
 
+    Row(modifier.fillMaxSize()) {
+        // The library rail (navigation + category management) sits left of the grid. It is collapsed
+        // to zero width behind the top-bar toggle; its open/closed state is hoisted to the navigation
+        // host so it survives scope switches and Grid -> Browser -> Grid round trips. Its rows are
+        // not keyboard-focusable, so the grid Column below keeps the keyboard ring.
+        if (!railCollapsed) {
+            LibraryRail(
+                rootName = rootName,
+                scope = state.scope,
+                entries = categoryEntries,
+                onSelectAllPhotos = onSelectAllPhotos,
+                onSelectCategory = { id -> onSelectCategory(firstVisibleFlat(), id) },
+                onCreateCategory = onCreateCategory,
+                onRenameCategory = onRenameCategory,
+                onDeleteCategory = onDeleteCategory,
+                onChangeFolder = onChangeFolder,
+            )
+        }
     Column(
-        modifier
-            .fillMaxSize()
+        Modifier
+            .weight(1f)
+            .fillMaxHeight()
             .focusRequester(focusRequester)
             .focusable()
             // A two-finger / wheel scroll (the app's scroll gestures) releases the re-pin: a programmatic
@@ -586,16 +627,11 @@ fun GridScreen(
                 scope = state.scope,
                 currentCategory = currentCategory,
                 photoCount = state.photos.size,
-                categoryEntries = categoryEntries,
                 isBusy = state.isBusy,
-                onBack = onBack,
-                onSelectCategory = { id -> onSelectCategory(firstVisibleFlat(), id) },
-                onCreateCategory = onCreateCategory,
-                onRenameCategory = onRenameCategory,
-                onDeleteCategory = onDeleteCategory,
+                railCollapsed = railCollapsed,
+                onToggleRail = onToggleRail,
                 onExportTxt = onExportTxt,
                 onCopyToFolder = onCopyToFolder,
-                onChangeFolder = onChangeFolder,
                 groupingMode = state.groupingMode,
                 onSelectGroupingMode = onSelectGroupingModeAnchored,
             )
@@ -791,6 +827,7 @@ fun GridScreen(
                 ),
             )
         }
+    }
     }
 
     // When a selection clears, two cleanups: drop the delete-confirm latch so it can't hang over
