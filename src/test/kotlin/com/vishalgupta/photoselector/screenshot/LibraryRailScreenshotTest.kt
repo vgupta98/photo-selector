@@ -105,6 +105,24 @@ class LibraryRailScreenshotTest {
         rule.dumpScreenshot("library-rail-category")
     }
 
+    @Test fun `a long category name ellipsises and keeps the top-bar cluster intact`() {
+        // Regression: an over-long scope name must not push the Export menu / lens toggle off the
+        // right edge. Eyeball build/screenshots/library-rail-long-name.png — the title ends in "…",
+        // and the Export + grouping controls stay full-width on the right.
+        val verbose = Category(CategoryId("verbose"), "MyCategory11WithReallyLongNameeeeeeeeeeeeeeee", builtIn = false)
+        renderShell(
+            GridUiState(
+                photos = emptyList(),
+                groups = emptyList(),
+                groupingMode = GroupingMode.Off,
+                scope = CategoryScope.Category(verbose.id),
+                categories = listOf(Category.favourites(), verbose),
+                memberships = emptyMap(),
+            ),
+        )
+        rule.dumpScreenshot("library-rail-long-name")
+    }
+
     @Test fun `rail collapsed leaves the grid full-bleed`() {
         renderShell(
             GridUiState(

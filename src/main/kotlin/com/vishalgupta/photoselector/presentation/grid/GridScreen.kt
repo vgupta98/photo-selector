@@ -4,9 +4,11 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
@@ -458,11 +460,16 @@ fun GridScreen(
         }
 
     Row(modifier.fillMaxSize()) {
-        // The library rail (navigation + category management) sits left of the grid. It is collapsed
-        // to zero width behind the top-bar toggle; its open/closed state is hoisted to the navigation
-        // host so it survives scope switches and Grid -> Browser -> Grid round trips. Its rows are
-        // not keyboard-focusable, so the grid Column below keeps the keyboard ring.
-        if (!railCollapsed) {
+        // The library rail (navigation + category management) sits left of the grid. The top-bar
+        // toggle collapses it; its open/closed state is hoisted to the navigation host so it
+        // survives scope switches and Grid -> Browser -> Grid round trips. Its rows are not
+        // keyboard-focusable, so the grid Column below keeps the keyboard ring. Show/hide animates
+        // the width (anchored at the start edge) so the grid slides open/closed rather than snapping.
+        AnimatedVisibility(
+            visible = !railCollapsed,
+            enter = expandHorizontally(expandFrom = Alignment.Start) + fadeIn(),
+            exit = shrinkHorizontally(shrinkTowards = Alignment.Start) + fadeOut(),
+        ) {
             LibraryRail(
                 rootName = rootName,
                 scope = state.scope,

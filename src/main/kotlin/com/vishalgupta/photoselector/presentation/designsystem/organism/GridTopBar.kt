@@ -1,6 +1,7 @@
 package com.vishalgupta.photoselector.presentation.designsystem.organism
 
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuOpen
 import androidx.compose.material.icons.filled.Menu
@@ -9,12 +10,15 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
 import com.vishalgupta.photoselector.presentation.common.GroupingMode
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ExportMenu
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.GroupingModeToggle
+import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 
 /**
@@ -57,14 +61,29 @@ fun GridTopBar(
             is CategoryScope.Category -> currentCategory?.name ?: "Category"
         }
         // Identity leads; the count is reference info, so it rides alongside as a muted caption.
-        Text(scopeName, style = MaterialTheme.typography.titleLarge)
-        Text(
-            text = "$photoCount photo${if (photoCount == 1) "" else "s"}",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        Spacer(Modifier.weight(1f))
+        // This block takes the row's slack (weight) and the name ellipsises within it, so a long
+        // category name can't push the view/export cluster off the right edge (the count never
+        // truncates). Replaces a bare weighted spacer for exactly that reason.
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.sm),
+        ) {
+            Text(
+                text = scopeName,
+                style = MaterialTheme.typography.titleLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Text(
+                text = "$photoCount photo${if (photoCount == 1) "" else "s"}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
+            )
+        }
 
         // Export only for an exportable scope (Favourites + custom categories); All Photos has no
         // export action, matching the prior bar.

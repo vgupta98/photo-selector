@@ -19,9 +19,15 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.ImeAction
 
 /**
+ * Hard cap on a category name's length. The rail and top bar both ellipsise an over-long name, but
+ * capping the input keeps names sane at the source (and a 40-char name already overflows the rail).
+ */
+const val MAX_CATEGORY_NAME_LENGTH = 40
+
+/**
  * A single-field dialog for naming a category, used for both create and rename. [title]
  * and [confirmLabel] distinguish the two; [initialName] pre-fills for rename. Confirm is
- * disabled while the field is blank; Enter confirms.
+ * disabled while the field is blank; Enter confirms. Input is capped at [MAX_CATEGORY_NAME_LENGTH].
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -45,7 +51,7 @@ fun CategoryNameDialog(
         text = {
             OutlinedTextField(
                 value = name,
-                onValueChange = { name = it },
+                onValueChange = { if (it.length <= MAX_CATEGORY_NAME_LENGTH) name = it },
                 singleLine = true,
                 label = { Text("Name") },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
