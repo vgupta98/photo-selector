@@ -1,6 +1,7 @@
 package com.vishalgupta.photoselector.presentation.designsystem.molecule
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -46,7 +47,7 @@ fun ExportMenu(
         )
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(
-                text = { Text("Export list (.txt)") },
+                text = { Text("Save photo list (.txt)") },
                 onClick = {
                     expanded = false
                     onExportTxt()
@@ -54,13 +55,23 @@ fun ExportMenu(
             )
             HorizontalDivider()
             // Copy-to-folder, with the collision choice inlined as the next level so the whole
-            // export surface is one flat menu rather than a button-plus-popup.
-            Text(
-                text = "Copy to folder — $ConflictPolicyHeader",
-                style = AppTheme.typography.labelMedium,
-                color = AppTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = AppTheme.spacing.lg, vertical = AppTheme.spacing.sm),
-            )
+            // export surface is one flat menu rather than a button-plus-popup. The action and the
+            // "what if it clashes" question stack on two lines — a section title over a caption —
+            // rather than running together into one long em-dashed sentence.
+            Column(
+                Modifier.padding(horizontal = AppTheme.spacing.lg, vertical = AppTheme.spacing.sm),
+            ) {
+                Text(
+                    text = "Copy photos to a folder",
+                    style = AppTheme.typography.labelLarge,
+                    color = AppTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = ConflictPolicyHeader,
+                    style = AppTheme.typography.labelSmall,
+                    color = AppTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             ConflictPolicyOptions.forEach { (label, policy) ->
                 DropdownMenuItem(
                     text = { Text(label) },

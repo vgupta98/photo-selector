@@ -28,7 +28,7 @@ internal val ConflictPolicyOptions = listOf(
 )
 
 /** Header framing the three [ConflictPolicyOptions] as answers to one question. */
-internal const val ConflictPolicyHeader = "If a file already exists in the folder:"
+internal const val ConflictPolicyHeader = "If a file already exists:"
 
 /**
  * "Copy photos to folder…" button that opens a menu of [ConflictPolicy] choices

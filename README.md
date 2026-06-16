@@ -129,8 +129,8 @@ In the **grid**, `Cmd`-click or `Shift`-click tiles (or `Cmd+A`) to multi-select
 
 The **library rail** down the left lists every scope — All Photos, Favourites, and each custom category with its count; click one to open its grid, or **New category** to create one. (Collapse the rail with the toggle at the top-left of the bar to give the grid the full window.) To file a photo into a custom category, focus it in the All Photos grid (or open it full-screen) and press the category's digit — `1` for the first custom category, `2` for the second, and so on; `F` always toggles Favourites. In the full-screen browser a heads-up legend along the bottom shows each category with its key and whether the current photo belongs to it; it auto-hides and reappears on any keypress or mouse move, and you can click a chip instead of using the keys. Each custom category's **⋯** in the rail renames or deletes it (the built-in Favourites can't be renamed or deleted). When viewing a category, the top bar's **Export** menu offers:
 
-- **Export list (.txt)** — pick a destination `.txt` file; one relative path per line.
-- **Copy to folder** — pick a destination folder; subfolder structure is preserved. Choose how filename conflicts are handled (default: rename to `foo (2).jpg`).
+- **Save photo list (.txt)** — pick a destination `.txt` file; one relative path per line.
+- **Copy photos to a folder** — pick a destination folder; subfolder structure is preserved. Choose how filename conflicts are handled (default: rename to `foo (2).jpg`).
 
 ## Build from source
 
