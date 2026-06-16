@@ -6,7 +6,9 @@ import com.vishalgupta.photoselector.domain.model.PhotoGroup
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.testing.FakeEmbeddingModel
 import com.vishalgupta.photoselector.testing.ImageFixtures
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.runTest
 import java.nio.file.Files
@@ -81,10 +83,10 @@ class SimilarityPhotoGrouperTest {
         val cache = EmbeddingCache(dir, modelId = "fake-v1")
         val a = photo("A"); val b = photo("B"); val c = photo("C")
         // The first decode to run parks forever, so the fan-out is genuinely in-flight when we cancel.
-        val started = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val started = CompletableDeferred<Unit>()
         val decode: suspend (Photo) -> DecodedImage? = {
             started.complete(Unit)
-            kotlinx.coroutines.awaitCancellation()
+            awaitCancellation()
         }
         val model = FakeEmbeddingModel(id = "fake-v1") { unit(1f, 0f) }
         val grouper = SimilarityPhotoGrouper(PhotoFeatureExtractor(model, cache, decode, decode), concurrency = 2)
@@ -94,6 +96,34 @@ class SimilarityPhotoGrouperTest {
         pass.cancelAndJoin()
 
         assertTrue(pass.isCancelled, "cancellation must propagate structurally through the fan-out")
+    }
+
+    @Test fun `parallel extraction yields the same grouping as a single-threaded pass`() = runTest {
+        // Locks the class kdoc's headline claim: clustering is order-independent (keyed by PhotoId), so
+        // running the same inputs at concurrency 1 vs 4 must produce identical PhotoGroup structure.
+        val a = photo("A"); val b = photo("B"); val c = photo("C"); val d = photo("D")
+        // A, B, C are visually alike (one burst of three); D differs (a single).
+        val colour = mapOf(a.id to 10, b.id to 12, c.id to 14, d.id to 200)
+        val photos = listOf(a, b, c, d)
+        val decode: suspend (Photo) -> DecodedImage? = { ImageFixtures.solid(8, 8, r = colour.getValue(it.id)) }
+        val embedder: (DecodedImage) -> FloatArray = { image ->
+            if ((image.bgraBytes[2].toInt() and 0xFF) < 128) unit(1f, 0f) else unit(0f, 1f)
+        }
+        // A fresh cache per run so the second pass recomputes rather than reading the first's features.
+        fun grouperWith(width: Int): SimilarityPhotoGrouper {
+            val dir = Files.createTempDirectory("similarity-equivalence-$width").also { it.toFile().deleteOnExit() }
+            val model = FakeEmbeddingModel(id = "fake-v1", embedder = embedder)
+            return SimilarityPhotoGrouper(
+                PhotoFeatureExtractor(model, EmbeddingCache(dir, modelId = "fake-v1"), decode, decode),
+                concurrency = width,
+            )
+        }
+
+        val sequential = grouperWith(width = 1).group(photos)
+        val parallel = grouperWith(width = 4).group(photos)
+
+        assertEquals(listOf(a, b, c), assertIs<PhotoGroup.Burst>(sequential[0]).photos)
+        assertEquals(sequential, parallel, "parallel width must not change the grouping output")
     }
 
     @Test fun `sharpness is scored from the dedicated sharpness decode, not the embedding decode`() = runTest {

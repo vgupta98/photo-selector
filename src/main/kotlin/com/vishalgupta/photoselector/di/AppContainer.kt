@@ -76,9 +76,10 @@ class AppContainer {
         ignoreUnknownKeys = true
     }
 
-    // Width of the shared decode pool. Doubles as the bound for the cold Similarity pass's parallel
-    // feature extraction (SimilarityPhotoGrouper), so the fan-out fills the decode threads without
-    // oversubscribing them — each in-flight frame holds a 224px + a 768px DecodedImage.
+    // Width of the shared decode pool. Reused to size the cold Similarity pass's parallel feature
+    // extraction (SimilarityPhotoGrouper) — there it bounds how many frames are in flight at once (a
+    // memory/CPU ceiling, since each frame decodes a 768px sharpness canvas and runs an inference).
+    // The pass runs on Dispatchers.IO, not this pool; the shared width just keeps both sized to cores.
     private val decodeParallelism =
         Runtime.getRuntime().availableProcessors().coerceAtMost(4).coerceAtLeast(2)
 
