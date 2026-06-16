@@ -9,6 +9,8 @@ import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.CategoriesRepository
 import com.vishalgupta.photoselector.presentation.StateHolder
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +20,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.swing.Swing
 
 /** One survey tile: a photo at [index] in scope plus its decode + membership state. */
 data class SurveyTile(
@@ -57,7 +60,8 @@ class SurveyViewModel(
     private val imageLoader: ImageLoader,
     private val isReadOnly: StateFlow<Boolean>,
     parentJob: Job? = null,
-) : StateHolder(parentJob) {
+    dispatcher: CoroutineDispatcher = Dispatchers.Swing,
+) : StateHolder(parentJob, dispatcher) {
 
     private val categoriesFlow: StateFlow<List<Category>> = categories.observeCategories(root)
     private val membershipsFlow: StateFlow<Map<CategoryId, Set<PhotoId>>> = categories.observeMemberships(root)

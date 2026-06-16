@@ -10,10 +10,12 @@ import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.CategoriesRepository
 import com.vishalgupta.photoselector.testing.FakeCategoriesRepository
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -23,9 +25,11 @@ import java.nio.file.Path
 /**
  * Pure active-tile + filing behaviour on [SurveyViewModel]: the tiles are built from the selected
  * indices, the active tile moves with clamping, and `F`/digit filing targets the active tile only.
- * The VM runs its flow plumbing on the Swing dispatcher, so each assertion that depends on a write
- * awaits the resulting state rather than reading synchronously.
+ * The VM runs its flow plumbing on the injected dispatcher; each test drives it with a
+ * [StandardTestDispatcher] and `advanceUntilIdle()`, so writes settle in virtual time rather than on
+ * a real-clock `withTimeout` poll.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class SurveyViewModelTest {
 
     private val photos = (0 until 6).map { i ->
@@ -52,6 +56,7 @@ class SurveyViewModelTest {
 
     private fun viewModel(
         repo: CategoriesRepository,
+        dispatcher: TestDispatcher,
         indices: List<Int> = listOf(1, 3, 4),
         decode: Boolean = false,
     ): SurveyViewModel = SurveyViewModel(
@@ -61,15 +66,13 @@ class SurveyViewModelTest {
         categories = repo,
         imageLoader = bitmapLoader(decode),
         isReadOnly = MutableStateFlow(false),
+        dispatcher = dispatcher,
     )
 
-    private suspend fun SurveyViewModel.await(predicate: (SurveyUiState) -> Boolean) {
-        withTimeout(2_000) { state.first(predicate) }
-    }
-
     @Test
-    fun buildsTilesFromSelectedIndices() = runBlocking {
-        val vm = viewModel(FakeCategoriesRepository(categories), indices = listOf(1, 3, 4))
+    fun buildsTilesFromSelectedIndices() = runTest {
+        val vm = viewModel(FakeCategoriesRepository(categories), StandardTestDispatcher(testScheduler), indices = listOf(1, 3, 4))
+        advanceUntilIdle()
 
         val st = vm.state.value
         assertEquals(listOf(1, 3, 4), st.tiles.map { it.index })
@@ -81,8 +84,9 @@ class SurveyViewModelTest {
     }
 
     @Test
-    fun moveActive_clampsAtBothEnds() = runBlocking {
-        val vm = viewModel(FakeCategoriesRepository(categories), indices = listOf(1, 3, 4))
+    fun moveActive_clampsAtBothEnds() = runTest {
+        val vm = viewModel(FakeCategoriesRepository(categories), StandardTestDispatcher(testScheduler), indices = listOf(1, 3, 4))
+        advanceUntilIdle()
 
         vm.moveActive(-1)
         assertEquals("can't move before the first tile", 0, vm.state.value.activeTile)
@@ -100,8 +104,9 @@ class SurveyViewModelTest {
     }
 
     @Test
-    fun setActive_ignoresOutOfRange() = runBlocking {
-        val vm = viewModel(FakeCategoriesRepository(categories), indices = listOf(1, 3, 4))
+    fun setActive_ignoresOutOfRange() = runTest {
+        val vm = viewModel(FakeCategoriesRepository(categories), StandardTestDispatcher(testScheduler), indices = listOf(1, 3, 4))
+        advanceUntilIdle()
 
         vm.setActive(2)
         assertEquals(2, vm.state.value.activeTile)
@@ -113,13 +118,15 @@ class SurveyViewModelTest {
     }
 
     @Test
-    fun toggleCategory_filesTheActiveTileOnly() = runBlocking {
+    fun toggleCategory_filesTheActiveTileOnly() = runTest {
         val repo = FakeCategoriesRepository(categories)
-        val vm = viewModel(repo, indices = listOf(1, 3, 4))
+        val vm = viewModel(repo, StandardTestDispatcher(testScheduler), indices = listOf(1, 3, 4))
+        advanceUntilIdle()
 
         // Active tile is the first one (p1): favouriting it marks p1, not the others.
         vm.toggleCategory(Category.FAVOURITES_ID)
-        vm.await { it.active?.isFavourite == true }
+        advanceUntilIdle()
+        assertTrue("p1 became favourite", vm.state.value.active?.isFavourite == true)
 
         assertEquals(listOf(Category.FAVOURITES_ID to PhotoId("p1")), repo.toggleCalls)
         val st = vm.state.value
@@ -130,13 +137,15 @@ class SurveyViewModelTest {
     }
 
     @Test
-    fun toggleCategory_followsTheActiveTileAfterMoving() = runBlocking {
+    fun toggleCategory_followsTheActiveTileAfterMoving() = runTest {
         val repo = FakeCategoriesRepository(categories)
-        val vm = viewModel(repo, indices = listOf(1, 3, 4))
+        val vm = viewModel(repo, StandardTestDispatcher(testScheduler), indices = listOf(1, 3, 4))
+        advanceUntilIdle()
 
         vm.moveActive(1) // active is now tile p3
         vm.toggleCategory(selectsId)
-        vm.await { selectsId in (it.active?.memberships ?: emptySet()) }
+        advanceUntilIdle()
+        assertTrue("p3 joined the Selects category", selectsId in (vm.state.value.active?.memberships ?: emptySet()))
 
         assertEquals(selectsId to PhotoId("p3"), repo.toggleCalls.last())
 
@@ -144,14 +153,16 @@ class SurveyViewModelTest {
     }
 
     @Test
-    fun reportingTheViewport_decodesEveryTile() = runBlocking {
-        val vm = viewModel(FakeCategoriesRepository(categories), indices = listOf(1, 3, 4), decode = true)
+    fun reportingTheViewport_decodesEveryTile() = runTest {
+        val vm = viewModel(FakeCategoriesRepository(categories), StandardTestDispatcher(testScheduler), indices = listOf(1, 3, 4), decode = true)
+        advanceUntilIdle()
 
         // No decode happens until the real per-tile viewport is reported.
         assertNull("no bitmap before the viewport is known", vm.state.value.tiles.firstOrNull { it.bitmap != null })
 
         vm.setViewportLongEdgePx(512)
-        vm.await { st -> st.tiles.all { it.bitmap != null && !it.isLoading } }
+        advanceUntilIdle()
+        assertTrue("every tile decoded", vm.state.value.tiles.all { it.bitmap != null && !it.isLoading })
 
         assertNull(vm.state.value.tiles.firstOrNull { it.bitmap == null })
 
