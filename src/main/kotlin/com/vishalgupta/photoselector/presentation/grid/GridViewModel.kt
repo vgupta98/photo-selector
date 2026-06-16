@@ -719,20 +719,6 @@ class GridViewModel(
         else -> "Added $added to $category ($requested selected)"
     }
 
-    fun createCategory(name: String) {
-        if (name.isBlank()) return
-        scope.launch { categories.create(root, name) }
-    }
-
-    fun renameCategory(id: CategoryId, newName: String) {
-        if (newName.isBlank()) return
-        scope.launch { categories.rename(root, id, newName) }
-    }
-
-    fun deleteCategory(id: CategoryId) {
-        scope.launch { categories.delete(root, id) }
-    }
-
     fun exportTxt(destination: Path) {
         scope.launch {
             _state.update { it.copy(isBusy = true, progressLabel = "Writing list…") }
