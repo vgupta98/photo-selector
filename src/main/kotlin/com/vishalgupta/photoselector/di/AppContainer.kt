@@ -76,10 +76,14 @@ class AppContainer {
         ignoreUnknownKeys = true
     }
 
+    // Width of the shared decode pool. Doubles as the bound for the cold Similarity pass's parallel
+    // feature extraction (SimilarityPhotoGrouper), so the fan-out fills the decode threads without
+    // oversubscribing them — each in-flight frame holds a 224px + a 768px DecodedImage.
+    private val decodeParallelism =
+        Runtime.getRuntime().availableProcessors().coerceAtMost(4).coerceAtLeast(2)
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    private val imageDecodeDispatcher = Dispatchers.IO.limitedParallelism(
-        Runtime.getRuntime().availableProcessors().coerceAtMost(4).coerceAtLeast(2),
-    )
+    private val imageDecodeDispatcher = Dispatchers.IO.limitedParallelism(decodeParallelism)
 
     private val appScope = CoroutineScope(SupervisorJob() + imageDecodeDispatcher)
     private var _folderJob = SupervisorJob(appScope.coroutineContext[Job])
@@ -134,6 +138,7 @@ class AppContainer {
                 decodeForEmbedding = ::decodeForEmbedding,
                 decodeForSharpness = ::decodeForSharpness,
             ),
+            concurrency = decodeParallelism,
         ),
         cache = groupingResultCache,
         modelId = embeddingModel.id,

@@ -1,6 +1,10 @@
 package com.vishalgupta.photoselector.data.ai
 
 import com.vishalgupta.photoselector.testing.ImageFixtures
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
 import kotlin.math.abs
 import kotlin.math.sqrt
 import kotlin.test.AfterTest
@@ -51,6 +55,24 @@ class OnnxEmbeddingModelTest {
         // A learned backbone should put a smooth ramp and a high-frequency checkerboard clearly
         // apart — well under the grouper's 0.85 merge threshold.
         assertTrue(cosine(ramp, checker) < 0.85f, "distinct images should be distinguishable, got ${cosine(ramp, checker)}")
+    }
+
+    @Test
+    fun embed_isSafeUnderConcurrentRunsOnTheSharedSession() = runBlocking {
+        // The cold Similarity pass (SimilarityPhotoGrouper) embeds frames in parallel against this one
+        // shared OrtSession. ONNX Runtime supports concurrent Run() on a session; this is the brief's
+        // load-bearing assumption, so prove it on the real native rather than trusting the doc.
+        // Every concurrent embed of the same image must match the single-threaded result exactly.
+        val reference = assertNotNull(model.embed(ImageFixtures.ramp(96, 96)))
+
+        val results = (0 until 16).map {
+            async(Dispatchers.IO) { assertNotNull(model.embed(ImageFixtures.ramp(96, 96))) }
+        }.awaitAll()
+
+        for (vec in results) {
+            assertEquals(reference.size, vec.size)
+            assertTrue(cosine(reference, vec) > 0.999f, "concurrent embeds must match the single-threaded vector")
+        }
     }
 
     private fun norm(v: FloatArray): Float {

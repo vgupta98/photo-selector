@@ -6,7 +6,9 @@ import com.vishalgupta.photoselector.domain.model.PhotoGroup
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.testing.FakeEmbeddingModel
 import com.vishalgupta.photoselector.testing.ImageFixtures
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.test.runTest
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.math.sqrt
@@ -25,7 +27,7 @@ import kotlin.test.assertTrue
  */
 class SimilarityPhotoGrouperTest {
 
-    @Test fun `groups visually-alike photos and reuses cached features on the second pass`() = runBlocking {
+    @Test fun `groups visually-alike photos and reuses cached features on the second pass`() = runTest {
         val dir = Files.createTempDirectory("similarity-grouper-test").also { it.toFile().deleteOnExit() }
         val cache = EmbeddingCache(dir, modelId = "fake-v1")
 
@@ -56,7 +58,7 @@ class SimilarityPhotoGrouperTest {
         assertEquals(6, decodeCount, "second pass is all cache hits, no re-decode")
     }
 
-    @Test fun `reports progress once per photo, ending at total`() = runBlocking {
+    @Test fun `reports progress once per photo with a thread-safe running count, ending at total`() = runTest {
         val dir = Files.createTempDirectory("similarity-progress-test").also { it.toFile().deleteOnExit() }
         val cache = EmbeddingCache(dir, modelId = "fake-v1")
         val a = photo("A"); val b = photo("B"); val c = photo("C")
@@ -64,13 +66,37 @@ class SimilarityPhotoGrouperTest {
         val model = FakeEmbeddingModel(id = "fake-v1") { unit(1f, 0f) }
         val grouper = SimilarityPhotoGrouper(PhotoFeatureExtractor(model, cache, decode, decode))
 
-        val seen = mutableListOf<Pair<Int, Int>>()
+        // Extraction is parallel, so callbacks arrive out of order — but the count is a thread-safe
+        // AtomicInteger, so every photo is reported exactly once (processed values are 1..total) and
+        // the run always lands on total. The caller (GridViewModel) is what makes the bar monotonic.
+        val seen = java.util.Collections.synchronizedList(mutableListOf<Pair<Int, Int>>())
         grouper.group(listOf(a, b, c)) { processed, total -> seen += processed to total }
 
-        assertEquals(listOf(1 to 3, 2 to 3, 3 to 3), seen)
+        assertTrue(seen.all { it.second == 3 }, "every callback reports the same total")
+        assertEquals(listOf(1, 2, 3), seen.map { it.first }.sorted(), "each photo counted once, no gaps or repeats")
     }
 
-    @Test fun `sharpness is scored from the dedicated sharpness decode, not the embedding decode`() = runBlocking {
+    @Test fun `a cancelled pass propagates cancellation and never produces groups`() = runTest {
+        val dir = Files.createTempDirectory("similarity-cancel-test").also { it.toFile().deleteOnExit() }
+        val cache = EmbeddingCache(dir, modelId = "fake-v1")
+        val a = photo("A"); val b = photo("B"); val c = photo("C")
+        // The first decode to run parks forever, so the fan-out is genuinely in-flight when we cancel.
+        val started = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val decode: suspend (Photo) -> DecodedImage? = {
+            started.complete(Unit)
+            kotlinx.coroutines.awaitCancellation()
+        }
+        val model = FakeEmbeddingModel(id = "fake-v1") { unit(1f, 0f) }
+        val grouper = SimilarityPhotoGrouper(PhotoFeatureExtractor(model, cache, decode, decode), concurrency = 2)
+
+        val pass = async { grouper.group(listOf(a, b, c)) }
+        started.await()
+        pass.cancelAndJoin()
+
+        assertTrue(pass.isCancelled, "cancellation must propagate structurally through the fan-out")
+    }
+
+    @Test fun `sharpness is scored from the dedicated sharpness decode, not the embedding decode`() = runTest {
         val dir = Files.createTempDirectory("sharpness-decode-test").also { it.toFile().deleteOnExit() }
         val cache = EmbeddingCache(dir, modelId = "fake-v1")
         val p = photo("A")
@@ -88,7 +114,7 @@ class SimilarityPhotoGrouperTest {
         )
     }
 
-    @Test fun `a failed sharpness decode leaves the frame unassessable, scoring zero`() = runBlocking {
+    @Test fun `a failed sharpness decode leaves the frame unassessable, scoring zero`() = runTest {
         val dir = Files.createTempDirectory("sharpness-fallback-test").also { it.toFile().deleteOnExit() }
         val cache = EmbeddingCache(dir, modelId = "fake-v1")
         val p = photo("A")
@@ -104,7 +130,7 @@ class SimilarityPhotoGrouperTest {
         assertEquals(0f, features.sharpness, "an unscorable frame is unassessable (0), not scored on a smaller canvas")
     }
 
-    @Test fun `a transient embed failure is not cached and the frame groups on the next pass`() = runBlocking {
+    @Test fun `a transient embed failure is not cached and the frame groups on the next pass`() = runTest {
         val dir = Files.createTempDirectory("embed-failure-test").also { it.toFile().deleteOnExit() }
         val cache = EmbeddingCache(dir, modelId = "fake-v1")
         // A and B are adjacent and visually identical (same vector), so they should form one burst —

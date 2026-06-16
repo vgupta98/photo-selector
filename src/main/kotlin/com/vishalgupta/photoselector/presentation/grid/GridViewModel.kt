@@ -326,17 +326,21 @@ class GridViewModel(
                 }
             }
             // Coalesce per-photo callbacks to whole-percent ticks: ~100 state updates over a minute,
-            // not one per photo, while the count still reads as live.
-            var lastPercent = -1
+            // not one per photo, while the count still reads as live. The Similarity pass now extracts
+            // features in parallel, so this callback arrives concurrently from several threads and out
+            // of order — a straggler can report a lower count than one already shown. Do the coalesce +
+            // monotonic guard *inside* the atomic update, comparing against the percent currently on the
+            // bar, so it can only ever move forward and never races a plain `var`.
             val groups = grouper.group(photos) { processed, t ->
                 val percent = if (t <= 0) 100 else processed * 100 / t
-                if (percent != lastPercent) {
-                    lastPercent = percent
-                    // Refresh only once the grace-delayed bar is actually showing; before then the
-                    // pass is still inside the grace window and must stay invisible.
-                    _state.update {
-                        if (generation == groupingGeneration && it.grouping != null) it.copy(grouping = GroupingStatus(processed, t)) else it
-                    }
+                // Refresh only once the grace-delayed bar is actually showing; before then the pass is
+                // still inside the grace window and must stay invisible.
+                _state.update { st ->
+                    val current = st.grouping
+                    if (generation != groupingGeneration || current == null) return@update st
+                    val currentPercent = if (current.total <= 0) 100 else current.processed * 100 / current.total
+                    if (percent <= currentPercent) return@update st
+                    st.copy(grouping = GroupingStatus(processed, t))
                 }
             }
             // Stop the timer before clearing, so a bar can't arm after the pass has already finished.
