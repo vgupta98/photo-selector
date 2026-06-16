@@ -279,9 +279,12 @@ private fun RailRow(
             }
             // The grid owns the keyboard ring; a focusable rail row would steal it and kill arrows.
             .focusProperties { canFocus = false }
-            // The active row is inert: clicking the scope you're already in would push a redundant
-            // navigation and recompute the cold scroll index, so only inactive rows are clickable.
-            .clickable(enabled = !selected, onClick = onClick)
+            // The active row is inert: re-selecting the scope you're already in would push a
+            // redundant navigation and recompute the cold scroll index, so swallow the click when
+            // selected. The row stays an *enabled* tab (not gated via clickable's `enabled`, which
+            // would stamp a misleading `disabled` onto the selected tab) so assistive tech reads it
+            // as the selected tab, not a dead control.
+            .clickable(onClick = { if (!selected) onClick() })
             .padding(start = AppTheme.spacing.sm, end = AppTheme.spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.sm),
