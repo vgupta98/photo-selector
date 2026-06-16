@@ -525,20 +525,25 @@ class GridViewModel(
      * a collapsed burst files all its frames into Favourites in one additive write — toggling a
      * representative you can't fully see would be ambiguous, so a burst always *adds*.
      */
-    fun toggleMembershipAtFocus() {
-        when (val group = _state.value.displayGroups.getOrNull(_state.value.focusedIndex)) {
-            is PhotoGroup.Single -> toggleSingleMembership(group.photo, Category.FAVOURITES_ID, Category.FAVOURITES_NAME, isFavourite = true)
-            is PhotoGroup.Burst -> fileIdsInto(group.photos.mapTo(HashSet()) { it.id }, Category.FAVOURITES_ID, Category.FAVOURITES_NAME)
-            null -> Unit
-        }
-    }
+    fun toggleMembershipAtFocus() =
+        fileAtFocus(Category.FAVOURITES_ID, Category.FAVOURITES_NAME, isFavourite = true)
 
     /** Bare digit 1..9 at the focused tile: toggle the single, or file the whole burst, into the Nth custom category. */
     fun toggleCustomCategoryAtFocus(slot: Int) {
         val category = _state.value.categories.customCategories().getOrNull(slot) ?: return
+        fileAtFocus(category.id, category.name, isFavourite = false)
+    }
+
+    /**
+     * The single-vs-burst filing rule at the focused tile: a single toggles its membership; a
+     * collapsed burst additively files all its frames (toggling a representative you can't fully
+     * see would be ambiguous, so a burst always *adds*). Shared by [toggleMembershipAtFocus] and
+     * [toggleCustomCategoryAtFocus] so the rule lives in one place.
+     */
+    private fun fileAtFocus(id: CategoryId, name: String, isFavourite: Boolean) {
         when (val group = _state.value.displayGroups.getOrNull(_state.value.focusedIndex)) {
-            is PhotoGroup.Single -> toggleSingleMembership(group.photo, category.id, category.name, isFavourite = false)
-            is PhotoGroup.Burst -> fileIdsInto(group.photos.mapTo(HashSet()) { it.id }, category.id, category.name)
+            is PhotoGroup.Single -> toggleSingleMembership(group.photo, id, name, isFavourite = isFavourite)
+            is PhotoGroup.Burst -> fileIdsInto(group.photos.mapTo(HashSet()) { it.id }, id, name)
             null -> Unit
         }
     }

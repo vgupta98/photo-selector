@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.CategoryId
+import com.vishalgupta.photoselector.presentation.common.categorySlotPrefix
 import com.vishalgupta.photoselector.presentation.designsystem.atom.AppOutlinedButton
 
 /**
@@ -44,9 +45,8 @@ fun CategoryMenu(
         )
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             customEntries.forEachIndexed { slot, (category, count) ->
-                val prefix = if (slot < 9) "${slot + 1}  " else ""
                 DropdownMenuItem(
-                    text = { Text("$prefix${category.name}  ($count)") },
+                    text = { Text("${categorySlotPrefix(slot)}${category.name}  ($count)") },
                     onClick = {
                         expanded = false
                         onSelect(category.id)
