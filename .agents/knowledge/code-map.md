@@ -93,7 +93,7 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 - `molecule/` — incl. `GroupingModeToggle` (lens segments + hover tooltips),
   `GroupingProgressBanner` (cold-pass framing), `SimilarityCoachmark` (first-run
   callout), `BurstExpandedHeader`/`Footer`, the `*KeyboardLegend` set,
-  `CategoryMenu`/`CategoryActionsMenu`, `ExportMenu` (txt + copy-to-folder, the
+  `CategoryActionsMenu`, `ExportMenu` (txt + copy-to-folder, the
   exporter plugin-headroom slot), `ConflictPolicyButton`, `PillToast`,
   `SelectionFileMenu`, `ConfirmDialog`/`CategoryNameDialog`.
 - `organism/` — `LibraryRail` (left navigation column: scopes + category CRUD),

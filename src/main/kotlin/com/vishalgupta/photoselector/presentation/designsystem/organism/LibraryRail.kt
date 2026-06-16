@@ -31,10 +31,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.CategoryId
+import com.vishalgupta.photoselector.presentation.common.categorySlotDigit
 import com.vishalgupta.photoselector.presentation.designsystem.atom.FavouriteStar
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.CategoryActionsMenu
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.CategoryNameDialog
@@ -224,9 +229,11 @@ private fun RailSlotBadge(slot: Int) {
         Modifier.size(AppTheme.dimens.iconSm),
         contentAlignment = Alignment.Center,
     ) {
-        if (slot < 9) {
+        // Derived from the same helper the filing-key prefixes use, so the badge and the keys
+        // can't disagree on the 1..9 cap.
+        categorySlotDigit(slot)?.let { digit ->
             Text(
-                text = "${slot + 1}",
+                text = digit,
                 style = AppTheme.typography.labelMedium,
                 color = AppTheme.colorScheme.onSurfaceVariant,
             )
@@ -264,9 +271,17 @@ private fun RailRow(
             .heightIn(min = RAIL_ROW_MIN_HEIGHT)
             .clip(AppTheme.shapes.small)
             .background(fill)
+            // Announce the scope as a selectable tab so assistive tech reports the active row,
+            // even though the row stays out of the keyboard focus order (below).
+            .semantics {
+                this.selected = selected
+                role = Role.Tab
+            }
             // The grid owns the keyboard ring; a focusable rail row would steal it and kill arrows.
             .focusProperties { canFocus = false }
-            .clickable(onClick = onClick)
+            // The active row is inert: clicking the scope you're already in would push a redundant
+            // navigation and recompute the cold scroll index, so only inactive rows are clickable.
+            .clickable(enabled = !selected, onClick = onClick)
             .padding(start = AppTheme.spacing.sm, end = AppTheme.spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.sm),

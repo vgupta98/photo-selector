@@ -105,7 +105,8 @@ fun App(container: AppContainer) {
                         },
                         // Rail "All Photos": navigate to the All Photos scope. It is usually warm
                         // (retained), so it restores its own scroll; the browse position is the cold
-                        // fallback. A no-op-ish re-navigation when already in All Photos (same key).
+                        // fallback. The rail row is inert while All Photos is the active scope (RailRow
+                        // gates clicks on selection), so this only fires when switching in from elsewhere.
                         onSelectAllPhotos = {
                             container.goTo(
                                 Screen.Grid(

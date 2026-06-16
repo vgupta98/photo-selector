@@ -13,6 +13,7 @@ import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.domain.model.Photo
+import com.vishalgupta.photoselector.domain.model.PhotoGroup
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.presentation.common.GroupingMode
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
@@ -80,7 +81,7 @@ class LibraryRailScreenshotTest {
         renderShell(
             GridUiState(
                 photos = photos,
-                groups = photos.map(com.vishalgupta.photoselector.domain.model.PhotoGroup::Single),
+                groups = photos.map(PhotoGroup::Single),
                 groupingMode = GroupingMode.Off,
                 scope = CategoryScope.AllPhotos,
                 categories = categories,
@@ -95,7 +96,7 @@ class LibraryRailScreenshotTest {
             GridUiState(
                 // A category scope shows just its members; the rail still lists the whole library.
                 photos = listOf(photos[0], photos[1], photos[3]),
-                groups = listOf(photos[0], photos[1], photos[3]).map(com.vishalgupta.photoselector.domain.model.PhotoGroup::Single),
+                groups = listOf(photos[0], photos[1], photos[3]).map(PhotoGroup::Single),
                 groupingMode = GroupingMode.Off,
                 scope = CategoryScope.Category(keepers.id),
                 categories = categories,
@@ -127,7 +128,7 @@ class LibraryRailScreenshotTest {
         renderShell(
             GridUiState(
                 photos = photos,
-                groups = photos.map(com.vishalgupta.photoselector.domain.model.PhotoGroup::Single),
+                groups = photos.map(PhotoGroup::Single),
                 groupingMode = GroupingMode.Off,
                 scope = CategoryScope.AllPhotos,
                 categories = categories,

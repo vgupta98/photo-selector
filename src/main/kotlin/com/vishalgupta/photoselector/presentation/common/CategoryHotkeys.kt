@@ -19,12 +19,19 @@ import com.vishalgupta.photoselector.domain.model.Category
 fun List<Category>.customCategories(): List<Category> = filter { !it.builtIn }
 
 /**
+ * The bare slot digit for the [slot]th custom category (`"1"` .. `"9"`), or `null` past slot 8.
+ * The single home for the `1..9` cap: the menu prefix below and the rail's slot badge both derive
+ * their digit from here, so the boundary is defined once.
+ */
+fun categorySlotDigit(slot: Int): String? = if (slot < 9) "${slot + 1}" else null
+
+/**
  * The leading digit hint for the [slot]th custom category in a menu (`"1  "` .. `"9  "`), or
  * `""` past slot 8. The visual counterpart of [digitSlot]: it keeps a menu entry's number
  * matching the key that files into it, so the All-Photos and selection menus never disagree on
  * the numbering.
  */
-fun categorySlotPrefix(slot: Int): String = if (slot < 9) "${slot + 1}  " else ""
+fun categorySlotPrefix(slot: Int): String = categorySlotDigit(slot)?.let { "$it  " } ?: ""
 
 /** Maps a number-row key to a zero-based digit slot (`1`→0 .. `9`→8), or null for non-digits. */
 fun digitSlot(key: Key): Int? = when (key) {
