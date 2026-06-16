@@ -25,6 +25,7 @@ import com.vishalgupta.photoselector.testing.FakeCategoriesRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -50,6 +51,7 @@ import java.nio.file.Path
  * loaded CI runner). The two tests that gate the metadata read on a blocking [java.util.concurrent.CountDownLatch]
  * deliberately need a real background thread, so they keep the real Swing/IO dispatchers and `runBlocking`.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class GridSelectionTest {
 
     private val photos = (0 until 6).map { i ->
