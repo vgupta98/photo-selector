@@ -115,7 +115,10 @@ JDK 17 (Zulu or JBR — either works). Gradle wrapper checked in.
 | Build a macOS DMG | `./gradlew packageDmg` (output under `build/compose/binaries/`) |
 
 `run` is the fastest signal for UI work. `compileKotlin` is enough when you
-just want to verify a refactor builds.
+just want to verify a refactor builds — but it does NOT compile the `src/jmh/`
+benchmark source set. After changing a public API/interface a benchmark touches
+(e.g. `EmbeddingModel`), also run `./gradlew compileJmhKotlin`; otherwise the
+break stays invisible until the `release-perf` CI job.
 
 ### Test harnesses
 

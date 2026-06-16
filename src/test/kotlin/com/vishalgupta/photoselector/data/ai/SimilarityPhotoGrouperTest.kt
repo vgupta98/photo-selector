@@ -14,6 +14,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -101,6 +102,36 @@ class SimilarityPhotoGrouperTest {
 
         val features = assertNotNull(extractor.featuresFor(p))
         assertEquals(0f, features.sharpness, "an unscorable frame is unassessable (0), not scored on a smaller canvas")
+    }
+
+    @Test fun `a transient embed failure is not cached and the frame groups on the next pass`() = runBlocking {
+        val dir = Files.createTempDirectory("embed-failure-test").also { it.toFile().deleteOnExit() }
+        val cache = EmbeddingCache(dir, modelId = "fake-v1")
+        // A and B are adjacent and visually identical (same vector), so they should form one burst —
+        // but B's embed fails on the first pass. Distinct decode colours only so the model can tell
+        // which frame is B; both still map to the same embedding.
+        val a = photo("A"); val b = photo("B")
+        val colour = mapOf(a.id to 10, b.id to 11)
+        val decode: suspend (Photo) -> DecodedImage? = { ImageFixtures.solid(8, 8, r = colour.getValue(it.id)) }
+        var failB = true
+        val model = FakeEmbeddingModel(id = "fake-v1") { image ->
+            val isB = (image.bgraBytes[2].toInt() and 0xFF) == 11
+            if (isB && failB) null else unit(1f, 0f)
+        }
+        val grouper = SimilarityPhotoGrouper(PhotoFeatureExtractor(model, cache, decode, decode))
+
+        // First pass: B failed to embed, so both frames stand alone...
+        val first = grouper.group(listOf(a, b))
+        assertIs<PhotoGroup.Single>(first[0])
+        assertIs<PhotoGroup.Single>(first[1])
+        // ...and crucially the failure was NOT persisted: A is cached, B is not.
+        assertNotNull(cache.get(a), "a successful embed is cached")
+        assertNull(cache.get(b), "a failed embed must not poison the cache")
+
+        // Inference recovers; the second pass re-embeds B (no poisoned hit) and groups it with A.
+        failB = false
+        val second = grouper.group(listOf(a, b))
+        assertEquals(listOf(a, b), assertIs<PhotoGroup.Burst>(second[0]).photos)
     }
 
     private fun unit(vararg xs: Float): FloatArray {
