@@ -520,11 +520,7 @@ class GridViewModel(
         }
     }
 
-    /**
-     * F / Space at the focused tile. A single photo toggles its Favourites membership (as before);
-     * a collapsed burst files all its frames into Favourites in one additive write — toggling a
-     * representative you can't fully see would be ambiguous, so a burst always *adds*.
-     */
+    /** F / Space at the focused tile: file it into Favourites — see [fileAtFocus] for the single-vs-burst rule. */
     fun toggleMembershipAtFocus() =
         fileAtFocus(Category.FAVOURITES_ID, Category.FAVOURITES_NAME, isFavourite = true)
 
