@@ -93,11 +93,13 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 - `molecule/` — incl. `GroupingModeToggle` (lens segments + hover tooltips),
   `GroupingProgressBanner` (cold-pass framing), `SimilarityCoachmark` (first-run
   callout), `BurstExpandedHeader`/`Footer`, the `*KeyboardLegend` set,
-  `CategoryMenu`/`CategoryActionsMenu`, `PillToast`, `SelectionFileMenu`,
-  `ConfirmDialog`/`CategoryNameDialog`.
-- `organism/` — `GridTopBar`/`GridSelectionTopBar`, `BrowserTopBar`/
-  `BrowserCategoryHud`, `PhotoThumbnail`, `SurveyTileView`,
-  `TopBarScaffold`.
+  `CategoryMenu`/`CategoryActionsMenu`, `ExportMenu` (txt + copy-to-folder, the
+  exporter plugin-headroom slot), `ConflictPolicyButton`, `PillToast`,
+  `SelectionFileMenu`, `ConfirmDialog`/`CategoryNameDialog`.
+- `organism/` — `LibraryRail` (left navigation column: scopes + category CRUD),
+  `GridTopBar` (slim: rail toggle + identity + view/export) /
+  `GridSelectionTopBar`, `BrowserTopBar`/`BrowserCategoryHud`, `PhotoThumbnail`,
+  `SurveyTileView`, `TopBarScaffold`.
 
 ## By task — open these first
 
@@ -107,7 +109,8 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 | Burst expand-in-place behaviour | `grid/GridViewModel.kt` (`expandedBurstId` state), `grid/GridDisplayModel.kt` (`displayGroupsFor`/`buildRenderItems`), molecule `BurstExpanded*` |
 | Grouping lens (Off / Time / Similarity) | `domain/grouping/`, `data/ai/SimilarityPhotoGrouper.kt`, `grid/GridViewModel.kt` |
 | Scroll position / index translation | `grid/GridScreen.kt` (`tileIndexForFlat`), `grid/GridViewportAnchor.kt`, `grid/GridDisplayModel.kt`, `data/browse/` |
-| Categories / Favourites | `data/categories/`, `domain/repository/CategoriesRepository.kt`, `common/CategoryHotkeys.kt` |
+| Categories / Favourites | `data/categories/`, `domain/repository/CategoriesRepository.kt`, `common/CategoryHotkeys.kt`, `designsystem/organism/LibraryRail.kt` |
+| Grid chrome (rail / top bar / collapse) | `designsystem/organism/LibraryRail.kt`, `designsystem/organism/GridTopBar.kt`, `grid/GridScreen.kt`, `App.kt` (`railCollapsed`) |
 | Decoding a new format | `domain/format/PhotoDecoder.kt`, `data/format/DefaultPhotoFormatRegistry.kt`, register in `di/AppContainer.kt` |
 | HEIC / RAW specifics | `data/format/HeicDecoder.kt`, `data/format/RawDecoder.kt`, `data/format/macos/MacImageIO.kt` |
 | Similarity embeddings / model swap | `data/ai/OnnxEmbeddingModel.kt`, `data/ai/EmbeddingCache.kt`, `tools/embedding-model/` |

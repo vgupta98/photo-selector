@@ -50,7 +50,7 @@ Built with Kotlin + Compose Multiplatform Desktop, following Clean Architecture.
   Fujifilm, Adobe DNG, Panasonic and Olympus, shown via the camera's embedded
   preview).
 - **Keyboard-first navigation** — `←` / `→` to move, `F` (or `Space`) to toggle Favourites, `1`…`9` to toggle the other categories, `G` to switch the grouping lens.
-- **Categories** — sort photos into as many flat lists as you like (Selects, Maybes, For Album X…). **Favourites** is the built-in one; create, rename and delete the rest from the top bar. A photo can be in several at once.
+- **Categories** — sort photos into as many flat lists as you like (Selects, Maybes, For Album X…). **Favourites** is the built-in one; create, rename and delete the rest from the library rail (the left navigation column). A photo can be in several at once.
 - **Multi-select & bulk filing** — in the grid, `Cmd`-click to pick out photos, `Shift`-click to extend a run, or `Cmd+A` to select everything in view; then file the whole selection into Favourites (`F`) or a category (`1`…`9`), copy just the selection to a folder, or press `C` to open the selection together in **Inspect**. `Esc` clears it.
 - **Delete to Trash** — pick photos in the grid and **Delete** (or `Cmd`+`Delete`) moves them to the macOS Trash after a confirmation; in the full-screen browser `Cmd`+`Delete` removes the current photo and advances to the next. Recoverable from Finder, and the deleted photos are dropped from every category.
 - **Persistent** — categories are stored as a single `.photo-selector-categories.json` file inside your photo folder. Switch folders and each retains its own lists.
@@ -127,10 +127,10 @@ In the **grid**, `Cmd`-click or `Shift`-click tiles (or `Cmd+A`) to multi-select
 
 ### Categories and exporting
 
-From the All Photos top bar click **Categories** to open the dropdown: pick a category to open its grid, or **New category…** to create one. To file a photo into a custom category, focus it in the All Photos grid (or open it full-screen) and press the category's digit — `1` for the first custom category, `2` for the second, and so on; `F` always toggles Favourites. In the full-screen browser a heads-up legend along the bottom shows each category with its key and whether the current photo belongs to it; it auto-hides and reappears on any keypress or mouse move, and you can click a chip instead of using the keys. Inside a category grid, the **⋯** menu renames or deletes it (the built-in Favourites can't be renamed or deleted). From any category grid:
+The **library rail** down the left lists every scope — All Photos, Favourites, and each custom category with its count; click one to open its grid, or **New category** to create one. (Collapse the rail with the toggle at the top-left of the bar to give the grid the full window.) To file a photo into a custom category, focus it in the All Photos grid (or open it full-screen) and press the category's digit — `1` for the first custom category, `2` for the second, and so on; `F` always toggles Favourites. In the full-screen browser a heads-up legend along the bottom shows each category with its key and whether the current photo belongs to it; it auto-hides and reappears on any keypress or mouse move, and you can click a chip instead of using the keys. Each custom category's **⋯** in the rail renames or deletes it (the built-in Favourites can't be renamed or deleted). When viewing a category, the top bar's **Export** menu offers:
 
 - **Export list (.txt)** — pick a destination `.txt` file; one relative path per line.
-- **Copy photos to folder…** — pick a destination folder; subfolder structure is preserved. Use the policy menu to choose how filename conflicts are handled (default: rename to `foo (2).jpg`).
+- **Copy to folder** — pick a destination folder; subfolder structure is preserved. Choose how filename conflicts are handled (default: rename to `foo (2).jpg`).
 
 ## Build from source
 

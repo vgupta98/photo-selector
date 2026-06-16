@@ -58,7 +58,7 @@ Clean architecture, single Gradle module, package
 - Navigation is a sealed `Screen` interface (`RootPicker | Grid | Browser |
   Inspect`). `Screen.Grid` carries a `CategoryScope` (`AllPhotos |
   Category(id)`); each category opens as its *own* `Screen.Grid` (own scroll
-  state) from the All Photos dropdown, never toggled in place. `Screen.Inspect`
+  state) from the library rail, never toggled in place. `Screen.Inspect`
   holds a *fixed set* of selected photos (`indices`) and shows them two ways
   behind one toggle: an overview *grid* (the `survey/` facet) and a full-screen
   *browse* mode (`browser/` reused over just that set, one shared cursor). It
@@ -69,6 +69,12 @@ Clean architecture, single Gradle module, package
   `InspectViewModel` lazily builds the two facet view models — a grid-first set
   never decodes the browser until the first toggle, a browse-only set never
   builds the grid.
+- **The grid screen is framed by `LibraryRail` (left nav: scopes + category
+  CRUD) and a slim `GridTopBar` (identity + lens toggle + `ExportMenu`).** Two
+  non-obvious constraints: the rail's collapse flag is hoisted to `App` (like
+  `gridScrollStates`) — inside `GridScreen` it resets on every scope switch and
+  Grid → Browser → Grid round trip; and rail rows must stay
+  **non-keyboard-focusable** or they steal the grid's keyboard ring.
 - **The grid is grouping/presentation only — mind the three index spaces.** The
   toolbar's segmented control picks a lens (`GridUiState.groupingMode`: `Off |
   Time | Similarity`, Time default); a non-`Off` mode resolves to one
