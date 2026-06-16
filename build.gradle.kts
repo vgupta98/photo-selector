@@ -59,6 +59,24 @@ val slimOnnxRuntime = tasks.register<Jar>("slimOnnxRuntime") {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
+// The DMG bundles only the macOS dylibs (see `slimOnnxRuntime`), but the test job runs on Linux CI
+// (.github/workflows/ci.yml), where OnnxEmbeddingModelTest loads the *real* native through ONNX
+// Runtime. Repackage just the Linux natives - and only the natives, no `ai.onnxruntime.*` classes,
+// so this doesn't collide with the slim jar already on the classpath - and put it on the test
+// runtime classpath only. ONNX Runtime resolves its native from the classpath resource, so this
+// keeps the integration test running on Linux without re-bloating the shipped app bundle.
+val onnxRuntimeLinuxNatives = tasks.register<Jar>("onnxRuntimeLinuxNatives") {
+    description = "Repackages only the Linux ONNX Runtime natives, for the Linux CI test classpath."
+    archiveBaseName.set("onnxruntime-linux-natives")
+    destinationDirectory.set(layout.buildDirectory.dir("slim-libs"))
+    from({ onnxRuntimeFull.map(::zipTree) })
+    include(
+        "ai/onnxruntime/native/linux-x64/**",
+        "ai/onnxruntime/native/linux-aarch64/**",
+    )
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
 dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
@@ -84,6 +102,10 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.junit)
     testImplementation(compose.desktop.uiTestJUnit4)
+
+    // OnnxEmbeddingModelTest runs the real native; on the Linux CI runner the slim jar has no Linux
+    // dylib, so supply the Linux natives here (test runtime only - never bundled into the DMG).
+    testRuntimeOnly(files(onnxRuntimeLinuxNatives))
 
     // JMH (perf benchmarks under `src/jmh/kotlin/`)
     jmh(libs.jmh.core)
