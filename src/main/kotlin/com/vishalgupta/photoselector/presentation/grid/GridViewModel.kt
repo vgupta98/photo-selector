@@ -24,6 +24,7 @@ import com.vishalgupta.photoselector.presentation.common.customCategories
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.navigation.activeCategoryId
 import com.vishalgupta.photoselector.presentation.navigation.slice
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -39,6 +40,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.swing.Swing
 import java.nio.file.Path
 
 data class GridUiState(
@@ -140,13 +142,21 @@ class GridViewModel(
     hasSeenSimilarityCoachmark: Boolean = true,
     private val onSimilarityCoachmarkSeen: () -> Unit = {},
     parentJob: Job? = null,
+    // The scope (UI) dispatcher - the Swing EDT in the running app; tests inject a TestDispatcher to
+    // drive the scope's coroutines deterministically. See StateHolder.
+    dispatcher: CoroutineDispatcher = Dispatchers.Swing,
+    // Where the off-thread regroup runs (EXIF reads for Time, decode + embedding for Similarity) -
+    // IO in the app, kept off the scope's EDT. Tests pass the same TestDispatcher as [dispatcher] so
+    // the pass runs in virtual time instead of on a real background thread (which is what made the
+    // grid's grouping tests flaky under CI load).
+    private val groupingDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val onScrollIndexChanged: ((Int) -> Unit)? = null,
     // Reports a lens change up to the container so the next rebuilt grid opens in the same lens.
     private val onGroupingModeChanged: ((GroupingMode) -> Unit)? = null,
     // Lets the container drop the trashed photos from its scan snapshot, so any screen opened
     // after the delete is built without them too.
     private val onPhotosDeleted: ((Set<PhotoId>) -> Unit)? = null,
-) : StateHolder(parentJob) {
+) : StateHolder(parentJob, dispatcher) {
 
     private val _state = MutableStateFlow(
         GridUiState(scope = categoryScope, lastViewedPhotoId = lastViewedPhotoId, groupingMode = initialGroupingMode),
@@ -305,7 +315,7 @@ class GridViewModel(
         // seeded bar would flash on and off as noise. The bar is armed after a grace delay instead.
         _state.update { it.copy(grouping = null) }
         val total = photos.size
-        groupingJob = scope.launch(Dispatchers.IO) {
+        groupingJob = scope.launch(groupingDispatcher) {
             // Only surface the bar once a pass has run longer than the grace window - long enough that
             // a cold Similarity pass (or a first Time pass over a big folder) shows it, while a warm
             // regroup completes and cancels this before it ever arms.
