@@ -139,6 +139,25 @@ class LibraryRailScreenshotTest {
         rule.dumpScreenshot("library-rail-collapsed")
     }
 
+    @Test fun `a long category list scrolls while the new-category action stays pinned`() {
+        // Regression: only the custom-category list scrolls. With more categories than fit, the
+        // "Categories" label above and the "New category" action below must stay pinned — eyeball
+        // build/screenshots/library-rail-scrolling-list.png: "New category" sits at the bottom and
+        // the list is clipped between it and the label, not run off the rail.
+        val many = (1..20).map { Category(CategoryId("c$it"), "Category $it", builtIn = false) }
+        renderShell(
+            GridUiState(
+                photos = photos,
+                groups = photos.map(PhotoGroup::Single),
+                groupingMode = GroupingMode.Off,
+                scope = CategoryScope.AllPhotos,
+                categories = listOf(Category.favourites()) + many,
+                memberships = emptyMap(),
+            ),
+        )
+        rule.dumpScreenshot("library-rail-scrolling-list")
+    }
+
     private fun renderShell(state: GridUiState, railCollapsed: Boolean = false) {
         rule.setContent {
             AppTheme {

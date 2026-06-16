@@ -92,7 +92,6 @@ fun LibraryRail(
             .width(AppTheme.dimens.libraryRailWidth)
             .fillMaxHeight()
             .background(AppTheme.colorScheme.surface)
-            .verticalScroll(rememberScrollState())
             .padding(vertical = AppTheme.spacing.sm),
     ) {
         RailHeader(rootName = rootName, onChangeFolder = onChangeFolder)
@@ -130,23 +129,34 @@ fun LibraryRail(
 
         RailSectionLabel("Categories")
 
-        customEntries.forEachIndexed { slot, (category, count) ->
-            RailRow(
-                label = category.name,
-                selected = scope.isCategory(category.id),
-                count = count,
-                onClick = { onSelectCategory(category.id) },
-                leading = { RailSlotBadge(slot) },
-                // Rename / delete ride a hover-revealed "⋯" so the resting rail stays clean; the
-                // count yields to the menu while it's shown. Built-in Favourites never gets one.
-                actions = {
-                    CategoryActionsMenu(
-                        categoryName = category.name,
-                        onRenameRequested = { renaming = category },
-                        onDeleteConfirmed = { onDeleteCategory(category.id) },
-                    )
-                },
-            )
+        // Only the custom-category list scrolls; the header, the All Photos / Favourites scopes, the
+        // "Categories" label, and the "New category" action stay pinned. weight(1f, fill = false)
+        // caps the list at the leftover height (so it scrolls once the categories overflow) but lets
+        // it shrink to its content, keeping "New category" directly under a short list rather than
+        // floating at the bottom.
+        Column(
+            Modifier
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            customEntries.forEachIndexed { slot, (category, count) ->
+                RailRow(
+                    label = category.name,
+                    selected = scope.isCategory(category.id),
+                    count = count,
+                    onClick = { onSelectCategory(category.id) },
+                    leading = { RailSlotBadge(slot) },
+                    // Rename / delete ride a "⋯" actions menu; the count yields to it while shown.
+                    // Built-in Favourites never gets one.
+                    actions = {
+                        CategoryActionsMenu(
+                            categoryName = category.name,
+                            onRenameRequested = { renaming = category },
+                            onDeleteConfirmed = { onDeleteCategory(category.id) },
+                        )
+                    },
+                )
+            }
         }
 
         RailRow(
