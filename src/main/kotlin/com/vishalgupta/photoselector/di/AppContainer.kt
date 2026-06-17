@@ -104,7 +104,7 @@ class AppContainer {
     )
 
     private val cacheDir: Path =
-        Path.of(System.getProperty("user.home"), "Library", "Caches", "PhotoSelector")
+        Path.of(System.getProperty("user.home"), "Library", "Caches", "Rhenium")
 
     private val diskThumbnailCache = DiskThumbnailCache(cacheDir = cacheDir)
         .also { it.startEviction(appScope) }
