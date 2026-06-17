@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -37,6 +39,7 @@ import com.vishalgupta.photoselector.presentation.browser.CategoryToastState
 import com.vishalgupta.photoselector.presentation.common.CategoryToggle
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BrowserKeyboardLegend
 import com.vishalgupta.photoselector.presentation.designsystem.organism.BrowserCategoryHud
+import com.vishalgupta.photoselector.presentation.designsystem.organism.LibraryRail
 import com.vishalgupta.photoselector.presentation.grid.GridScreen
 import com.vishalgupta.photoselector.presentation.grid.GridUiState
 import com.vishalgupta.photoselector.presentation.survey.SurveyScreen
@@ -104,16 +107,13 @@ class ScreenSplitScreenshotTest {
         state: GridUiState,
         onBack: (() -> Unit)?,
         categoryToast: CategoryToggle? = null,
+        modifier: Modifier = Modifier,
     ) {
         GridScreen(
             state = state,
             initialScrollIndex = 0,
             onTileClick = {},
             onChangeFolder = {},
-            onSelectCategory = { _, _ -> },
-            onCreateCategory = {},
-            onRenameCategory = { _, _ -> },
-            onDeleteCategory = {},
             onBack = onBack,
             onSetFocusedIndex = {},
             onToggleMembershipAtFocus = {},
@@ -123,7 +123,29 @@ class ScreenSplitScreenshotTest {
             onDismissToast = {},
             imageLoader = noOpImageLoader,
             categoryToast = categoryToast,
+            modifier = modifier,
         )
+    }
+
+    // The rail beside the grid, assembled as the navigation host (App) does it — for the tests that
+    // exercise rail affordances (its rows, the "⋯" actions menu, "Change folder"). Other grid tests
+    // host the bare [Grid] since the rail is no longer part of GridScreen.
+    @androidx.compose.runtime.Composable
+    private fun RailAndGrid(state: GridUiState, onBack: (() -> Unit)?) {
+        Row(Modifier.fillMaxSize()) {
+            LibraryRail(
+                rootName = "Photos",
+                scope = state.scope,
+                entries = state.categories.map { it to (state.memberships[it.id]?.size ?: 0) },
+                onSelectAllPhotos = {},
+                onSelectCategory = {},
+                onCreateCategory = {},
+                onRenameCategory = { _, _ -> },
+                onDeleteCategory = {},
+                onChangeFolder = {},
+            )
+            Grid(state = state, onBack = onBack, modifier = Modifier.weight(1f).fillMaxHeight())
+        }
     }
 
     // --- RootFolderPickerScreen ---
@@ -370,38 +392,6 @@ class ScreenSplitScreenshotTest {
     }
 
     @Test
-    fun grid_categoryMenuOpen() {
-        rule.setContent {
-            AppTheme {
-                Surface(Modifier.size(800.dp, 600.dp)) {
-                    Grid(
-                        state = GridUiState(
-                            photos = testPhotos,
-                            scope = CategoryScope.AllPhotos,
-                            categories = categories,
-                            memberships = mapOf(
-                                Category.FAVOURITES_ID to setOf(PhotoId("a")),
-                                selectsId to setOf(PhotoId("b")),
-                            ),
-                        ),
-                        onBack = null,
-                    )
-                }
-            }
-        }
-        rule.waitForIdle()
-        // Favourites is its own top-bar button now; the dropdown counts custom categories only.
-        rule.onNodeWithText("Favourites (1)").assertIsDisplayed()
-        rule.onNodeWithText("Categories (1)").performClick()
-        rule.waitForIdle()
-        // Custom categories get bare digits 1..9; Favourites no longer appears in the menu.
-        rule.onNodeWithText("1  Selects  (1)").assertIsDisplayed()
-        rule.onNodeWithText("New category…").assertIsDisplayed()
-        // The menu renders in its own popup root; capture that, not the base screen.
-        rule.dumpScreenshot("grid-category-menu-open", rule.onAllNodes(isRoot()).onLast())
-    }
-
-    @Test
     fun grid_changeFolderConfirm() {
         // Clicking "Change folder" must not tear the session down on a stray click — it opens
         // a confirm dialog first. Capture the dialog so the guard's copy stays honest (it
@@ -413,7 +403,7 @@ class ScreenSplitScreenshotTest {
         rule.setContent {
             AppTheme {
                 Surface(Modifier.size(1280.dp, 600.dp)) {
-                    Grid(
+                    RailAndGrid(
                         state = GridUiState(
                             photos = testPhotos,
                             scope = CategoryScope.AllPhotos,
@@ -455,30 +445,33 @@ class ScreenSplitScreenshotTest {
         rule.dumpScreenshot("grid-favourites-category")
     }
 
+    @OptIn(ExperimentalTestApi::class)
     @Test
     fun grid_customCategoryActionsMenuOpen() {
         rule.setContent {
             AppTheme {
                 Surface(Modifier.size(800.dp, 600.dp)) {
-                    Grid(
+                    RailAndGrid(
                         state = GridUiState(
                             photos = testPhotos.take(1),
-                            scope = CategoryScope.Category(selectsId),
+                            scope = CategoryScope.AllPhotos,
                             categories = categories,
                             memberships = mapOf(selectsId to setOf(PhotoId("a"))),
                         ),
-                        onBack = {},
+                        onBack = null,
                     )
                 }
             }
         }
         rule.waitForIdle()
         // The footer legend's F hint is always "Favourite": F files into Favourites in every
-        // scope (GridViewModel.toggleMembershipAtFocus), so it must never claim to toggle the
-        // viewed custom category.
+        // scope (GridViewModel.toggleMembershipAtFocus), so it must never claim to toggle a
+        // custom category.
         rule.onNodeWithText("Favourite").assertIsDisplayed()
         rule.onNodeWithText("Toggle Selects").assertDoesNotExist()
-        rule.onNodeWithContentDescription("Category actions").performClick()
+        // Rename / delete moved to the rail's per-category "⋯". The clickable row merges the button's
+        // semantics, so reach it through the unmerged tree, then open it.
+        rule.onNodeWithContentDescription("Category actions", useUnmergedTree = true).performClick()
         rule.waitForIdle()
         rule.onNodeWithText("Rename…").assertIsDisplayed()
         rule.onNodeWithText("Delete…").assertIsDisplayed()

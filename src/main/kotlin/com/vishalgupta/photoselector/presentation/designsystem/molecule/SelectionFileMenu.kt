@@ -18,8 +18,8 @@ import com.vishalgupta.photoselector.presentation.designsystem.atom.AppOutlinedB
  * The selection bar's filing menu: "Add to category" over the *custom* categories, in slot
  * order, reporting the chosen slot via [onSelectSlot] (slot `i` == the i-th custom category ==
  * the `i+1` digit key). Favourites rides its own first-class star button in the bar, mirroring
- * how [CategoryMenu] splits them in the All-Photos top bar. The caller only shows this when at
- * least one custom category exists. Owns its own menu visibility — local UI state.
+ * how the library rail lists Favourites apart from the custom categories. The caller only shows
+ * this when at least one custom category exists. Owns its own menu visibility — local UI state.
  */
 @Composable
 fun SelectionFileMenu(
