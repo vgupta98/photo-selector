@@ -138,6 +138,21 @@ compose.desktop {
             "-Dfile.encoding=UTF-8",
         )
 
+        // Minified release build (`./gradlew packageReleaseDmg`) tree-shakes dead
+        // code across every bundled jar - the unused 99.9% of material-icons-extended,
+        // plus the slack in Compose/kotlinx - off the DMG. Reflection/JNI/codegen
+        // entry points that the shrinker can't see are kept in proguard-rules.pro.
+        // obfuscate stays off so crash stack traces remain readable. See
+        // CLAUDE.md "Release process" and proguard-rules.pro for the keeps.
+        buildTypes.release.proguard {
+            configurationFiles.from(project.file("proguard-rules.pro"))
+            obfuscate.set(false)
+            // Shrink-only. Optimization bought ~1 MB (1.4%) over tree-shaking alone
+            // but adds the riskiest, least-validatable ProGuard passes - not worth it
+            // when the win is dead-code elimination and the failure modes are runtime-only.
+            optimize.set(false)
+        }
+
         nativeDistributions {
             targetFormats(TargetFormat.Dmg)
             packageName = "Rhenium"

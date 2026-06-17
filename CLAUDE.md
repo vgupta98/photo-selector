@@ -128,7 +128,8 @@ JDK 17 (Zulu or JBR — either works). Gradle wrapper checked in.
 | Launch the app | `./gradlew run` |
 | Type-check only | `./gradlew compileKotlin` |
 | Run unit tests | `./gradlew test` |
-| Build a macOS DMG | `./gradlew packageDmg` (output under `build/compose/binaries/`) |
+| Build a macOS DMG (dev) | `./gradlew packageDmg` (output under `build/compose/binaries/`) |
+| Build the minified release DMG | `./gradlew packageReleaseDmg` (ProGuard-shrunk; what releases ship) |
 
 `run` is the fastest signal for UI work. `compileKotlin` is enough when you
 just want to verify a refactor builds — but it does NOT compile the `src/jmh/`
@@ -150,9 +151,10 @@ Three workflows in `.github/workflows/` drive it: **`draft-release.yml`**
 (manual; derives the SemVer bump from `main..develop` Conventional Commits and
 opens the `release/vX.Y.Z` PR), **`release-perf.yml`** (posts a JMH cross-branch
 diff on the release PR), and **`release.yml`** (tags + builds the DMG + publishes
-the GitHub Release on merge). The `version` in `build.gradle.kts` is the single
-source of truth, and after every release you must back-merge `main` into
-`develop` or the next draft refuses the version.
+the GitHub Release on merge; the shipped DMG is the **minified**
+`packageReleaseDmg` — see the ProGuard gotcha below). The `version` in
+`build.gradle.kts` is the single source of truth, and after every release you
+must back-merge `main` into `develop` or the next draft refuses the version.
 
 Full mechanics — bump rules, the required repo setting, the local dry-run, and
 recovering a half-finished run — are in `.agents/knowledge/release.md`.
@@ -237,6 +239,14 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   classes were tried and abandoned — don't reintroduce them.
 - **`packageDmg` only runs on macOS.** CI uses `macos-latest`; locally you
   need to be on a Mac.
+- **The release DMG is ProGuard-minified — keep-rules are load-bearing.**
+  `packageReleaseDmg` tree-shakes the whole classpath, so anything reached only
+  via reflection/JNI/codegen (ONNX's native bindings, the JNA HEIC/RAW bridge,
+  kotlinx.serialization's `$$serializer`s) survives only because
+  `proguard-rules.pro` keeps it. A missing keep builds clean and breaks at
+  *runtime* — and ONNX fails silently (falls back to the classical embedder). So
+  validate keep changes against the packaged release app (Similarity lens +
+  HEIC/RAW decode + favourite-relaunch), not `./gradlew run`, which skips ProGuard.
 - **skiko cannot decode HEIC/HEIF.** Verified by probe on the bundled
   skiko (`Image.makeFromEncoded` throws). There is no maintained
   cross-platform JVM HEIC library on Maven (`org.bytedeco:libheif` does
