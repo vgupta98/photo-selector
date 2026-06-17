@@ -147,7 +147,10 @@ compose.desktop {
         buildTypes.release.proguard {
             configurationFiles.from(project.file("proguard-rules.pro"))
             obfuscate.set(false)
-            optimize.set(true)
+            // Shrink-only. Optimization bought ~1 MB (1.4%) over tree-shaking alone
+            // but adds the riskiest, least-validatable ProGuard passes - not worth it
+            // when the win is dead-code elimination and the failure modes are runtime-only.
+            optimize.set(false)
         }
 
         nativeDistributions {

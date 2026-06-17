@@ -55,6 +55,9 @@
 -keepclasseswithmembers class com.vishalgupta.photoselector.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
+# Adequate only while every DTO stays primitives/List; an enum or polymorphic
+# @Serializable needs its entries/subtypes kept too, else it reads back silently
+# empty on relaunch (e.g. lost favourites).
 
 # --- Skiko (Compose Desktop's rendering native loader) -----------------------
 -keep class org.jetbrains.skia.** { *; }
@@ -63,7 +66,10 @@
 -dontwarn org.jetbrains.skiko.**
 
 # --- Coroutines --------------------------------------------------------------
--keepnames class kotlinx.coroutines.** { *; }
+# No keep needed: the app reaches Dispatchers.Swing directly (a static reference
+# the shrinker sees), never Dispatchers.Main / its ServiceLoader factory, and
+# Compose's default rules cover its own coroutine use. Just suppress the warnings
+# for coroutines' optional/absent references.
 -dontwarn kotlinx.coroutines.**
 
 # --- App entry point ---------------------------------------------------------
