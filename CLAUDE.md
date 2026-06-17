@@ -75,20 +75,16 @@ Clean architecture, single Gradle module, package
   `InspectViewModel` lazily builds the two facet view models — a grid-first set
   never decodes the browser until the first toggle, a browse-only set never
   builds the grid.
-- **The grid screen is framed by `LibraryRail` (left nav: scopes + category
-  CRUD) and a slim `GridTopBar` (identity + lens toggle + `ExportMenu`).** The
-  rail is **root-level chrome, mounted by `App` *beside* the grid — outside the
-  per-scope `key(GridRetentionKey)` — not by `GridScreen`.** It's backed by its
-  own root-scoped `LibraryRailViewModel` (retained per root in `AppContainer`),
-  so a category switch re-keys only the grid below and leaves the rail mounted
-  (mounting it inside the key tore it down and rebuilt it on every switch — a
-  visible flicker). `GridScreen` keeps only the top-bar collapse toggle
-  (`railCollapsed`/`onToggleRail`, hoisted to `App` like `gridScrollStates` so it
-  survives scope switches and a Grid → Browser → Grid round trip). The one
-  non-obvious constraint: rail rows must stay **non-keyboard-focusable** or they
-  steal the grid's keyboard ring. (The rail does *not* set a category's
-  `returnScrollIndex` — backing out lands on the warm All Photos grid, which
-  restores its own retained scroll.)
+- **The grid is framed by `LibraryRail` (left nav: scopes + category CRUD) and a
+  slim `GridTopBar` (identity + lens toggle + `ExportMenu`).** `App` mounts the
+  rail **outside** the per-scope `key(GridRetentionKey)`, backed by a root-scoped
+  `LibraryRailViewModel` (retained per root in `AppContainer`) — so a switch
+  re-keys only the grid and the rail stays mounted; inside the key it rebuilt
+  every switch and flickered. `GridScreen` owns only the collapse toggle
+  (`railCollapsed`/`onToggleRail`), hoisted to `App` so it survives scope switches
+  and a Grid → Browser → Grid round trip. Two traps: rail rows must stay
+  **non-keyboard-focusable** or they steal the grid's focus ring; and the rail
+  sets no `returnScrollIndex` (back-out lands on the warm All Photos grid).
 - **The grid is grouping/presentation only — mind the three index spaces.** The
   toolbar's segmented control picks a lens (`GridUiState.groupingMode`: `Off |
   Time | Similarity`, Time default); a non-`Off` mode resolves to one
