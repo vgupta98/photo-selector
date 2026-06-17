@@ -180,6 +180,8 @@ fun LibraryRail(
         CategoryNameDialog(
             title = "New category",
             confirmLabel = "Create",
+            // Every existing name is off-limits for a brand-new category.
+            takenNames = entries.mapTo(mutableSetOf()) { it.first.name },
             onConfirm = {
                 showCreateDialog = false
                 onCreateCategory(it)
@@ -193,6 +195,9 @@ fun LibraryRail(
             title = "Rename category",
             confirmLabel = "Rename",
             initialName = category.name,
+            // Every other name is off-limits; the category keeps its own (re-confirming it is fine).
+            takenNames = entries.filter { it.first.id != category.id }
+                .mapTo(mutableSetOf()) { it.first.name },
             onConfirm = {
                 renaming = null
                 onRenameCategory(category.id, it)
