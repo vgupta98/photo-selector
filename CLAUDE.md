@@ -128,7 +128,8 @@ JDK 17 (Zulu or JBR — either works). Gradle wrapper checked in.
 | Launch the app | `./gradlew run` |
 | Type-check only | `./gradlew compileKotlin` |
 | Run unit tests | `./gradlew test` |
-| Build a macOS DMG | `./gradlew packageDmg` (output under `build/compose/binaries/`) |
+| Build a macOS DMG (dev) | `./gradlew packageDmg` (output under `build/compose/binaries/main/`) |
+| Build the minified release DMG | `./gradlew packageReleaseDmg` (ProGuard-shrunk; output under `build/compose/binaries/main-release/`) |
 
 `run` is the fastest signal for UI work. `compileKotlin` is enough when you
 just want to verify a refactor builds — but it does NOT compile the `src/jmh/`
@@ -150,9 +151,12 @@ Three workflows in `.github/workflows/` drive it: **`draft-release.yml`**
 (manual; derives the SemVer bump from `main..develop` Conventional Commits and
 opens the `release/vX.Y.Z` PR), **`release-perf.yml`** (posts a JMH cross-branch
 diff on the release PR), and **`release.yml`** (tags + builds the DMG + publishes
-the GitHub Release on merge). The `version` in `build.gradle.kts` is the single
-source of truth, and after every release you must back-merge `main` into
-`develop` or the next draft refuses the version.
+the GitHub Release on merge). The shipped DMG is the **minified** one
+(`packageReleaseDmg`, ProGuard-shrunk via `proguard-rules.pro`) — so the release
+runs through tree-shaking that `./gradlew run` does not; verify size-sensitive
+changes against the *packaged* release app, never `run`. The `version` in
+`build.gradle.kts` is the single source of truth, and after every release you
+must back-merge `main` into `develop` or the next draft refuses the version.
 
 Full mechanics — bump rules, the required repo setting, the local dry-run, and
 recovering a half-finished run — are in `.agents/knowledge/release.md`.
@@ -237,6 +241,18 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   classes were tried and abandoned — don't reintroduce them.
 - **`packageDmg` only runs on macOS.** CI uses `macos-latest`; locally you
   need to be on a Mac.
+- **The release DMG is ProGuard-minified — keeps are load-bearing.** Releases
+  ship `packageReleaseDmg`, which tree-shakes the whole classpath. Anything
+  reached only via reflection, JNI, or codegen (ONNX Runtime's native bindings,
+  the JNA HEIC/RAW bridge, kotlinx.serialization's generated `$$serializer`s) is
+  invisible to the shrinker and survives only because `proguard-rules.pro` keeps
+  it. A missing keep produces a DMG that **builds clean and misbehaves at
+  runtime** — and the ONNX one is silent (`OnnxEmbeddingModel` falls back to the
+  classical embedder, quietly degrading Similarity rather than crashing). So
+  validate keep-rule changes against the *packaged release app* — scan a folder,
+  HEIC/RAW decode, the Similarity lens, export, relaunch — not `./gradlew run`,
+  which never applies ProGuard. Re-validate after a Compose version bump (keep
+  rules are brittle across upgrades).
 - **skiko cannot decode HEIC/HEIF.** Verified by probe on the bundled
   skiko (`Image.makeFromEncoded` throws). There is no maintained
   cross-platform JVM HEIC library on Maven (`org.bytedeco:libheif` does
@@ -294,7 +310,11 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   bundles nothing), this is real native code in the app bundle — so DMG
   signing/notarization has to cover it, and `OnnxEmbeddingModel` construction
   must stay fail-soft (it falls back to the classical embedder) in case the
-  runtime can't initialise on a given host.
+  runtime can't initialise on a given host. The minified release build keeps the
+  whole `ai.onnxruntime.**` package and its JNI bindings via `proguard-rules.pro`
+  — the same fail-soft fallback means a stripped binding degrades Similarity
+  *silently*, so confirm the learned model still loads in the packaged release
+  app, not just that it launches.
 
 ## Files worth knowing
 

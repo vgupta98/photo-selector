@@ -144,6 +144,10 @@ cd photo-selector
 # Build a redistributable DMG
 ./gradlew packageDmg
 # → build/compose/binaries/main/dmg/Rhenium-1.0.0.dmg
+
+# Build the minified release DMG (ProGuard-shrunk, ~40% smaller — what releases ship)
+./gradlew packageReleaseDmg
+# → build/compose/binaries/main-release/dmg/Rhenium-1.0.0.dmg
 ```
 
 The DMG is built for the host architecture only. Build on Apple Silicon for an arm64 DMG, on Intel for an x86_64 DMG.
