@@ -720,10 +720,20 @@ class GridViewModel(
     }
 
     fun exportTxt(destination: Path) {
+        exportPhotosTxt(_state.value.photos, destination)
+    }
+
+    /** Writes just the selected photos to a .txt list (the selection bar's Export menu). */
+    fun exportSelectionTxt(destination: Path) {
+        val ids = _state.value.selection
+        exportPhotosTxt(_state.value.photos.filter { it.id in ids }, destination)
+    }
+
+    private fun exportPhotosTxt(photos: List<Photo>, destination: Path) {
+        if (photos.isEmpty()) return
         scope.launch {
             _state.update { it.copy(isBusy = true, progressLabel = "Writing list…") }
             try {
-                val photos = _state.value.photos
                 exportTxt.invoke(root, photos, destination)
                 _state.update {
                     it.copy(

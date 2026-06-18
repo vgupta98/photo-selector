@@ -1,6 +1,8 @@
 package com.vishalgupta.photoselector.presentation.designsystem.molecule
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
@@ -29,7 +31,11 @@ fun SelectionFileMenu(
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box(modifier) {
-        AppOutlinedButton(text = "Add to category", onClick = { expanded = true })
+        AppOutlinedButton(
+            text = "Add to category",
+            onClick = { expanded = true },
+            trailingIcon = Icons.Filled.ArrowDropDown,
+        )
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             customCategories.forEachIndexed { slot, category ->
                 DropdownMenuItem(
