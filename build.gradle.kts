@@ -162,7 +162,7 @@ compose.desktop {
             modules("java.desktop", "java.naming", "jdk.unsupported")
 
             macOS {
-                bundleID = "com.vishalgupta.photoselector"
+                bundleID = "com.vishalgupta.rhenium"
                 appCategory = "public.app-category.photography"
                 iconFile.set(project.file("src/main/resources/icon/AppIcon.icns"))
             }
