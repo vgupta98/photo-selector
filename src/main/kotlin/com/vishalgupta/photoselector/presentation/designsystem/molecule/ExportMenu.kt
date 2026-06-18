@@ -20,9 +20,11 @@ import com.vishalgupta.photoselector.presentation.designsystem.atom.AppOutlinedB
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 
 /**
- * The grid top bar's single **Export** entry point, consolidating the two output paths that used to
- * sit as separate top-bar controls — "Export list (.txt)" and "Copy photos to folder…" — into one
- * dropdown so the bar carries one export affordance rather than two competing ones.
+ * The single **Export** entry point, consolidating the two output paths that used to sit as separate
+ * top-bar controls — "Export list (.txt)" and "Copy photos to folder…" — into one dropdown so the
+ * bar carries one export affordance rather than two competing ones. Shared by the per-scope
+ * [GridTopBar] (exporting the whole category) and the [GridSelectionTopBar] (exporting just the
+ * current multi-selection), so both export through identical chrome.
  *
  * The menu lists the text export, then the copy-to-folder choices grouped under the same
  * [ConflictPolicyHeader] / [ConflictPolicyOptions] the standalone [ConflictPolicyButton] uses, so a

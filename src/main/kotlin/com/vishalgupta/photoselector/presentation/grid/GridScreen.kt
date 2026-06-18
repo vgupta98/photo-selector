@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -201,6 +200,15 @@ fun GridScreen(
         onFileSelectionIntoFavourites = viewModel::fileSelectionIntoFavourites,
         onFileSelectionIntoCustom = viewModel::fileSelectionIntoCustom,
         onDeleteSelection = viewModel::deleteSelection,
+        onExportSelectionTxt = {
+            coroutineScope.launch {
+                val target = NativeFileDialogs.pickSaveFile(
+                    title = "Export list",
+                    defaultName = "photos.txt",
+                ) ?: return@launch
+                viewModel.exportSelectionTxt(target)
+            }
+        },
         onCopySelection = { policy ->
             coroutineScope.launch {
                 val dir = NativeFileDialogs.pickDirectory("Copy selected photos to…")
@@ -257,6 +265,7 @@ fun GridScreen(
     onFileSelectionIntoFavourites: () -> Unit = {},
     onFileSelectionIntoCustom: (slot: Int) -> Unit = {},
     onDeleteSelection: () -> Unit = {},
+    onExportSelectionTxt: () -> Unit = {},
     onCopySelection: (ConflictPolicy) -> Unit = {},
     onInspectSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit = { _, _ -> },
     // The scrollbar's drag interactions, hoisted so a test can drive a scrollbar-drag-during-settle
@@ -582,6 +591,7 @@ fun GridScreen(
                 customCategories = customCategories,
                 onFileIntoFavourites = onFileSelectionIntoFavourites,
                 onFileIntoCustom = onFileSelectionIntoCustom,
+                onExportSelectionTxt = onExportSelectionTxt,
                 onCopySelection = onCopySelection,
                 onDeleteSelection = { confirmingDelete = true },
                 onClearSelection = onClearSelection,
