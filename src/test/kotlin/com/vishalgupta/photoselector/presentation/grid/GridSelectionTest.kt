@@ -4,6 +4,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.domain.grouping.CaptureMetadata
 import com.vishalgupta.photoselector.domain.grouping.CaptureMetadataSource
+import com.vishalgupta.photoselector.domain.grouping.GroupingProgress
+import com.vishalgupta.photoselector.domain.grouping.PhotoGrouper
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.model.CategoryId
 import com.vishalgupta.photoselector.domain.model.Photo
@@ -133,6 +135,7 @@ class GridSelectionTest {
         repo: CategoriesRepository,
         trash: PhotoTrash = noOpTrash,
         metadata: CaptureMetadataSource = perPhotoCameraMetadata,
+        similarityGrouper: PhotoGrouper? = null,
         initialGroupingMode: GroupingMode = GroupingMode.Time,
         onGroupingModeChanged: ((GroupingMode) -> Unit)? = null,
         hasSeenSimilarityCoachmark: Boolean = true,
@@ -152,6 +155,7 @@ class GridSelectionTest {
         moveToTrash = MovePhotosToTrashUseCase(trash),
         imageLoader = noOpImageLoader,
         captureMetadataSource = metadata,
+        similarityGrouper = similarityGrouper,
         initialGroupingMode = initialGroupingMode,
         hasSeenSimilarityCoachmark = hasSeenSimilarityCoachmark,
         onSimilarityCoachmarkSeen = onSimilarityCoachmarkSeen,
@@ -304,11 +308,12 @@ class GridSelectionTest {
         assertEquals(Category.FAVOURITES_ID, repo.addCalls.single().first)
         assertEquals(photos.map { it.id }.toSet(), repo.addCalls.single().second)
 
-        // Expand: now six per-frame tiles, focus on the first frame.
+        // Expand: now six per-frame tiles, focus on the suggested keeper (keyIndex = middle = 3 for a
+        // time burst), not the first frame - see suggestedKeeperTest for the Similarity-pick coverage.
         vm.toggleBurstExpansion(burstId)
         assertEquals(burstId, vm.state.value.expandedBurstId)
         assertEquals(photos.size, vm.state.value.displayGroups.size)
-        assertEquals(0, vm.state.value.focusedIndex)
+        assertEquals(photos.size / 2, vm.state.value.focusedIndex)
 
         // Expanded: filing the 3rd frame into "Selects" toggles exactly that one photo (not a batch).
         vm.setFocusedIndex(2)
@@ -344,6 +349,41 @@ class GridSelectionTest {
         assertEquals(3, vm.state.value.displayGroups.size)
         assertEquals(1, vm.state.value.focusedIndex)
         assertEquals(burstId, vm.state.value.displayGroups[1].groupId)
+
+        vm.onClear()
+    }
+
+    @Test
+    fun expandingASimilarityBurst_landsFocusOnTheSuggestedKeeperAndFFilesIt() = runTest {
+        // A Similarity grouper that clusters all six frames and nominates frame 1 as the sharpest -
+        // deliberately neither the first frame (the old expand target) nor the middle (a time burst's
+        // neutral keyIndex), so the focus landing on it proves it tracks the suggested keeper.
+        val suggested = 1
+        val similarity = object : PhotoGrouper {
+            override suspend fun group(photos: List<Photo>, onProgress: GroupingProgress) =
+                listOf(PhotoGroup.Burst(photos, keyIndex = suggested))
+        }
+        val repo = FakeCategoriesRepository(categories)
+        val vm = viewModel(
+            repo,
+            similarityGrouper = similarity,
+            initialGroupingMode = GroupingMode.Similarity,
+            dispatcher = StandardTestDispatcher(testScheduler),
+        )
+        advanceUntilIdle()
+        assertEquals(1, vm.state.value.groups.size) // one burst of six
+        val burstId = vm.state.value.groups.single().groupId
+
+        // Expanding lands the keyboard ring on the suggested keeper, not the run's first frame.
+        vm.toggleBurstExpansion(burstId)
+        assertEquals(burstId, vm.state.value.expandedBurstId)
+        assertEquals(photos.size, vm.state.value.displayGroups.size)
+        assertEquals(suggested, vm.state.value.focusedIndex)
+
+        // F immediately after expand files exactly the suggested frame (one toggle, not a batch).
+        vm.toggleMembershipAtFocus()
+        advanceUntilIdle()
+        assertEquals(Category.FAVOURITES_ID to photos[suggested].id, repo.toggleCalls.single())
 
         vm.onClear()
     }
