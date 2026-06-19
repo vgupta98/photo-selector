@@ -512,7 +512,7 @@ class GridViewModel(
     /**
      * Esc (after clearing any selection): fold the open burst back into one tile, returning focus to
      * that burst tile so the cursor lands where the user opened from rather than on whatever tile now
-     * occupies the shrunken index (symmetric with [toggleBurstExpansion]'s jump to the first frame).
+     * occupies the shrunken index (symmetric with [toggleBurstExpansion]'s jump to the suggested keeper).
      */
     fun collapseBurst() {
         _state.update { st ->
