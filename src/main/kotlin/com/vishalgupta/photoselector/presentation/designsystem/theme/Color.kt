@@ -18,7 +18,8 @@ private val OnAccent = Color(0xFF1A1A1A)
  * App-specific semantic colors that don't map cleanly onto Material3's
  * [androidx.compose.material3.ColorScheme]. Anything that *does* map
  * (primary, surface, error, onSurfaceVariant, …) belongs in [DarkColorScheme]
- * and should be read via `MaterialTheme.colorScheme` instead of duplicated here.
+ * and is read via `AppTheme.colorScheme` (the single token accessor, which
+ * delegates to Material) instead of duplicated here.
  *
  * Read these through `AppTheme.colors`.
  */

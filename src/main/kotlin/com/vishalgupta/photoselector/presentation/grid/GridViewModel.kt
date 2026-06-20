@@ -24,6 +24,7 @@ import com.vishalgupta.photoselector.presentation.common.customCategories
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.navigation.activeCategoryId
 import com.vishalgupta.photoselector.presentation.navigation.slice
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -39,6 +40,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.swing.Swing
 import java.nio.file.Path
 
 data class GridUiState(
@@ -140,13 +142,21 @@ class GridViewModel(
     hasSeenSimilarityCoachmark: Boolean = true,
     private val onSimilarityCoachmarkSeen: () -> Unit = {},
     parentJob: Job? = null,
+    // The scope (UI) dispatcher - the Swing EDT in the running app; tests inject a TestDispatcher to
+    // drive the scope's coroutines deterministically. See StateHolder.
+    dispatcher: CoroutineDispatcher = Dispatchers.Swing,
+    // Where the off-thread regroup runs (EXIF reads for Time, decode + embedding for Similarity) -
+    // IO in the app, kept off the scope's EDT. Tests pass the same TestDispatcher as [dispatcher] so
+    // the pass runs in virtual time instead of on a real background thread (which is what made the
+    // grid's grouping tests flaky under CI load).
+    private val groupingDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val onScrollIndexChanged: ((Int) -> Unit)? = null,
     // Reports a lens change up to the container so the next rebuilt grid opens in the same lens.
     private val onGroupingModeChanged: ((GroupingMode) -> Unit)? = null,
     // Lets the container drop the trashed photos from its scan snapshot, so any screen opened
     // after the delete is built without them too.
     private val onPhotosDeleted: ((Set<PhotoId>) -> Unit)? = null,
-) : StateHolder(parentJob) {
+) : StateHolder(parentJob, dispatcher) {
 
     private val _state = MutableStateFlow(
         GridUiState(scope = categoryScope, lastViewedPhotoId = lastViewedPhotoId, groupingMode = initialGroupingMode),
@@ -305,7 +315,7 @@ class GridViewModel(
         // seeded bar would flash on and off as noise. The bar is armed after a grace delay instead.
         _state.update { it.copy(grouping = null) }
         val total = photos.size
-        groupingJob = scope.launch(Dispatchers.IO) {
+        groupingJob = scope.launch(groupingDispatcher) {
             // Only surface the bar once a pass has run longer than the grace window - long enough that
             // a cold Similarity pass (or a first Time pass over a big folder) shows it, while a warm
             // regroup completes and cancels this before it ever arms.
@@ -316,17 +326,21 @@ class GridViewModel(
                 }
             }
             // Coalesce per-photo callbacks to whole-percent ticks: ~100 state updates over a minute,
-            // not one per photo, while the count still reads as live.
-            var lastPercent = -1
+            // not one per photo, while the count still reads as live. The Similarity pass now extracts
+            // features in parallel, so this callback arrives concurrently from several threads and out
+            // of order — a straggler can report a lower count than one already shown. Do the coalesce +
+            // monotonic guard *inside* the atomic update, comparing against the percent currently on the
+            // bar, so it can only ever move forward and never races a plain `var`.
             val groups = grouper.group(photos) { processed, t ->
                 val percent = if (t <= 0) 100 else processed * 100 / t
-                if (percent != lastPercent) {
-                    lastPercent = percent
-                    // Refresh only once the grace-delayed bar is actually showing; before then the
-                    // pass is still inside the grace window and must stay invisible.
-                    _state.update {
-                        if (generation == groupingGeneration && it.grouping != null) it.copy(grouping = GroupingStatus(processed, t)) else it
-                    }
+                // Refresh only once the grace-delayed bar is actually showing; before then the pass is
+                // still inside the grace window and must stay invisible.
+                _state.update { st ->
+                    val current = st.grouping
+                    if (generation != groupingGeneration || current == null) return@update st
+                    val currentPercent = if (current.total <= 0) 100 else current.processed * 100 / current.total
+                    if (percent <= currentPercent) return@update st
+                    st.copy(grouping = GroupingStatus(processed, t))
                 }
             }
             // Stop the timer before clearing, so a bar can't arm after the pass has already finished.
@@ -469,15 +483,23 @@ class GridViewModel(
     /**
      * Clicking / Enter on a collapsed burst tile: unfold it in place into its frames (or fold it
      * back if it is already open). At most one burst is expanded at a time. Focus tracks the burst:
-     * on expand it jumps to the first frame so the arrow keys start inside the run; on fold-back it
-     * returns to the collapsed burst tile. (Both share one lookup: [PhotoGroup.groupId] is the first
-     * frame's id, so it resolves to the first frame when open and to the burst tile when collapsed.)
+     * on expand it lands on the suggested keeper - the frame [PhotoGroup.Burst.keyIndex] points at,
+     * which is the sharpest frame under the Similarity lens and the neutral middle otherwise - so the
+     * keyboard cull starts on the AI's pick and `F`/`Space` files it immediately (arrowing away
+     * overrides it; the suggestion never forces anything). On fold-back it returns to the collapsed
+     * burst tile. (The collapsed lookup is by [PhotoGroup.groupId] - the first frame's id - while the
+     * expanded lookup is by the keyer frame's identity, since each open frame is its own tile.)
      */
     fun toggleBurstExpansion(groupId: PhotoId) {
         _state.update { st ->
             val open = if (st.expandedBurstId == groupId) null else groupId
             val display = displayGroupsFor(st.groups, open)
-            val focus = display.indexOfFirst { it.groupId == groupId }.takeIf { it >= 0 } ?: st.focusedIndex
+            val burst = st.groups.firstOrNull { it.groupId == groupId } as? PhotoGroup.Burst
+            val focus = if (open != null && burst != null) {
+                display.indexOfFirst { it.keyPhoto.id == burst.keyPhoto.id }
+            } else {
+                display.indexOfFirst { it.groupId == groupId }
+            }.takeIf { it >= 0 } ?: st.focusedIndex
             // Expanding/folding renumbers the tile space, so any stored Shift+click anchor is stale.
             st.copy(
                 expandedBurstId = open,
@@ -490,7 +512,7 @@ class GridViewModel(
     /**
      * Esc (after clearing any selection): fold the open burst back into one tile, returning focus to
      * that burst tile so the cursor lands where the user opened from rather than on whatever tile now
-     * occupies the shrunken index (symmetric with [toggleBurstExpansion]'s jump to the first frame).
+     * occupies the shrunken index (symmetric with [toggleBurstExpansion]'s jump to the suggested keeper).
      */
     fun collapseBurst() {
         _state.update { st ->
@@ -506,25 +528,26 @@ class GridViewModel(
         }
     }
 
-    /**
-     * F / Space at the focused tile. A single photo toggles its Favourites membership (as before);
-     * a collapsed burst files all its frames into Favourites in one additive write — toggling a
-     * representative you can't fully see would be ambiguous, so a burst always *adds*.
-     */
-    fun toggleMembershipAtFocus() {
-        when (val group = _state.value.displayGroups.getOrNull(_state.value.focusedIndex)) {
-            is PhotoGroup.Single -> toggleSingleMembership(group.photo, Category.FAVOURITES_ID, Category.FAVOURITES_NAME, isFavourite = true)
-            is PhotoGroup.Burst -> fileIdsInto(group.photos.mapTo(HashSet()) { it.id }, Category.FAVOURITES_ID, Category.FAVOURITES_NAME)
-            null -> Unit
-        }
-    }
+    /** F / Space at the focused tile: file it into Favourites — see [fileAtFocus] for the single-vs-burst rule. */
+    fun toggleMembershipAtFocus() =
+        fileAtFocus(Category.FAVOURITES_ID, Category.FAVOURITES_NAME, isFavourite = true)
 
     /** Bare digit 1..9 at the focused tile: toggle the single, or file the whole burst, into the Nth custom category. */
     fun toggleCustomCategoryAtFocus(slot: Int) {
         val category = _state.value.categories.customCategories().getOrNull(slot) ?: return
+        fileAtFocus(category.id, category.name, isFavourite = false)
+    }
+
+    /**
+     * The single-vs-burst filing rule at the focused tile: a single toggles its membership; a
+     * collapsed burst additively files all its frames (toggling a representative you can't fully
+     * see would be ambiguous, so a burst always *adds*). Shared by [toggleMembershipAtFocus] and
+     * [toggleCustomCategoryAtFocus] so the rule lives in one place.
+     */
+    private fun fileAtFocus(id: CategoryId, name: String, isFavourite: Boolean) {
         when (val group = _state.value.displayGroups.getOrNull(_state.value.focusedIndex)) {
-            is PhotoGroup.Single -> toggleSingleMembership(group.photo, category.id, category.name, isFavourite = false)
-            is PhotoGroup.Burst -> fileIdsInto(group.photos.mapTo(HashSet()) { it.id }, category.id, category.name)
+            is PhotoGroup.Single -> toggleSingleMembership(group.photo, id, name, isFavourite = isFavourite)
+            is PhotoGroup.Burst -> fileIdsInto(group.photos.mapTo(HashSet()) { it.id }, id, name)
             null -> Unit
         }
     }
@@ -704,25 +727,21 @@ class GridViewModel(
         else -> "Added $added to $category ($requested selected)"
     }
 
-    fun createCategory(name: String) {
-        if (name.isBlank()) return
-        scope.launch { categories.create(root, name) }
-    }
-
-    fun renameCategory(id: CategoryId, newName: String) {
-        if (newName.isBlank()) return
-        scope.launch { categories.rename(root, id, newName) }
-    }
-
-    fun deleteCategory(id: CategoryId) {
-        scope.launch { categories.delete(root, id) }
-    }
-
     fun exportTxt(destination: Path) {
+        exportPhotosTxt(_state.value.photos, destination)
+    }
+
+    /** Writes just the selected photos to a .txt list (the selection bar's Export menu). */
+    fun exportSelectionTxt(destination: Path) {
+        val ids = _state.value.selection
+        exportPhotosTxt(_state.value.photos.filter { it.id in ids }, destination)
+    }
+
+    private fun exportPhotosTxt(photos: List<Photo>, destination: Path) {
+        if (photos.isEmpty()) return
         scope.launch {
             _state.update { it.copy(isBusy = true, progressLabel = "Writing list…") }
             try {
-                val photos = _state.value.photos
                 exportTxt.invoke(root, photos, destination)
                 _state.update {
                     it.copy(

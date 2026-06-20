@@ -14,6 +14,10 @@ import androidx.compose.ui.unit.dp
 @Immutable
 data class Dimens(
     val topBarHeight: Dp = 56.dp,
+    // Fixed width of the left library rail (scopes: All Photos, Favourites, custom categories).
+    // Wide enough for a category name plus its count without truncating common names; the rail
+    // collapses to zero width behind the top-bar toggle when the user wants the grid full-bleed.
+    val libraryRailWidth: Dp = 248.dp,
     // The adaptive grid's minimum tile width. Tuned down from 160 toward a contact-sheet
     // density: more frames per row for a culler scanning fast, still large enough to judge a
     // shot at a glance. The grid's gutters and content padding are tightened to match.

@@ -1,3 +1,4 @@
+import org.gradle.api.file.DuplicatesStrategy
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 plugins {
@@ -10,7 +11,7 @@ plugins {
 }
 
 group = "com.vishalgupta.photoselector"
-version = "1.5.1"
+version = "1.6.0"
 
 kotlin {
     jvmToolchain(17)
@@ -28,6 +29,54 @@ composeCompiler {
     }
 }
 
+// Resolve the full, all-platforms ONNX Runtime artifact in isolation so we can repackage it.
+// Kept out of the app's own classpaths - only `slimOnnxRuntime` consumes it.
+val onnxRuntimeFull: Configuration by configurations.creating { isTransitive = false }
+
+dependencies {
+    onnxRuntimeFull(libs.onnxruntime)
+}
+
+// The published `onnxruntime` jar is a fat, all-platforms artifact (~89 MB): it bundles the
+// Windows (.dll + a ~290 MB uncompressed .pdb), Linux (.so) and macOS (.dylib) native libraries
+// plus macOS .dSYM debug bundles. jpackage rolls the whole jar into the DMG verbatim, so a
+// macOS-only build shipped Windows/Linux binaries and debug symbols it can never load - which
+// roughly doubled the DMG (103 MB -> 201 MB at v1.5.0). Repackage it keeping only the macOS
+// runtime dylibs (both arches, so a single DMG runs on Intel and Apple Silicon) and dropping the
+// rest. See CLAUDE.md "ONNX Runtime is a bundled native dependency".
+val slimOnnxRuntime = tasks.register<Jar>("slimOnnxRuntime") {
+    description = "Repackages the ONNX Runtime jar with only the macOS runtime libraries."
+    archiveBaseName.set("onnxruntime-slim")
+    destinationDirectory.set(layout.buildDirectory.dir("slim-libs"))
+    from({ onnxRuntimeFull.map(::zipTree) })
+    exclude(
+        "ai/onnxruntime/native/win-x64/**",
+        "ai/onnxruntime/native/linux-x64/**",
+        "ai/onnxruntime/native/linux-aarch64/**",
+    )
+    // macOS debug symbols (~18 MB of DWARF) - never loaded at runtime.
+    exclude("**/*.dSYM/**")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+// The DMG bundles only the macOS dylibs (see `slimOnnxRuntime`), but the test job runs on Linux CI
+// (.github/workflows/ci.yml), where OnnxEmbeddingModelTest loads the *real* native through ONNX
+// Runtime. Repackage just the Linux natives - and only the natives, no `ai.onnxruntime.*` classes,
+// so this doesn't collide with the slim jar already on the classpath - and put it on the test
+// runtime classpath only. ONNX Runtime resolves its native from the classpath resource, so this
+// keeps the integration test running on Linux without re-bloating the shipped app bundle.
+val onnxRuntimeLinuxNatives = tasks.register<Jar>("onnxRuntimeLinuxNatives") {
+    description = "Repackages only the Linux ONNX Runtime natives, for the Linux CI test classpath."
+    archiveBaseName.set("onnxruntime-linux-natives")
+    destinationDirectory.set(layout.buildDirectory.dir("slim-libs"))
+    from({ onnxRuntimeFull.map(::zipTree) })
+    include(
+        "ai/onnxruntime/native/linux-x64/**",
+        "ai/onnxruntime/native/linux-aarch64/**",
+    )
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
 dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
@@ -43,15 +92,20 @@ dependencies {
     // its own decoder rather than replacing this.
     implementation(libs.jna)
 
-    // ONNX Runtime powers the learned visual-similarity embedder (OnnxEmbeddingModel). The JAR
-    // bundles the JNI native library for every desktop platform, so it works behind the
-    // EmbeddingModel interface with no per-OS wiring; the model blob itself ships as a resource.
-    implementation(libs.onnxruntime)
+    // ONNX Runtime powers the learned visual-similarity embedder (OnnxEmbeddingModel). The model
+    // blob itself ships as a resource. We depend on a slimmed repackaging of the runtime jar
+    // (see `slimOnnxRuntime` below) rather than the published artifact: that fat jar carries the
+    // native libs for every desktop platform plus debug symbols, none of which a macOS app loads.
+    implementation(files(slimOnnxRuntime))
 
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.junit)
     testImplementation(compose.desktop.uiTestJUnit4)
+
+    // OnnxEmbeddingModelTest runs the real native; on the Linux CI runner the slim jar has no Linux
+    // dylib, so supply the Linux natives here (test runtime only - never bundled into the DMG).
+    testRuntimeOnly(files(onnxRuntimeLinuxNatives))
 
     // JMH (perf benchmarks under `src/jmh/kotlin/`)
     jmh(libs.jmh.core)
@@ -84,6 +138,21 @@ compose.desktop {
             "-Dfile.encoding=UTF-8",
         )
 
+        // Minified release build (`./gradlew packageReleaseDmg`) tree-shakes dead
+        // code across every bundled jar - the unused 99.9% of material-icons-extended,
+        // plus the slack in Compose/kotlinx - off the DMG. Reflection/JNI/codegen
+        // entry points that the shrinker can't see are kept in proguard-rules.pro.
+        // obfuscate stays off so crash stack traces remain readable. See
+        // CLAUDE.md "Release process" and proguard-rules.pro for the keeps.
+        buildTypes.release.proguard {
+            configurationFiles.from(project.file("proguard-rules.pro"))
+            obfuscate.set(false)
+            // Shrink-only. Optimization bought ~1 MB (1.4%) over tree-shaking alone
+            // but adds the riskiest, least-validatable ProGuard passes - not worth it
+            // when the win is dead-code elimination and the failure modes are runtime-only.
+            optimize.set(false)
+        }
+
         nativeDistributions {
             targetFormats(TargetFormat.Dmg)
             packageName = "Rhenium"
@@ -93,7 +162,7 @@ compose.desktop {
             modules("java.desktop", "java.naming", "jdk.unsupported")
 
             macOS {
-                bundleID = "com.vishalgupta.photoselector"
+                bundleID = "com.vishalgupta.rhenium"
                 appCategory = "public.app-category.photography"
                 iconFile.set(project.file("src/main/resources/icon/AppIcon.icns"))
             }

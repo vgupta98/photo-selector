@@ -6,7 +6,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -20,12 +19,16 @@ import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 
 // Plain-language collision choices. The labels describe the *outcome* for a name that
 // already exists in the destination, not the internal [ConflictPolicy] verb: RENAME keeps
-// both copies, SKIP leaves the existing file, OVERWRITE replaces it.
-private val POLICY_OPTIONS = listOf(
+// both copies, SKIP leaves the existing file, OVERWRITE replaces it. Shared with [ExportMenu]
+// so the copy-to-folder choices read identically wherever they appear.
+internal val ConflictPolicyOptions = listOf(
     "Keep both" to ConflictPolicy.RENAME,
     "Skip duplicates" to ConflictPolicy.SKIP,
     "Replace existing" to ConflictPolicy.OVERWRITE,
 )
+
+/** Header framing the three [ConflictPolicyOptions] as answers to one question. */
+internal const val ConflictPolicyHeader = "If a file already exists:"
 
 /**
  * "Copy photos to folder…" button that opens a menu of [ConflictPolicy] choices
@@ -50,12 +53,12 @@ fun ConflictPolicyButton(
             // A header frames the three options as answers to one question, so each label
             // ("Keep both", etc.) reads in context instead of as a bare, ambiguous verb.
             Text(
-                text = "If a file already exists in the folder:",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = ConflictPolicyHeader,
+                style = AppTheme.typography.labelMedium,
+                color = AppTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = AppTheme.spacing.lg, vertical = AppTheme.spacing.sm),
             )
-            POLICY_OPTIONS.forEach { (label, policy) ->
+            ConflictPolicyOptions.forEach { (label, policy) ->
                 DropdownMenuItem(
                     text = { Text(label) },
                     onClick = {

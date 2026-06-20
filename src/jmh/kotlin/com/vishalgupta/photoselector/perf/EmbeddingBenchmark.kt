@@ -57,7 +57,11 @@ open class EmbeddingBenchmark {
     }
 
     @Benchmark
-    fun embed(): FloatArray = model.embed(image)
+    fun embed(): FloatArray = checkNotNull(model.embed(image)) {
+        // The synthetic frame always embeds. A null means real inference failure — fail the run rather
+        // than silently benchmark the fast failure path and report a bogus speedup on the release diff.
+        "OnnxEmbeddingModel.embed returned null for the benchmark frame"
+    }
 
     /** A non-uniform BGRA buffer (a per-channel gradient) so preprocess/inference see real variation. */
     private fun syntheticBgra(width: Int, height: Int): DecodedImage {

@@ -46,6 +46,7 @@ import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
 import com.vishalgupta.photoselector.domain.usecase.ScanRootFolderUseCase
 import com.vishalgupta.photoselector.presentation.browser.BrowserViewModel
 import com.vishalgupta.photoselector.presentation.grid.GridViewModel
+import com.vishalgupta.photoselector.presentation.grid.LibraryRailViewModel
 import com.vishalgupta.photoselector.presentation.inspect.InspectMode
 import com.vishalgupta.photoselector.presentation.inspect.InspectViewModel
 import com.vishalgupta.photoselector.presentation.survey.SurveyViewModel
@@ -76,10 +77,15 @@ class AppContainer {
         ignoreUnknownKeys = true
     }
 
+    // Width of the shared decode pool. Reused to size the cold Similarity pass's parallel feature
+    // extraction (SimilarityPhotoGrouper) — there it bounds how many frames are in flight at once (a
+    // memory/CPU ceiling, since each frame decodes a 768px sharpness canvas and runs an inference).
+    // The pass runs on Dispatchers.IO, not this pool; the shared width just keeps both sized to cores.
+    private val decodeParallelism =
+        Runtime.getRuntime().availableProcessors().coerceAtMost(4).coerceAtLeast(2)
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    private val imageDecodeDispatcher = Dispatchers.IO.limitedParallelism(
-        Runtime.getRuntime().availableProcessors().coerceAtMost(4).coerceAtLeast(2),
-    )
+    private val imageDecodeDispatcher = Dispatchers.IO.limitedParallelism(decodeParallelism)
 
     private val appScope = CoroutineScope(SupervisorJob() + imageDecodeDispatcher)
     private var _folderJob = SupervisorJob(appScope.coroutineContext[Job])
@@ -98,7 +104,7 @@ class AppContainer {
     )
 
     private val cacheDir: Path =
-        Path.of(System.getProperty("user.home"), "Library", "Caches", "PhotoSelector")
+        Path.of(System.getProperty("user.home"), "Library", "Caches", "Rhenium")
 
     private val diskThumbnailCache = DiskThumbnailCache(cacheDir = cacheDir)
         .also { it.startEviction(appScope) }
@@ -134,6 +140,7 @@ class AppContainer {
                 decodeForEmbedding = ::decodeForEmbedding,
                 decodeForSharpness = ::decodeForSharpness,
             ),
+            concurrency = decodeParallelism,
         ),
         cache = groupingResultCache,
         modelId = embeddingModel.id,
@@ -195,6 +202,11 @@ class AppContainer {
     // reuses the retained view model (and the App keeps its scroll position) so the grid returns
     // exactly as it was left, instead of rebuilding and re-anchoring. Cleared on a root change.
     private val retainedGrids = mutableMapOf<GridRetentionKey, GridViewModel>()
+
+    // The library rail is root-level chrome (same for every scope), so unlike the grids it is kept
+    // per *root* — the navigation host mounts it outside the per-scope retention key, so one instance
+    // serves every scope of a root and survives category switches. Cleared on a root change.
+    private val retainedRails = mutableMapOf<Path, LibraryRailViewModel>()
 
     // The grouping lens the user last picked, remembered for the session so the first grid built for
     // each (root, scope) opens in that lens rather than the default. Retained grids keep their own
@@ -374,11 +386,28 @@ class AppContainer {
         ).also { retainedGrids[key] = it }
     }
 
+    /**
+     * The library rail for [root], reused across every scope (and Grid -> Browser -> Grid round trip)
+     * for the session. Root-scoped on purpose: the rail is identical for All Photos and each category,
+     * so the host mounts one instance above the per-scope grid retention key.
+     */
+    fun libraryRailViewModel(root: RootFolder): LibraryRailViewModel =
+        retainedRails.getOrPut(root.path) {
+            LibraryRailViewModel(
+                root = root,
+                categories = categoriesRepository,
+                parentJob = folderJob,
+            )
+        }
+
     suspend fun resetForNewRoot() {
         // Flush each retained grid's pending scroll save, then drop them: a new root means a new set
         // of grids, and folderJob.cancel below tears their scopes down anyway.
         retainedGrids.values.forEach { it.onClear() }
         retainedGrids.clear()
+        // Rails hold no pending writes to flush; folderJob.cancel below tears their scopes down, so
+        // just drop the references for the new root.
+        retainedRails.clear()
         _folderJob.cancel()
         _folderJob = SupervisorJob(appScope.coroutineContext[Job])
         categoriesRepository.clearContext()

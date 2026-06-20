@@ -7,6 +7,11 @@ import com.vishalgupta.photoselector.domain.model.PhotoGroup
  * Reports grouping progress as the per-photo pass advances: [processed] of [total] photos handled.
  * Grouping reads/derives one fact per photo (EXIF for time, an embedding for similarity), so the
  * grid drives a determinate progress bar off this — the cold similarity pass is a ~minute-long wait.
+ *
+ * Implementations may invoke this **concurrently and out of order** (the similarity pass extracts
+ * features in parallel): [processed] climbs monotonically in aggregate, but a given callback can
+ * carry a lower count than one already delivered. Callers must keep the handler thread-safe and not
+ * assume a strictly increasing sequence (see `GridViewModel`'s monotonic guard).
  */
 typealias GroupingProgress = (processed: Int, total: Int) -> Unit
 

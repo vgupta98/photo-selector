@@ -346,6 +346,47 @@ class GridRecompositionTest {
 
         assertEquals("toolbar should skip (its inputs are unchanged across a cursor move)", before, tracker["toolbar"])
     }
+
+    /**
+     * Toggling the library rail must NOT recompose the grid tiles. `railCollapsed` is root-level
+     * chrome state that flows only into the collapse toggle (its Menu/MenuOpen icon) — never into a
+     * per-tile input. So opening/closing the rail is a *layout* re-measure (the grid is `weight(1f)`
+     * and resizes as the rail's width animates), not a tile recomposition. This is the inverse of the
+     * intuition that the rail "should recompose the whole grid": that would be the regression. The
+     * test asserts the toggle recomposes (its icon depends on the flag) while every tile skips, so
+     * threading `railCollapsed` into a tile input would flip the skip assertions.
+     */
+    @Test
+    fun togglingRailCollapsed_recomposesOnlyTheCollapseToggle() {
+        val tracker = RecompositionTracker()
+        val railCollapsed = mutableStateOf(false)
+
+        rule.setContent {
+            AppTheme {
+                Surface(Modifier.size(800.dp, 600.dp)) {
+                    RailShellHost(
+                        photos = photos,
+                        railCollapsed = railCollapsed.value,
+                        loader = noOpImageLoader,
+                        tracker = tracker,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        val before = photos.associate { it.id.value to tracker[it.id.value] }
+        val toggleBefore = tracker["toggle"]
+
+        rule.runOnIdle { railCollapsed.value = true } // collapse the rail
+        rule.waitForIdle()
+
+        assertEquals("collapse toggle should recompose (its icon depends on railCollapsed)", toggleBefore + 1, tracker["toggle"])
+        assertEquals("a should skip (railCollapsed is not a tile input)", before["a"], tracker["a"])
+        assertEquals("b should skip", before["b"], tracker["b"])
+        assertEquals("c should skip", before["c"], tracker["c"])
+        assertEquals("d should skip", before["d"], tracker["d"])
+    }
 }
 
 /**
@@ -375,6 +416,48 @@ private fun ToolbarHost(
         categoryEntries = categoryEntries,
         customCategories = customCategories,
     )
+}
+
+/**
+ * Reproduces GridScreen's shell wiring for `railCollapsed`: the flag flows only into the collapse
+ * toggle (the GridTopBar's Menu/MenuOpen icon), never into the tiles. Reading it here makes this
+ * host recompose on a toggle exactly as GridScreen's body does, while every per-tile input stays
+ * railCollapsed-independent — so the tiles must skip. Threading the flag into a tile input is the
+ * regression [togglingRailCollapsed_recomposesOnlyTheCollapseToggle] guards against.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RailShellHost(
+    photos: List<Photo>,
+    railCollapsed: Boolean,
+    loader: ImageLoader,
+    tracker: RecompositionTracker,
+) {
+    CountedToggle(tracker = tracker, tag = "toggle", railCollapsed = railCollapsed)
+    FlowRow {
+        photos.forEach { photo ->
+            CountedThumbnail(
+                tracker = tracker,
+                tag = photo.id.value,
+                photo = photo,
+                loader = loader,
+                isFavourite = false,
+                isFocused = false,
+            )
+        }
+    }
+}
+
+/** A stand-in collapse toggle: skippable, its icon depends on [railCollapsed], records each recomposition. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CountedToggle(
+    tracker: RecompositionTracker,
+    tag: String,
+    railCollapsed: Boolean,
+) {
+    tracker.record(tag)
+    Surface { FlowRowLabels(if (railCollapsed) 1 else 0) }
 }
 
 /** A stand-in top bar: skippable, takes the two derived Lists, records each recomposition. */

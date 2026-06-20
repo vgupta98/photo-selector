@@ -108,9 +108,13 @@ fun GridScreen(
     initialScrollIndex: Int,
     onTileClick: (index: Int) -> Unit,
     onChangeFolder: () -> Unit,
-    onSelectCategory: (currentScrollIndex: Int, id: CategoryId) -> Unit,
     onInspectSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit,
     onBack: (() -> Unit)?,
+    // Whether the library rail (hoisted to the host, beside this grid) is collapsed. Drives only the
+    // top-bar toggle's icon state here; the rail itself is the host's concern. Hoisted so it survives
+    // a scope switch and a Grid -> Browser -> Grid round trip.
+    railCollapsed: Boolean,
+    onToggleRail: () -> Unit,
     // The scroll state retained for this (root, scope) across the session, supplied by the host so it
     // survives a Grid -> Browser -> Grid round trip. [anchorInitialScroll] is true only on the first
     // (cold) visit, where [initialScrollIndex] still needs to be applied as grouping settles; on a
@@ -122,6 +126,7 @@ fun GridScreen(
     // A photo to scroll into view on a warm return, regardless of the keyboard ring (resume / "Show in
     // All Photos"). See [Screen.Grid.revealPhotoId].
     revealPhotoId: PhotoId? = null,
+    modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsState()
     val coroutineScope = rememberCoroutineScope()
@@ -155,15 +160,14 @@ fun GridScreen(
         revealPhotoId = revealPhotoId,
         categoryToast = categoryToast,
         groupingNotice = groupingNotice,
+        railCollapsed = railCollapsed,
+        onToggleRail = onToggleRail,
         onTileClick = onTileClick,
         onChangeFolder = onChangeFolder,
-        onSelectCategory = onSelectCategory,
         onInspectSelection = onInspectSelection,
-        onCreateCategory = viewModel::createCategory,
-        onRenameCategory = viewModel::renameCategory,
-        onDeleteCategory = viewModel::deleteCategory,
         onBack = onBack,
         onSetFocusedIndex = viewModel::setFocusedIndex,
+        modifier = modifier,
         onToggleMembershipAtFocus = viewModel::toggleMembershipAtFocus,
         onToggleCustomCategoryAtFocus = viewModel::toggleCustomCategoryAtFocus,
         onExportTxt = {
@@ -196,6 +200,15 @@ fun GridScreen(
         onFileSelectionIntoFavourites = viewModel::fileSelectionIntoFavourites,
         onFileSelectionIntoCustom = viewModel::fileSelectionIntoCustom,
         onDeleteSelection = viewModel::deleteSelection,
+        onExportSelectionTxt = {
+            coroutineScope.launch {
+                val target = NativeFileDialogs.pickSaveFile(
+                    title = "Export list",
+                    defaultName = "photos.txt",
+                ) ?: return@launch
+                viewModel.exportSelectionTxt(target)
+            }
+        },
         onCopySelection = { policy ->
             coroutineScope.launch {
                 val dir = NativeFileDialogs.pickDirectory("Copy selected photos to…")
@@ -220,12 +233,12 @@ fun GridScreen(
     // A photo to scroll into view once on a warm return, regardless of the keyboard ring. See
     // [Screen.Grid.revealPhotoId]; ignored on a cold visit (initialScrollIndex places the photo there).
     revealPhotoId: PhotoId? = null,
+    // Library rail collapse state + toggle, for the top bar's collapse control. The rail itself lives
+    // in the host beside this grid; defaulted so the stateless screen renders without the host wiring.
+    railCollapsed: Boolean = false,
+    onToggleRail: () -> Unit = {},
     onTileClick: (index: Int) -> Unit,
     onChangeFolder: () -> Unit,
-    onSelectCategory: (currentScrollIndex: Int, id: CategoryId) -> Unit,
-    onCreateCategory: (String) -> Unit,
-    onRenameCategory: (CategoryId, String) -> Unit,
-    onDeleteCategory: (CategoryId) -> Unit,
     onBack: (() -> Unit)?,
     onSetFocusedIndex: (Int) -> Unit,
     onToggleMembershipAtFocus: () -> Unit,
@@ -252,6 +265,7 @@ fun GridScreen(
     onFileSelectionIntoFavourites: () -> Unit = {},
     onFileSelectionIntoCustom: (slot: Int) -> Unit = {},
     onDeleteSelection: () -> Unit = {},
+    onExportSelectionTxt: () -> Unit = {},
     onCopySelection: (ConflictPolicy) -> Unit = {},
     onInspectSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit = { _, _ -> },
     // The scrollbar's drag interactions, hoisted so a test can drive a scrollbar-drag-during-settle
@@ -307,9 +321,6 @@ fun GridScreen(
     val currentCategory: Category? = remember(state.scope, state.categories) {
         (state.scope as? CategoryScope.Category)
             ?.let { sc -> state.categories.firstOrNull { it.id == sc.id } }
-    }
-    val categoryEntries = remember(state.categories, state.memberships) {
-        state.categories.map { it to (state.memberships[it.id]?.size ?: 0) }
     }
 
     // Custom categories in slot order — drives both the per-tile numbered badges and the
@@ -435,6 +446,9 @@ fun GridScreen(
             }
         }
 
+    // The library rail (navigation + category management) is hoisted to the navigation host and sits
+    // left of this grid; only the grid column lives here, so it keeps the keyboard ring. The host
+    // sizes us via [modifier] (it gives the grid the row's remaining width beside the rail).
     Column(
         modifier
             .fillMaxSize()
@@ -577,6 +591,7 @@ fun GridScreen(
                 customCategories = customCategories,
                 onFileIntoFavourites = onFileSelectionIntoFavourites,
                 onFileIntoCustom = onFileSelectionIntoCustom,
+                onExportSelectionTxt = onExportSelectionTxt,
                 onCopySelection = onCopySelection,
                 onDeleteSelection = { confirmingDelete = true },
                 onClearSelection = onClearSelection,
@@ -586,16 +601,11 @@ fun GridScreen(
                 scope = state.scope,
                 currentCategory = currentCategory,
                 photoCount = state.photos.size,
-                categoryEntries = categoryEntries,
                 isBusy = state.isBusy,
-                onBack = onBack,
-                onSelectCategory = { id -> onSelectCategory(firstVisibleFlat(), id) },
-                onCreateCategory = onCreateCategory,
-                onRenameCategory = onRenameCategory,
-                onDeleteCategory = onDeleteCategory,
+                railCollapsed = railCollapsed,
+                onToggleRail = onToggleRail,
                 onExportTxt = onExportTxt,
                 onCopyToFolder = onCopyToFolder,
-                onChangeFolder = onChangeFolder,
                 groupingMode = state.groupingMode,
                 onSelectGroupingMode = onSelectGroupingModeAnchored,
             )

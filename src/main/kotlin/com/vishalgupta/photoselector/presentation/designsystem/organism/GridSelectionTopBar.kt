@@ -12,15 +12,17 @@ import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
 import com.vishalgupta.photoselector.presentation.designsystem.atom.AppOutlinedButton
 import com.vishalgupta.photoselector.presentation.designsystem.atom.AppTextButton
-import com.vishalgupta.photoselector.presentation.designsystem.molecule.ConflictPolicyButton
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.ExportMenu
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.SelectionFileMenu
 
 /**
  * The grid top bar while a multi-select is active: the same chrome height and shape as
  * [GridTopBar], swapped in so the selection's bulk actions replace per-photo controls rather
- * than crowding them. Leads with a live "[n] selected" count, then the bulk file/copy actions
+ * than crowding them. Leads with a live "[n] selected" count, then the bulk file/export actions
  * (Favourite is promoted to its own star button to match the rest of the app, custom categories
- * sit behind an "Add to category" menu), and trails with **Clear**.
+ * sit behind an "Add to category" menu), and trails with **Clear**. The output paths reuse the same
+ * [ExportMenu] the per-scope [GridTopBar] carries — saving a .txt list or copying to a folder — so a
+ * selection exports identically to a whole category rather than through a separate copy-only button.
  *
  * [customCategories] is the slot-ordered custom list (Favourites excluded); the menu hides
  * entirely when it is empty so there's no dead control. **Delete** sits in the trailing group
@@ -33,6 +35,7 @@ fun GridSelectionTopBar(
     customCategories: List<Category>,
     onFileIntoFavourites: () -> Unit,
     onFileIntoCustom: (slot: Int) -> Unit,
+    onExportSelectionTxt: () -> Unit,
     onCopySelection: (ConflictPolicy) -> Unit,
     onDeleteSelection: () -> Unit,
     onClearSelection: () -> Unit,
@@ -52,7 +55,11 @@ fun GridSelectionTopBar(
         if (customCategories.isNotEmpty()) {
             SelectionFileMenu(customCategories = customCategories, onSelectSlot = onFileIntoCustom)
         }
-        ConflictPolicyButton(enabled = true, onSelect = onCopySelection)
+        ExportMenu(
+            enabled = true,
+            onExportTxt = onExportSelectionTxt,
+            onCopyToFolder = onCopySelection,
+        )
 
         Spacer(Modifier.weight(1f))
 

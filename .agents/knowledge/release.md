@@ -33,7 +33,7 @@ Three workflows in `.github/workflows/`:
      the workflow detects this and posts release-branch numbers only.
 3. **`release.yml`** — fires on `pull_request: closed` against `main` when
    the head branch starts with `release/`.
-   - Runs on `macos-latest` (required for `packageDmg`).
+   - Runs on `macos-latest` (required for `packageReleaseDmg`).
    - Tags `vX.Y.Z`, builds the DMG, publishes a GitHub Release with the
      DMG attached.
 

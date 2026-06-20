@@ -49,16 +49,22 @@ Clean architecture, single Gradle module, package
   `navigation/` and `common/` (non-UI plumbing: file dialogs, system
   actions, hover).
 - `presentation/designsystem/` — the Atomic Design system. `theme/`
-  (tokens: `AppColors`/`Spacing`/`Dimens` read via `AppTheme.*`, plus
-  `AppTypography`/`AppShapes`), then `atom/`, `molecule/`, `organism/`.
-  Screens are the "pages" tier. Build UI from these and add shared
-  tokens/components here rather than inlining literals in screens.
+  (tokens: `AppColors`/`Spacing`/`Dimens` plus `AppTypography`/`AppShapes`),
+  then `atom/`, `molecule/`, `organism/`. Screens are the "pages" tier. Build
+  UI from these and add shared tokens/components here rather than inlining
+  literals in screens. **Read every token through `AppTheme`** — the
+  app-specific `AppTheme.colors`/`spacing`/`dimens` *and* the Material-mapped
+  `AppTheme.colorScheme`/`typography`/`shapes` (which `AppTheme` re-exposes as
+  delegates). `MaterialTheme` is used only inside the `AppTheme` provider, never
+  at a call site, so the design system has one accessor. (Most of the tree
+  pre-dates this and still reads `MaterialTheme.*` directly — migrate a file's
+  reads to `AppTheme.*` when you touch it.)
 - `di/AppContainer.kt` — manual DI container. **No DI framework.** Add new
   wiring here.
 - Navigation is a sealed `Screen` interface (`RootPicker | Grid | Browser |
   Inspect`). `Screen.Grid` carries a `CategoryScope` (`AllPhotos |
   Category(id)`); each category opens as its *own* `Screen.Grid` (own scroll
-  state) from the All Photos dropdown, never toggled in place. `Screen.Inspect`
+  state) from the library rail, never toggled in place. `Screen.Inspect`
   holds a *fixed set* of selected photos (`indices`) and shows them two ways
   behind one toggle: an overview *grid* (the `survey/` facet) and a full-screen
   *browse* mode (`browser/` reused over just that set, one shared cursor). It
@@ -69,6 +75,16 @@ Clean architecture, single Gradle module, package
   `InspectViewModel` lazily builds the two facet view models — a grid-first set
   never decodes the browser until the first toggle, a browse-only set never
   builds the grid.
+- **The grid is framed by `LibraryRail` (left nav: scopes + category CRUD) and a
+  slim `GridTopBar` (identity + lens toggle + `ExportMenu`).** `App` mounts the
+  rail **outside** the per-scope `key(GridRetentionKey)`, backed by a root-scoped
+  `LibraryRailViewModel` (retained per root in `AppContainer`) — so a switch
+  re-keys only the grid and the rail stays mounted; inside the key it rebuilt
+  every switch and flickered. `GridScreen` owns only the collapse toggle
+  (`railCollapsed`/`onToggleRail`), hoisted to `App` so it survives scope switches
+  and a Grid → Browser → Grid round trip. Two traps: rail rows must stay
+  **non-keyboard-focusable** or they steal the grid's focus ring; and the rail
+  sets no `returnScrollIndex` (back-out lands on the warm All Photos grid).
 - **The grid is grouping/presentation only — mind the three index spaces.** The
   toolbar's segmented control picks a lens (`GridUiState.groupingMode`: `Off |
   Time | Similarity`, Time default); a non-`Off` mode resolves to one
@@ -112,10 +128,14 @@ JDK 17 (Zulu or JBR — either works). Gradle wrapper checked in.
 | Launch the app | `./gradlew run` |
 | Type-check only | `./gradlew compileKotlin` |
 | Run unit tests | `./gradlew test` |
-| Build a macOS DMG | `./gradlew packageDmg` (output under `build/compose/binaries/`) |
+| Build a macOS DMG (dev) | `./gradlew packageDmg` (output under `build/compose/binaries/`) |
+| Build the minified release DMG | `./gradlew packageReleaseDmg` (ProGuard-shrunk; what releases ship) |
 
 `run` is the fastest signal for UI work. `compileKotlin` is enough when you
-just want to verify a refactor builds.
+just want to verify a refactor builds — but it does NOT compile the `src/jmh/`
+benchmark source set. After changing a public API/interface a benchmark touches
+(e.g. `EmbeddingModel`), also run `./gradlew compileJmhKotlin`; otherwise the
+break stays invisible until the `release-perf` CI job.
 
 ### Test harnesses
 
@@ -131,9 +151,10 @@ Three workflows in `.github/workflows/` drive it: **`draft-release.yml`**
 (manual; derives the SemVer bump from `main..develop` Conventional Commits and
 opens the `release/vX.Y.Z` PR), **`release-perf.yml`** (posts a JMH cross-branch
 diff on the release PR), and **`release.yml`** (tags + builds the DMG + publishes
-the GitHub Release on merge). The `version` in `build.gradle.kts` is the single
-source of truth, and after every release you must back-merge `main` into
-`develop` or the next draft refuses the version.
+the GitHub Release on merge; the shipped DMG is the **minified**
+`packageReleaseDmg` — see the ProGuard gotcha below). The `version` in
+`build.gradle.kts` is the single source of truth, and after every release you
+must back-merge `main` into `develop` or the next draft refuses the version.
 
 Full mechanics — bump rules, the required repo setting, the local dry-run, and
 recovering a half-finished run — are in `.agents/knowledge/release.md`.
@@ -218,6 +239,14 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   classes were tried and abandoned — don't reintroduce them.
 - **`packageDmg` only runs on macOS.** CI uses `macos-latest`; locally you
   need to be on a Mac.
+- **The release DMG is ProGuard-minified — keep-rules are load-bearing.**
+  `packageReleaseDmg` tree-shakes the whole classpath, so anything reached only
+  via reflection/JNI/codegen (ONNX's native bindings, the JNA HEIC/RAW bridge,
+  kotlinx.serialization's `$$serializer`s) survives only because
+  `proguard-rules.pro` keeps it. A missing keep builds clean and breaks at
+  *runtime* — and ONNX fails silently (falls back to the classical embedder). So
+  validate keep changes against the packaged release app (Similarity lens +
+  HEIC/RAW decode + favourite-relaunch), not `./gradlew run`, which skips ProGuard.
 - **skiko cannot decode HEIC/HEIF.** Verified by probe on the bundled
   skiko (`Image.makeFromEncoded` throws). There is no maintained
   cross-platform JVM HEIC library on Maven (`org.bytedeco:libheif` does
@@ -266,13 +295,16 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   so the on-disk cache re-keys. Don't bake model assumptions into callers.
 - **Sharpness (the suggested key frame) is scored on a dedicated 768px canonical canvas, not the 224px embedding decode** — variance-of-Laplacian is per-pixel, so sharing the embedding decode hid focus differences and scoring at native size let the *lowest-res* copy win; don't unify the two decodes or drop `scaleUpToLongEdge` (bump `EmbeddingCache.FORMAT_VERSION` if the score changes).
 - **ONNX Runtime is a bundled native dependency.** The
-  `com.microsoft.onnxruntime:onnxruntime` JAR ships a JNI `.dylib` (and the
-  win/linux equivalents) that jpackage rolls into the DMG. Unlike the HEIC
-  bridge (which loads system frameworks by name and bundles nothing), this is
-  real native code in the app bundle — so DMG signing/notarization has to cover
-  it, and `OnnxEmbeddingModel` construction must stay fail-soft (it falls back
-  to the classical embedder) in case the runtime can't initialise on a given
-  host.
+  `com.microsoft.onnxruntime:onnxruntime` JAR ships a JNI `.dylib` that jpackage
+  rolls into the DMG. The published jar is fat (all-platform natives + debug
+  symbols), so `build.gradle.kts` depends on the `slimOnnxRuntime` task — which
+  repackages it down to the macOS dylibs only — rather than the artifact
+  directly; if a Windows build is ever added it needs its own slimmed jar, not
+  the fat one. Unlike the HEIC bridge (which loads system frameworks by name and
+  bundles nothing), this is real native code in the app bundle — so DMG
+  signing/notarization has to cover it, and `OnnxEmbeddingModel` construction
+  must stay fail-soft (it falls back to the classical embedder) in case the
+  runtime can't initialise on a given host.
 
 ## Files worth knowing
 

@@ -1,11 +1,16 @@
 package com.vishalgupta.photoselector.data.ai
 
 import com.vishalgupta.photoselector.testing.ImageFixtures
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.test.runTest
 import kotlin.math.abs
 import kotlin.math.sqrt
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -27,7 +32,7 @@ class OnnxEmbeddingModelTest {
 
     @Test
     fun embed_returnsAFiniteUnitVectorOfTheModelWidth() {
-        val vec = model.embed(ImageFixtures.ramp(96, 96))
+        val vec = assertNotNull(model.embed(ImageFixtures.ramp(96, 96)), "a valid image should embed")
 
         assertEquals(model.dimensions, vec.size)
         assertTrue(vec.all { it.isFinite() }, "embedding had non-finite components")
@@ -36,20 +41,41 @@ class OnnxEmbeddingModelTest {
 
     @Test
     fun embed_isDeterministic_soIdenticalImagesGroup() {
-        val a = model.embed(ImageFixtures.ramp(96, 96))
-        val b = model.embed(ImageFixtures.ramp(96, 96))
+        val a = assertNotNull(model.embed(ImageFixtures.ramp(96, 96)))
+        val b = assertNotNull(model.embed(ImageFixtures.ramp(96, 96)))
 
         assertTrue(cosine(a, b) > 0.999f, "identical images should embed to (almost) the same vector")
     }
 
     @Test
     fun embed_separatesVisuallyDifferentImages() {
-        val ramp = model.embed(ImageFixtures.ramp(96, 96))
-        val checker = model.embed(ImageFixtures.checker(96, 96))
+        val ramp = assertNotNull(model.embed(ImageFixtures.ramp(96, 96)))
+        val checker = assertNotNull(model.embed(ImageFixtures.checker(96, 96)))
 
         // A learned backbone should put a smooth ramp and a high-frequency checkerboard clearly
         // apart — well under the grouper's 0.85 merge threshold.
         assertTrue(cosine(ramp, checker) < 0.85f, "distinct images should be distinguishable, got ${cosine(ramp, checker)}")
+    }
+
+    @Test
+    fun embed_isSafeUnderConcurrentRunsOnTheSharedSession() = runTest {
+        // The cold Similarity pass (SimilarityPhotoGrouper) embeds frames in parallel against this one
+        // shared OrtSession. ONNX Runtime supports concurrent Run() on a session; this is the brief's
+        // load-bearing assumption, so prove it on the real native rather than trusting the doc.
+        // Every concurrent embed of the same image must match the single-threaded result exactly.
+        //
+        // The real parallelism comes from async(Dispatchers.IO) below — those run on real OS threads
+        // independently of the test runner, so runTest (not runBlocking) is correct here.
+        val reference = assertNotNull(model.embed(ImageFixtures.ramp(96, 96)))
+
+        val results = (0 until 16).map {
+            async(Dispatchers.IO) { assertNotNull(model.embed(ImageFixtures.ramp(96, 96))) }
+        }.awaitAll()
+
+        for (vec in results) {
+            assertEquals(reference.size, vec.size)
+            assertTrue(cosine(reference, vec) > 0.999f, "concurrent embeds must match the single-threaded vector")
+        }
     }
 
     private fun norm(v: FloatArray): Float {
