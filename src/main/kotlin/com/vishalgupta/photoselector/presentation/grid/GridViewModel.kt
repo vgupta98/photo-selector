@@ -483,15 +483,23 @@ class GridViewModel(
     /**
      * Clicking / Enter on a collapsed burst tile: unfold it in place into its frames (or fold it
      * back if it is already open). At most one burst is expanded at a time. Focus tracks the burst:
-     * on expand it jumps to the first frame so the arrow keys start inside the run; on fold-back it
-     * returns to the collapsed burst tile. (Both share one lookup: [PhotoGroup.groupId] is the first
-     * frame's id, so it resolves to the first frame when open and to the burst tile when collapsed.)
+     * on expand it lands on the suggested keeper - the frame [PhotoGroup.Burst.keyIndex] points at,
+     * which is the sharpest frame under the Similarity lens and the neutral middle otherwise - so the
+     * keyboard cull starts on the AI's pick and `F`/`Space` files it immediately (arrowing away
+     * overrides it; the suggestion never forces anything). On fold-back it returns to the collapsed
+     * burst tile. (The collapsed lookup is by [PhotoGroup.groupId] - the first frame's id - while the
+     * expanded lookup is by the keyer frame's identity, since each open frame is its own tile.)
      */
     fun toggleBurstExpansion(groupId: PhotoId) {
         _state.update { st ->
             val open = if (st.expandedBurstId == groupId) null else groupId
             val display = displayGroupsFor(st.groups, open)
-            val focus = display.indexOfFirst { it.groupId == groupId }.takeIf { it >= 0 } ?: st.focusedIndex
+            val burst = st.groups.firstOrNull { it.groupId == groupId } as? PhotoGroup.Burst
+            val focus = if (open != null && burst != null) {
+                display.indexOfFirst { it.keyPhoto.id == burst.keyPhoto.id }
+            } else {
+                display.indexOfFirst { it.groupId == groupId }
+            }.takeIf { it >= 0 } ?: st.focusedIndex
             // Expanding/folding renumbers the tile space, so any stored Shift+click anchor is stale.
             st.copy(
                 expandedBurstId = open,
@@ -504,7 +512,7 @@ class GridViewModel(
     /**
      * Esc (after clearing any selection): fold the open burst back into one tile, returning focus to
      * that burst tile so the cursor lands where the user opened from rather than on whatever tile now
-     * occupies the shrunken index (symmetric with [toggleBurstExpansion]'s jump to the first frame).
+     * occupies the shrunken index (symmetric with [toggleBurstExpansion]'s jump to the suggested keeper).
      */
     fun collapseBurst() {
         _state.update { st ->
