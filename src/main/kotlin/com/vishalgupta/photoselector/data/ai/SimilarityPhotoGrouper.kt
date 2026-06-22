@@ -36,7 +36,7 @@ import java.util.concurrent.atomic.AtomicInteger
 class SimilarityPhotoGrouper(
     private val extractor: PhotoFeatureExtractor,
     private val concurrency: Int = DEFAULT_CONCURRENCY,
-    private val threshold: Float = SimilarityGrouper.DEFAULT_THRESHOLD,
+    private val rule: SimilarityGrouper.ThresholdRule = SimilarityGrouper.Adaptive,
 ) : PhotoGrouper {
 
     override suspend fun group(photos: List<Photo>, onProgress: GroupingProgress): List<PhotoGroup> {
@@ -65,7 +65,7 @@ class SimilarityPhotoGrouper(
             }
         }
         // coroutineScope joined all tasks; every surviving feature is in the maps.
-        return SimilarityGrouper.group(photos, embeddings, sharpness, threshold)
+        return SimilarityGrouper.group(photos, embeddings, sharpness, rule)
     }
 
     private companion object {

@@ -108,6 +108,67 @@ class SimilarityGrouperTest {
         assertEquals(listOf(c1, c2), assertIs<PhotoGroup.Burst>(groups[2]).photos)
     }
 
+    // --- adaptive (default) threshold rule ---
+
+    @Test fun `adaptive cut is stricter in a tight event than a fixed floor`() {
+        // A "tight" event: every neighbour is fairly similar (cosine ~0.90), with one standout pair
+        // (~0.99) that is genuinely the same moment. Frames placed at exact angles so the cosines are
+        // known: C0-C1 ~0.90, C1-C2 ~0.99, C2-C3 ~0.90.
+        val c = listOf(photo("C0"), photo("C1"), photo("C2"), photo("C3"))
+        val emb = mapOf(
+            c[0].id to unit(1f, 0f),
+            c[1].id to unit(0.9f, 0.4359f), // 25.84 deg from C0 -> cos ~0.90
+            c[2].id to unit(0.8294f, 0.5586f), // +8.11 deg -> C1-C2 cos ~0.99
+            c[3].id to unit(0.5034f, 0.8640f), // +25.84 deg -> C2-C3 cos ~0.90
+        )
+
+        // Adaptive: run median ~0.90, cut ~0.97 -> only the standout pair groups; the rest stay single.
+        val adaptive = SimilarityGrouper.group(c, emb)
+        assertEquals(3, adaptive.size)
+        assertIs<PhotoGroup.Single>(adaptive[0])
+        assertEquals(listOf(c[1], c[2]), assertIs<PhotoGroup.Burst>(adaptive[1]).photos)
+        assertIs<PhotoGroup.Single>(adaptive[2])
+
+        // The old fixed 0.85 floor would over-merge the whole tight run into one burst.
+        val fixed = SimilarityGrouper.group(c, emb, rule = SimilarityGrouper.fixed(0.85f))
+        assertEquals(c, assertIs<PhotoGroup.Burst>(fixed.single()).photos)
+    }
+
+    @Test fun `adaptive never groups a run with no comparable pairs`() {
+        // No embeddings at all -> no cosines -> cut pinned at the max, nothing groups.
+        val photos = (1..3).map { photo("IMG_$it") }
+        val groups = SimilarityGrouper.group(photos, emptyMap())
+        assertEquals(3, groups.size)
+        assertTrue(groups.all { it is PhotoGroup.Single })
+    }
+
+    @Test fun `adaptive clamp floor keeps near-orthogonal frames apart`() {
+        // A folder of mutually dissimilar frames: the median is low, but the clamp floor (0.78)
+        // stops the bar dropping so far that unrelated frames merge.
+        val photos = listOf(photo("A"), photo("B"), photo("C"))
+        val emb = mapOf(
+            photos[0].id to unit(1f, 0f),
+            photos[1].id to unit(0f, 1f), // orthogonal to A (cosine 0)
+            photos[2].id to unit(1f, 0f), // orthogonal to B
+        )
+        val groups = SimilarityGrouper.group(photos, emb)
+        assertEquals(3, groups.size)
+        assertTrue(groups.all { it is PhotoGroup.Single })
+    }
+
+    @Test fun `the fixed rule reproduces the old constant-floor behaviour`() {
+        val a = photo("A"); val b = photo("B")
+        val emb = mapOf(a.id to unit(1f, 0f), b.id to unit(1f, 0.6f)) // cosine ~0.86
+        // Above 0.85 -> groups; raise the floor above the pair -> splits.
+        assertIs<PhotoGroup.Burst>(
+            SimilarityGrouper.group(listOf(a, b), emb, rule = SimilarityGrouper.fixed(0.85f)).single(),
+        )
+        assertEquals(
+            2,
+            SimilarityGrouper.group(listOf(a, b), emb, rule = SimilarityGrouper.fixed(0.95f)).size,
+        )
+    }
+
     // --- helpers ---
 
     private fun unit(vararg xs: Float): FloatArray {

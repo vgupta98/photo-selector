@@ -33,7 +33,8 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   `ExportPhotosTxtUseCase`, `MovePhotosToTrashUseCase`.
 - `grouping/` — the grouping seam: `PhotoGrouper` (an interface with one suspend
   `group(...)` method), `BurstGrouper` (object; time + camera), `SimilarityGrouper`
-  (object; visual), `CaptureMetadata` + `CaptureMetadataSource`.
+  (object; visual — `ThresholdRule` seam, `Adaptive` per-event cut is the default,
+  `fixed()` the legacy constant floor), `CaptureMetadata` + `CaptureMetadataSource`.
 - `format/` — `PhotoDecoder`, `PhotoFormat`, `PhotoFormatRegistry` interfaces.
 
 ## data/ — implementations
