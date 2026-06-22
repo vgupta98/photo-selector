@@ -7,6 +7,7 @@ import com.sun.jna.NativeLibrary
 import com.sun.jna.Platform
 import com.sun.jna.Pointer
 import com.sun.jna.Structure
+import com.vishalgupta.photoselector.data.format.ExifCaptureInfo
 import com.vishalgupta.photoselector.domain.model.DecodedImage
 import java.nio.file.Path
 
@@ -14,6 +15,12 @@ import java.nio.file.Path
  * Thin JNA bridge into the macOS ImageIO / CoreGraphics / CoreFoundation system frameworks, used to
  * decode formats skiko can't (HEIC/HEIF) and camera RAW. Nothing is bundled — these frameworks ship
  * with macOS and are loaded by name; JNA provides its own dispatch native.
+ *
+ * Besides decoding pixels it also reads capture metadata ([readCaptureInfo]) from a HEIC's
+ * EXIF/TIFF properties via `CGImageSourceCopyPropertiesAtIndex` — the only way to get HEIC capture
+ * time, since the JVM-side [ExifReader] is JPEG-only. The values ImageIO parses out of the HEIC's
+ * EXIF block are the same raw fields [ExifReader] yields for JPEG, so it reuses [ExifCaptureInfo] as
+ * the shared raw shape rather than introducing a near-twin holder.
  *
  * The decode goes through `CGImageSourceCreateThumbnailAtIndex` with `WithTransform = true` so EXIF
  * orientation is baked in by the OS (the same decoder Finder/Preview use), and `MaxPixelSize` so the
@@ -122,6 +129,72 @@ internal object MacImageIO {
         }
     }
 
+    /**
+     * Reads capture metadata (DateTimeOriginal/SubSecTimeOriginal, Make, Model, Orientation) from the
+     * local file at [path] via ImageIO's image properties, shaped into the same raw [ExifCaptureInfo]
+     * the JVM EXIF reader produces for JPEG. Returns null off macOS, when the file isn't decodable, or
+     * when none of the fields are present. Never throws — any framework failure degrades to null, so a
+     * caller (the HEIC capture-metadata source) falls back to "no capture time" exactly like a JPEG
+     * with a stripped EXIF block.
+     */
+    fun readCaptureInfo(path: Path): ExifCaptureInfo? {
+        if (!Platform.isMac()) return null
+        val fsBytes = path.toString().toByteArray(Charsets.UTF_8)
+        if (fsBytes.isEmpty()) return null
+        return runCatching {
+            val fileUrl = cf.CFURLCreateFromFileSystemRepresentation(null, fsBytes, fsBytes.size.toLong(), false)
+                ?: return@runCatching null
+            try {
+                val source = imageIO.CGImageSourceCreateWithURL(fileUrl, null) ?: return@runCatching null
+                try {
+                    // Copy* returns an owned dict we must release; the sub-dicts and values fetched from
+                    // it with CFDictionaryGetValue are *not* owned, so they are never released here.
+                    val props = imageIO.CGImageSourceCopyPropertiesAtIndex(source, 0L, null)
+                        ?: return@runCatching null
+                    try {
+                        val exif = cf.CFDictionaryGetValue(props, kCGImagePropertyExifDictionary)
+                        val tiff = cf.CFDictionaryGetValue(props, kCGImagePropertyTIFFDictionary)
+                        val dateTimeOriginal =
+                            exif?.let { cfString(cf.CFDictionaryGetValue(it, kCGImagePropertyExifDateTimeOriginal)) }
+                        val subSec =
+                            exif?.let { cfString(cf.CFDictionaryGetValue(it, kCGImagePropertyExifSubsecTimeOriginal)) }
+                        val make = tiff?.let { cfString(cf.CFDictionaryGetValue(it, kCGImagePropertyTIFFMake)) }
+                        val model = tiff?.let { cfString(cf.CFDictionaryGetValue(it, kCGImagePropertyTIFFModel)) }
+                        val orientation =
+                            cfInt(cf.CFDictionaryGetValue(props, kCGImagePropertyOrientation))?.takeIf { it in 1..8 }
+                        if (make == null && model == null && dateTimeOriginal == null && orientation == null) {
+                            null
+                        } else {
+                            ExifCaptureInfo(dateTimeOriginal, subSec, make, model, orientation)
+                        }
+                    } finally {
+                        cf.CFRelease(props)
+                    }
+                } finally {
+                    cf.CFRelease(source)
+                }
+            } finally {
+                cf.CFRelease(fileUrl)
+            }
+        }.getOrNull()
+    }
+
+    /** Marshals a (non-owned) CFStringRef to a Kotlin String, or null if absent/empty/too long. */
+    private fun cfString(value: Pointer?): String? {
+        if (value == null) return null
+        val buffer = ByteArray(CF_STRING_BUFFER)
+        if (!cf.CFStringGetCString(value, buffer, buffer.size.toLong(), K_CF_STRING_ENCODING_UTF8)) return null
+        val end = buffer.indexOf(0).let { if (it < 0) buffer.size else it }
+        return String(buffer, 0, end, Charsets.UTF_8).trim().ifEmpty { null }
+    }
+
+    /** Marshals a (non-owned) CFNumberRef to an Int, or null if absent/unreadable. */
+    private fun cfInt(value: Pointer?): Int? {
+        if (value == null) return null
+        val mem = Memory(4)
+        return if (cf.CFNumberGetValue(value, K_CF_NUMBER_INT_TYPE, mem)) mem.getInt(0) else null
+    }
+
     /** Builds the thumbnail options dict; returns it plus the CFNumber to release (if any). */
     private fun buildThumbnailOptions(targetMaxDimensionPx: Int?): Pair<Pointer, Pointer?> {
         val keys = ArrayList<Pointer>(3)
@@ -185,6 +258,10 @@ internal object MacImageIO {
     // kCGImageAlphaPremultipliedFirst (2) | kCGBitmapByteOrder32Little (2 << 12) -> in-memory BGRA.
     private const val BGRA_PREMUL_LE: Int = 2 or (2 shl 12)
     private const val K_CF_NUMBER_INT_TYPE: Int = 9 // kCFNumberIntType
+    private const val K_CF_STRING_ENCODING_UTF8: Int = 0x08000100 // kCFStringEncodingUTF8
+
+    // Capture-metadata strings are short (timestamps, camera make/model); 256 bytes is ample headroom.
+    private const val CF_STRING_BUFFER: Int = 256
 
     // Sentinel MaxPixelSize for a full-resolution RAW decode: larger than any current sensor's long
     // edge, so ImageIO caps to the source rather than upscaling. RAW needs *some* cap or the
@@ -214,6 +291,30 @@ internal object MacImageIO {
         imageIOLib.getGlobalVariableAddress("kCGImageSourceThumbnailMaxPixelSize").getPointer(0)
     }
 
+    // CGImageProperties dictionary keys (CFStringRef globals exported by ImageIO), used by
+    // [readCaptureInfo]. The {Exif}/{TIFF} sub-dictionaries hold the capture fields.
+    private val kCGImagePropertyExifDictionary: Pointer by lazy {
+        imageIOLib.getGlobalVariableAddress("kCGImagePropertyExifDictionary").getPointer(0)
+    }
+    private val kCGImagePropertyTIFFDictionary: Pointer by lazy {
+        imageIOLib.getGlobalVariableAddress("kCGImagePropertyTIFFDictionary").getPointer(0)
+    }
+    private val kCGImagePropertyExifDateTimeOriginal: Pointer by lazy {
+        imageIOLib.getGlobalVariableAddress("kCGImagePropertyExifDateTimeOriginal").getPointer(0)
+    }
+    private val kCGImagePropertyExifSubsecTimeOriginal: Pointer by lazy {
+        imageIOLib.getGlobalVariableAddress("kCGImagePropertyExifSubsecTimeOriginal").getPointer(0)
+    }
+    private val kCGImagePropertyTIFFMake: Pointer by lazy {
+        imageIOLib.getGlobalVariableAddress("kCGImagePropertyTIFFMake").getPointer(0)
+    }
+    private val kCGImagePropertyTIFFModel: Pointer by lazy {
+        imageIOLib.getGlobalVariableAddress("kCGImagePropertyTIFFModel").getPointer(0)
+    }
+    private val kCGImagePropertyOrientation: Pointer by lazy {
+        imageIOLib.getGlobalVariableAddress("kCGImagePropertyOrientation").getPointer(0)
+    }
+
     // The dictionary callback structs: pass the address of the struct itself (no dereference).
     private val keyCallbacks: Pointer by lazy { cfLib.getGlobalVariableAddress("kCFTypeDictionaryKeyCallBacks") }
     private val valueCallbacks: Pointer by lazy { cfLib.getGlobalVariableAddress("kCFTypeDictionaryValueCallBacks") }
@@ -238,12 +339,16 @@ internal object MacImageIO {
             keyCallBacks: Pointer?,
             valueCallBacks: Pointer?,
         ): Pointer?
+        fun CFDictionaryGetValue(theDict: Pointer, key: Pointer): Pointer?
+        fun CFStringGetCString(theString: Pointer, buffer: ByteArray, bufferSize: Long, encoding: Int): Boolean
+        fun CFNumberGetValue(number: Pointer, theType: Int, valuePtr: Pointer): Boolean
     }
 
     private interface ImageIO : Library {
         fun CGImageSourceCreateWithData(data: Pointer, options: Pointer?): Pointer?
         fun CGImageSourceCreateWithURL(url: Pointer, options: Pointer?): Pointer?
         fun CGImageSourceCreateThumbnailAtIndex(source: Pointer, index: Long, options: Pointer?): Pointer?
+        fun CGImageSourceCopyPropertiesAtIndex(source: Pointer, index: Long, options: Pointer?): Pointer?
     }
 
     private interface CoreGraphics : Library {

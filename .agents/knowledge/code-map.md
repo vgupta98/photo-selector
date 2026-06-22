@@ -49,10 +49,14 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 - `image/` — decode + cache: `SkikoImageLoader`, `ImageLoader`/`ImageCache`,
   `DiskThumbnailCache`.
 - `format/` — per-format decoders (`JpegDecoder`, `PngDecoder`, `HeicDecoder`,
-  `RawDecoder`), `DefaultPhotoFormatRegistry`, `SkiaImageDecoding`; `ExifReader`
-  (JPEG-only) backs `ExifCaptureMetadataSource`, memoised by
-  `CachingCaptureMetadataSource`.
-- `format/macos/` — `MacImageIO` (JNA→ImageIO bridge for HEIC *and* RAW; macOS only).
+  `RawDecoder`), `DefaultPhotoFormatRegistry`, `SkiaImageDecoding`. Capture
+  metadata (time + camera) is read per-format and chained: `ExifReader`
+  (JPEG-only) backs `ExifCaptureMetadataSource`; `HeicCaptureMetadataSource`
+  reads HEIC via `MacImageIO`; `CompositeCaptureMetadataSource` returns the first
+  non-NONE; `CachingCaptureMetadataSource` memoises the lot. Raw→domain shaping is
+  shared in `ExifCaptureMetadataSource.kt` (`toCaptureMetadata`).
+- `format/macos/` — `MacImageIO` (JNA→ImageIO bridge: decodes HEIC *and* RAW, and
+  reads HEIC capture metadata via `CGImageSourceCopyPropertiesAtIndex`; macOS only).
 - `ai/` — similarity pipeline: `EmbeddingModel` seam → `OnnxEmbeddingModel`
   (default) / `DownscaleGrayEmbeddingModel` (fallback), `GrayBuffer`,
   `SharpnessScorer`, `PhotoFeatureExtractor` (+ `PhotoFeatures`), `EmbeddingCache`,
