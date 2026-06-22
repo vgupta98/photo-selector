@@ -29,6 +29,7 @@ import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.data.image.SkikoImageLoader
 import com.vishalgupta.photoselector.domain.format.PhotoFormatRegistry
 import com.vishalgupta.photoselector.domain.grouping.PhotoGrouper
+import com.vishalgupta.photoselector.domain.grouping.SimilarityGrouper
 import com.vishalgupta.photoselector.domain.model.DecodedImage
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
@@ -141,6 +142,11 @@ class AppContainer {
                 decodeForSharpness = ::decodeForSharpness,
             ),
             concurrency = decodeParallelism,
+            // Capture time corroborates the visual cut: the time-boosted rule also joins frames taken
+            // within seconds of each other, recovering same-moment bursts the embedding alone missed.
+            // Reuses the same memoized source as the Time lens; HEIC (no EXIF time) falls back to visual.
+            captureMetadataSource = captureMetadataSource,
+            joinRule = SimilarityGrouper.timeBoosted(),
         ),
         cache = groupingResultCache,
         modelId = embeddingModel.id,

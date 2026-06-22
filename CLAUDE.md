@@ -27,7 +27,8 @@ Clean architecture, single Gradle module, package
   the callback reporting per-photo progress for the grid's bar): the
   pure `BurstGrouper` (time + camera, over a `CaptureMetadataSource`) and
   the pure `SimilarityGrouper` (visual, over precomputed embeddings +
-  sharpness) both feed it, so the heuristic swaps without touching the grid.
+  sharpness, with capture time as a corroborating boost) both feed it, so the
+  heuristic swaps without touching the grid.
   `PhotoGroup.Burst.keyIndex` is the representative frame — middle by default,
   the suggested-sharpest for a similarity cluster.
 - `data/` — repository implementations: `filesystem/`, `categories/`,
@@ -285,7 +286,18 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   `ThresholdRule` seam (`fixed()` keeps the old constant floor for the eval sweep
   and unit tests). Measured on a labelled real-wedding set: F1 0.61 -> 0.70, better precision
   *and* recall; unsupervised (it reads only the run's cosine spread, never the
-  labels). Per-photo
+  labels). **Capture time is also used, as corroborating evidence** behind a
+  second seam, `JoinRule`: the shipped `timeBoosted` rule joins two adjacent frames
+  when the cosine clears the cut *or* they were taken within ~3s and clear a relaxed
+  0.65 floor — recovering same-moment bursts whose embedding drifted (a framing/zoom
+  shift) that the visual cut alone split. The 3s window is deliberately tight: a
+  wider one over-merges "clean" events the cosine already handles (it *regressed*
+  them in leave-one-event-out validation across the 4 event folders), so the boost
+  only fires on genuine rapid bursts. A frame with no EXIF time (HEIC, EXIF-less)
+  has a null gap and falls back to visual-only, so time can only ever *add* a join,
+  never block one. `SimilarityPhotoGrouper` reads the time from the same memoized
+  `CaptureMetadataSource` the Time lens uses. `VisualOnly` is the seam's no-time
+  default (the pure grouper stays usable without a clock). Per-photo
   embeddings + sharpness are cached to disk (`EmbeddingCache`, keyed by content +
   model id, invalidated on source edit or model swap). The *grouping result* is
   also memoized — `GroupingResultCache`, wrapped around the grouper by
@@ -295,8 +307,8 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   keyed exactly like the embedding cache, and a cancelled pass is never written.
   Bump its `FORMAT_VERSION` if the stored shape **or the grouping algorithm**
   changes — the cache holds the algorithm's *output*, so a logic change (e.g. the
-  adaptive-threshold switch, which took it to v3) must invalidate it or stale
-  groupings get served. The shipped embedder is `OnnxEmbeddingModel` — a
+  adaptive-threshold switch took it to v3, the capture-time boost to v4) must
+  invalidate it or stale groupings get served. The shipped embedder is `OnnxEmbeddingModel` — a
   MobileNetV3-Small backbone (classifier stripped) bundled at
   `src/main/resources/models/mobilenetv3-small.onnx` (~6 MB); `dimensions` (1024)
   is probed from the graph at load, so a model swap needs no caller change.

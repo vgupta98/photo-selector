@@ -162,7 +162,8 @@ class GroupingResultCache(
         // grouping algorithm changes (cached groups are the algorithm's output — stale logic must
         // not be served). v2: dropped the unused keyIsSuggested field; v1 entries are rejected and
         // recompute. v3: SimilarityGrouper switched to the per-event Adaptive threshold.
-        const val FORMAT_VERSION = 3
+        // v4: SimilarityGrouper added the capture-time boost (timeBoosted JoinRule), so groupings change.
+        const val FORMAT_VERSION = 4
         const val DEFAULT_MAX_BYTES: Long = 64L * 1024 * 1024
         private const val FILE_EXTENSION = "grp"
     }
