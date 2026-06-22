@@ -278,7 +278,14 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   in the wiring.
 - **Similarity grouping merges only *adjacent* frames and never crosses a folder
   boundary** (same contiguity rule as `BurstGrouper`; the expand-in-place burst
-  UI fences a contiguous run, and a folder is an event boundary). Per-photo
+  UI fences a contiguous run, and a folder is an event boundary). The cosine cut
+  is **adaptive per event, not a fixed floor**: `SimilarityGrouper` derives each
+  contiguous folder-run's threshold from that run's own adjacent-pair cosine
+  distribution (`Adaptive` = run median + 0.07, clamped to [0.78, 0.95]) behind a
+  `ThresholdRule` seam (`fixed()` keeps the old constant floor for the eval sweep
+  and unit tests). Measured on a labelled real-wedding set: F1 0.61 -> 0.70, better precision
+  *and* recall; unsupervised (it reads only the run's cosine spread, never the
+  labels). Per-photo
   embeddings + sharpness are cached to disk (`EmbeddingCache`, keyed by content +
   model id, invalidated on source edit or model swap). The *grouping result* is
   also memoized — `GroupingResultCache`, wrapped around the grouper by
@@ -286,7 +293,10 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   an unchanged folder is instant rather than re-running the pass; it stores only
   the lightweight group structure (frame ids + key frame), is content+model-id
   keyed exactly like the embedding cache, and a cancelled pass is never written.
-  Bump its `FORMAT_VERSION` if the stored shape changes. The shipped embedder is `OnnxEmbeddingModel` — a
+  Bump its `FORMAT_VERSION` if the stored shape **or the grouping algorithm**
+  changes — the cache holds the algorithm's *output*, so a logic change (e.g. the
+  adaptive-threshold switch, which took it to v3) must invalidate it or stale
+  groupings get served. The shipped embedder is `OnnxEmbeddingModel` — a
   MobileNetV3-Small backbone (classifier stripped) bundled at
   `src/main/resources/models/mobilenetv3-small.onnx` (~6 MB); `dimensions` (1024)
   is probed from the graph at load, so a model swap needs no caller change.
