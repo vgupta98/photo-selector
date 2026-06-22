@@ -34,7 +34,9 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 - `grouping/` — the grouping seam: `PhotoGrouper` (an interface with one suspend
   `group(...)` method), `BurstGrouper` (object; time + camera), `SimilarityGrouper`
   (object; visual — `ThresholdRule` seam, `Adaptive` per-event cut is the default,
-  `fixed()` the legacy constant floor), `CaptureMetadata` + `CaptureMetadataSource`.
+  `fixed()` the legacy constant floor; plus a `JoinRule` seam, `timeBoosted`
+  default adds same-moment frames via the capture-time gap, `VisualOnly` the
+  no-time fallback), `CaptureMetadata` + `CaptureMetadataSource`.
 - `format/` — `PhotoDecoder`, `PhotoFormat`, `PhotoFormatRegistry` interfaces.
 
 ## data/ — implementations

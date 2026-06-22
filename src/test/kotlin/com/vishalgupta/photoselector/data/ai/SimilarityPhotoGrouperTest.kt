@@ -1,5 +1,8 @@
 package com.vishalgupta.photoselector.data.ai
 
+import com.vishalgupta.photoselector.domain.grouping.CaptureMetadata
+import com.vishalgupta.photoselector.domain.grouping.CaptureMetadataSource
+import com.vishalgupta.photoselector.domain.grouping.SimilarityGrouper
 import com.vishalgupta.photoselector.domain.model.DecodedImage
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoGroup
@@ -188,6 +191,37 @@ class SimilarityPhotoGrouperTest {
         failB = false
         val second = grouper.group(listOf(a, b))
         assertEquals(listOf(a, b), assertIs<PhotoGroup.Burst>(second[0]).photos)
+    }
+
+    @Test fun `capture time enables a time-boosted join the visual cut would miss`() = runTest {
+        val dir = Files.createTempDirectory("time-boost-test").also { it.toFile().deleteOnExit() }
+        val cache = EmbeddingCache(dir, modelId = "fake-v1")
+        val a = photo("A"); val b = photo("B")
+        // Two adjacent frames ~0.70 cosine apart (below a fixed 0.85 cut): distinct decode colours
+        // mapped to two vectors.
+        val colour = mapOf(a.id to 10, b.id to 200)
+        val decode: suspend (Photo) -> DecodedImage? = { ImageFixtures.solid(8, 8, r = colour.getValue(it.id)) }
+        val model = FakeEmbeddingModel(id = "fake-v1") { image ->
+            if ((image.bgraBytes[2].toInt() and 0xFF) < 128) unit(1f, 0f) else unit(0.70f, 0.714f)
+        }
+        val extractor = PhotoFeatureExtractor(model, cache, decode, decode)
+        val times = CaptureMetadataSource { p ->
+            CaptureMetadata(takenAtEpochMs = if (p.id == a.id) 0L else 1_000L, cameraId = null, orientation = null)
+        }
+
+        // Visual-only (no metadata source): below the fixed cut -> two singles.
+        val visual = SimilarityPhotoGrouper(extractor, rule = SimilarityGrouper.fixed(0.85f)).group(listOf(a, b))
+        assertEquals(2, visual.size)
+
+        // With capture times + the time-boost rule: 1s apart, above the 0.65 floor -> one burst. This
+        // also locks the wiring: the source is read and the gap reaches the grouper.
+        val boosted = SimilarityPhotoGrouper(
+            extractor,
+            rule = SimilarityGrouper.fixed(0.85f),
+            captureMetadataSource = times,
+            joinRule = SimilarityGrouper.timeBoosted(),
+        ).group(listOf(a, b))
+        assertEquals(listOf(a, b), assertIs<PhotoGroup.Burst>(boosted.single()).photos)
     }
 
     private fun unit(vararg xs: Float): FloatArray {

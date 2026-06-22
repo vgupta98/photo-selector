@@ -169,6 +169,66 @@ class SimilarityGrouperTest {
         )
     }
 
+    // --- time-boosted join rule (capture time as corroborating evidence) ---
+
+    @Test fun `time boost joins a weak-cosine pair captured close together`() {
+        val a = photo("A"); val b = photo("B")
+        val emb = mapOf(a.id to unit(1f, 0f), b.id to unit(0.70f, 0.714f)) // cosine ~0.70, below the 0.85 cut
+        val times = mapOf(a.id to 0L, b.id to 1_000L) // 1s apart
+        // Visual-only at a fixed 0.85 cut leaves them apart...
+        assertEquals(2, SimilarityGrouper.group(listOf(a, b), emb, rule = SimilarityGrouper.fixed(0.85f)).size)
+        // ...but within 3s and above the 0.65 floor the time boost joins them.
+        val boosted = SimilarityGrouper.group(
+            listOf(a, b), emb, captureTimesMs = times,
+            rule = SimilarityGrouper.fixed(0.85f), joinRule = SimilarityGrouper.timeBoosted(),
+        )
+        assertEquals(listOf(a, b), assertIs<PhotoGroup.Burst>(boosted.single()).photos)
+    }
+
+    @Test fun `time boost does not join frames far apart in time`() {
+        val a = photo("A"); val b = photo("B")
+        val emb = mapOf(a.id to unit(1f, 0f), b.id to unit(0.70f, 0.714f)) // ~0.70
+        val times = mapOf(a.id to 0L, b.id to 10_000L) // 10s apart, beyond the 3s window
+        val groups = SimilarityGrouper.group(
+            listOf(a, b), emb, captureTimesMs = times,
+            rule = SimilarityGrouper.fixed(0.85f), joinRule = SimilarityGrouper.timeBoosted(),
+        )
+        assertEquals(2, groups.size)
+    }
+
+    @Test fun `time boost respects the relaxed floor for dissimilar frames`() {
+        val a = photo("A"); val b = photo("B")
+        val emb = mapOf(a.id to unit(1f, 0f), b.id to unit(0.60f, 0.80f)) // ~0.60, below the 0.65 boost floor
+        val times = mapOf(a.id to 0L, b.id to 500L) // 0.5s apart but too dissimilar even relaxed
+        val groups = SimilarityGrouper.group(
+            listOf(a, b), emb, captureTimesMs = times,
+            rule = SimilarityGrouper.fixed(0.85f), joinRule = SimilarityGrouper.timeBoosted(),
+        )
+        assertEquals(2, groups.size)
+    }
+
+    @Test fun `time boost falls back to visual-only when capture time is missing`() {
+        val a = photo("A"); val b = photo("B")
+        val emb = mapOf(a.id to unit(1f, 0f), b.id to unit(0.70f, 0.714f)) // ~0.70
+        // No times -> null gap -> visual-only -> below the 0.85 cut -> stays split (HEIC behaviour).
+        val groups = SimilarityGrouper.group(
+            listOf(a, b), emb,
+            rule = SimilarityGrouper.fixed(0.85f), joinRule = SimilarityGrouper.timeBoosted(),
+        )
+        assertEquals(2, groups.size)
+    }
+
+    @Test fun `a strong-cosine pair joins regardless of time gap`() {
+        val a = photo("A"); val b = photo("B")
+        val emb = mapOf(a.id to unit(1f, 0f), b.id to unit(0.90f, 0.4359f)) // ~0.90, clears the cut
+        val times = mapOf(a.id to 0L, b.id to 60_000L) // a minute apart
+        val groups = SimilarityGrouper.group(
+            listOf(a, b), emb, captureTimesMs = times,
+            rule = SimilarityGrouper.fixed(0.85f), joinRule = SimilarityGrouper.timeBoosted(),
+        )
+        assertEquals(listOf(a, b), assertIs<PhotoGroup.Burst>(groups.single()).photos)
+    }
+
     // --- helpers ---
 
     private fun unit(vararg xs: Float): FloatArray {

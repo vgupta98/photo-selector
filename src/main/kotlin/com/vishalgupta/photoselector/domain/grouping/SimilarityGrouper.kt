@@ -15,10 +15,15 @@ import com.vishalgupta.photoselector.domain.model.PhotoId
  * the same cluster iff ALL hold:
  *  - same immediate parent folder (a folder is an event boundary, even if pixels look alike),
  *  - both have an embedding of equal length,
- *  - their cosine similarity is at least the run's cut (see [ThresholdRule]).
+ *  - the [JoinRule] accepts the pair given their cosine similarity, the run's cut (see [ThresholdRule])
+ *    and the capture-time gap between them.
  *
- * Unlike [BurstGrouper], capture time is irrelevant: two near-identical shots taken 90 seconds
- * apart, or from two different cameras, still group — that is the whole point of the visual lens.
+ * Capture time is not *required* — two near-identical shots from different cameras still group on
+ * visual similarity alone, which is the point of the visual lens. But it is used as **corroborating
+ * evidence**: the shipped [timeBoosted] rule additionally joins frames captured within a few seconds
+ * of each other (the same moment) even when the embedding drifts below the cut — a framing or zoom
+ * shift mid-burst that a purely visual cut would wrongly split. A frame with no capture time (HEIC,
+ * EXIF-less) simply falls back to the visual cut, so time can only ever *add* joins, never block one.
  * A frame with no embedding (decode/inference not yet done) never joins a cluster; it stands alone
  * rather than guessing.
  *
@@ -37,6 +42,14 @@ import com.vishalgupta.photoselector.domain.model.PhotoId
  * 0.70 on that set while improving precision *and* recall — and is unsupervised (it never reads the
  * labels, only the run's cosine spread). [fixed] keeps the old constant-floor behaviour for the eval
  * sweep and the mechanics unit tests.
+ *
+ * ## Time as corroborating evidence
+ * The cosine cut alone misses same-moment frames whose embedding drifted (a big framing/zoom shift):
+ * on the labelled set, of the real adjacent pairs the visual cut missed, many were captured ~3s apart.
+ * The shipped [timeBoosted] [JoinRule] recovers them by relaxing the cosine bar for frames within a
+ * few seconds, lifting recall. The window is deliberately tight (3s): a wider one over-merges "clean"
+ * events the cosine already handles (shown to regress them in leave-one-event-out validation), so the
+ * boost only fires on genuine rapid bursts.
  */
 object SimilarityGrouper {
 
@@ -69,11 +82,44 @@ object SimilarityGrouper {
         else (median(cosines) + ADAPTIVE_MARGIN).coerceIn(MIN_THRESHOLD, MAX_THRESHOLD)
     }
 
+    /** Capture-time boost defaults, validated leave-one-event-out (see the class KDoc). */
+    const val DEFAULT_BOOST_WITHIN_MS = 3_000L
+    const val DEFAULT_BOOST_FLOOR = 0.65f
+
+    /**
+     * Decides whether two adjacent same-folder frames are the same shot, given their [cosine]
+     * similarity, the capture-time gap in ms ([timeGapMs], null when either time is unknown) and the
+     * run's adaptive cosine [cut]. The default [VisualOnly] is purely visual; a time-aware rule can
+     * also relax the bar for frames captured close together. This is the seam a future learned
+     * "same-moment?" judge would slot into.
+     */
+    fun interface JoinRule {
+        fun join(cosine: Float, timeGapMs: Long?, cut: Float): Boolean
+    }
+
+    /** Purely visual: join iff the cosine clears the run's cut. The original behaviour. */
+    val VisualOnly: JoinRule = JoinRule { cosine, _, cut -> cosine >= cut }
+
+    /**
+     * Visual OR a capture-time boost: two frames taken within [boostWithinMs] also join at a relaxed
+     * [boostFloor] cosine, because frames seconds apart are almost always the same moment even when the
+     * embedding drifts. A null gap (no capture time, e.g. HEIC) falls back to visual-only, so the boost
+     * can never *block* a visual join — only add one. Keep the window tight; see the class KDoc.
+     */
+    fun timeBoosted(
+        boostWithinMs: Long = DEFAULT_BOOST_WITHIN_MS,
+        boostFloor: Float = DEFAULT_BOOST_FLOOR,
+    ): JoinRule = JoinRule { cosine, gap, cut ->
+        cosine >= cut || (gap != null && gap <= boostWithinMs && cosine >= boostFloor)
+    }
+
     fun group(
         photos: List<Photo>,
         embeddings: Map<PhotoId, FloatArray>,
         sharpness: Map<PhotoId, Float> = emptyMap(),
+        captureTimesMs: Map<PhotoId, Long> = emptyMap(),
         rule: ThresholdRule = Adaptive,
+        joinRule: JoinRule = VisualOnly,
     ): List<PhotoGroup> {
         if (photos.isEmpty()) return emptyList()
 
@@ -91,7 +137,7 @@ object SimilarityGrouper {
             }
             val folderRun = photos.subList(runStart, runEnd)
             val threshold = rule.cut(adjacentCosines(folderRun, embeddings))
-            clusterRun(folderRun, embeddings, sharpness, threshold, into = groups)
+            clusterRun(folderRun, embeddings, sharpness, captureTimesMs, threshold, joinRule, into = groups)
             runStart = runEnd
         }
         return groups
@@ -102,13 +148,15 @@ object SimilarityGrouper {
         photos: List<Photo>,
         embeddings: Map<PhotoId, FloatArray>,
         sharpness: Map<PhotoId, Float>,
+        captureTimesMs: Map<PhotoId, Long>,
         threshold: Float,
+        joinRule: JoinRule,
         into: MutableList<PhotoGroup>,
     ) {
         var runStart = 0
         for (i in 1..photos.size) {
             val breakHere = i == photos.size ||
-                !sameShot(photos[i - 1], photos[i], embeddings, threshold)
+                !sameShot(photos[i - 1], photos[i], embeddings, captureTimesMs, threshold, joinRule)
             if (breakHere) {
                 val run = photos.subList(runStart, i)
                 into += if (run.size >= 2) {
@@ -139,13 +187,18 @@ object SimilarityGrouper {
         a: Photo,
         b: Photo,
         embeddings: Map<PhotoId, FloatArray>,
+        captureTimesMs: Map<PhotoId, Long>,
         threshold: Float,
+        joinRule: JoinRule,
     ): Boolean {
         if (a.absolutePath.parent != b.absolutePath.parent) return false
         val embA = embeddings[a.id] ?: return false
         val embB = embeddings[b.id] ?: return false
         if (embA.size != embB.size) return false
-        return cosine(embA, embB) >= threshold
+        val ta = captureTimesMs[a.id]
+        val tb = captureTimesMs[b.id]
+        val gap = if (ta != null && tb != null) kotlin.math.abs(ta - tb) else null
+        return joinRule.join(cosine(embA, embB), gap, threshold)
     }
 
     /** Index of the sharpest frame in [run]; the middle frame when no sharpness is known (neutral, matches a time burst). */
