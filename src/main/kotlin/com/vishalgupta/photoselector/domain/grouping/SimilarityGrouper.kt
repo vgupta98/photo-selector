@@ -68,7 +68,10 @@ object SimilarityGrouper {
         fun cut(adjacentCosines: List<Float>): Float
     }
 
-    /** Constant cut, ignoring the distribution — the original behaviour. */
+    /**
+     * Constant cut, ignoring the distribution — the original behaviour. No production caller uses it;
+     * its only consumers are the out-of-tree `EVAL_ROOT` threshold sweep and the mechanics unit tests.
+     */
     fun fixed(threshold: Float = DEFAULT_THRESHOLD): ThresholdRule = ThresholdRule { threshold }
 
     /**
@@ -76,6 +79,11 @@ object SimilarityGrouper {
      * run's **median** adjacent-pair cosine — a burst stands out above the folder's typical neighbour
      * — clamped to [[MIN_THRESHOLD], [MAX_THRESHOLD]]. An empty run (no comparable pairs) cuts at
      * [MAX_THRESHOLD], i.e. groups nothing. This is the shipped default; see the class KDoc for why.
+     *
+     * Limitation: relative thresholding assumes the run contains a *mix* of burst and non-burst
+     * neighbours to set its baseline. A folder that is one uniform burst (every adjacent pair similar,
+     * e.g. ~0.90) has a high median, so the cut rides up toward [MAX_THRESHOLD] and the burst can
+     * shatter into singles. A run mixing a burst with ordinary frames is unaffected.
      */
     val Adaptive: ThresholdRule = ThresholdRule { cosines ->
         if (cosines.isEmpty()) MAX_THRESHOLD
