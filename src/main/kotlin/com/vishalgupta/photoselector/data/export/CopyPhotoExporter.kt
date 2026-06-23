@@ -30,9 +30,10 @@ class CopyPhotoExporter {
         val total = favourites.size
 
         for ((index, photo) in favourites.withIndex()) {
-            // Cooperative cancellation: a cancelled copy stops promptly instead of grinding through
-            // every remaining file, and the per-file catch below never mis-records the cancellation
-            // (a ClosedByInterruptException) as a "failed" file.
+            // Cooperative cancellation: ensureActive() throws if the scope was cancelled, so a
+            // cancelled bulk copy stops at the next file boundary rather than copying every remaining
+            // file. (Files.copy isn't interruptible here — no runInterruptible — so any in-flight file
+            // simply finishes first.)
             ensureActive()
             try {
                 val target = resolveTarget(destDir, photo, policy)
@@ -53,6 +54,9 @@ class CopyPhotoExporter {
                     copied++
                 }
             } catch (ce: CancellationException) {
+                // Defensive and consistent with the other call sites; this try body has no suspend
+                // call, so it can't actually originate a CancellationException today. ensureActive()
+                // above is what does the real cancellation work.
                 throw ce
             } catch (t: Throwable) {
                 failed += photo to t

@@ -25,7 +25,12 @@ package com.vishalgupta.photoselector.presentation.grid
 @JvmInline
 value class FlatIndex(val value: Int) {
     companion object {
-        /** No flat position (e.g. an empty grid). Mirrors the old `-1` / `0` sentinels at call sites. */
+        /**
+         * The list-start fallback returned on a lookup miss (e.g. an empty grid) — the same `0` the
+         * untyped code already fell back to. NOT an out-of-band sentinel: `FlatIndex(0)` is also the
+         * real first photo, so this can't distinguish "no position" from "photo 0" (it never needed
+         * to). Contrast [TileIndex.NONE], which is a genuine out-of-band `-1`.
+         */
         val ZERO = FlatIndex(0)
     }
 }
