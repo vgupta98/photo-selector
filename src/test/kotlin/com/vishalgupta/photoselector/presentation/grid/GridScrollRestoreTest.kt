@@ -13,27 +13,27 @@ class GridScrollRestoreTest {
 
     // Layout: single | burst[1..3] | single | single  -> tiles start at flat 0, 1, 4, 5.
     // a(0) | [b(1) c(2) d(3)] | e(4) | f(5)
-    private val tileFlatStart = listOf(0, 1, 4, 5)
+    private val tileFlatStart = listOf(0, 1, 4, 5).map(::FlatIndex)
 
     @Test fun `flat index before any burst maps one-to-one`() {
-        assertEquals(0, tileIndexForFlat(tileFlatStart, 0)) // a -> tile 0
+        assertEquals(TileIndex(0), tileIndexForFlat(tileFlatStart, FlatIndex(0))) // a -> tile 0
     }
 
     @Test fun `any frame inside a burst maps to that one burst tile`() {
-        assertEquals(1, tileIndexForFlat(tileFlatStart, 1)) // first frame
-        assertEquals(1, tileIndexForFlat(tileFlatStart, 2)) // middle frame
-        assertEquals(1, tileIndexForFlat(tileFlatStart, 3)) // last frame
+        assertEquals(TileIndex(1), tileIndexForFlat(tileFlatStart, FlatIndex(1))) // first frame
+        assertEquals(TileIndex(1), tileIndexForFlat(tileFlatStart, FlatIndex(2))) // middle frame
+        assertEquals(TileIndex(1), tileIndexForFlat(tileFlatStart, FlatIndex(3))) // last frame
     }
 
     @Test fun `flat indices after a burst are shifted back by the collapsed frames`() {
         // Without translation, flat 4 / 5 would scroll to tiles 4 / 5, which don't exist - the bug.
-        assertEquals(2, tileIndexForFlat(tileFlatStart, 4)) // e
-        assertEquals(3, tileIndexForFlat(tileFlatStart, 5)) // f
+        assertEquals(TileIndex(2), tileIndexForFlat(tileFlatStart, FlatIndex(4))) // e
+        assertEquals(TileIndex(3), tileIndexForFlat(tileFlatStart, FlatIndex(5))) // f
     }
 
     @Test fun `out-of-range and empty inputs clamp instead of throwing`() {
-        assertEquals(3, tileIndexForFlat(tileFlatStart, 99)) // past the end -> last tile
-        assertEquals(0, tileIndexForFlat(tileFlatStart, -1)) // before the start -> first tile
-        assertEquals(0, tileIndexForFlat(emptyList(), 5)) // no tiles -> 0
+        assertEquals(TileIndex(3), tileIndexForFlat(tileFlatStart, FlatIndex(99))) // past the end -> last tile
+        assertEquals(TileIndex(0), tileIndexForFlat(tileFlatStart, FlatIndex(-1))) // before the start -> first tile
+        assertEquals(TileIndex(0), tileIndexForFlat(emptyList(), FlatIndex(5))) // no tiles -> 0
     }
 }

@@ -12,6 +12,7 @@ import com.vishalgupta.photoselector.domain.repository.CategoriesRepository
 import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
 import com.vishalgupta.photoselector.presentation.StateHolder
 import com.vishalgupta.photoselector.presentation.common.CategoryToggle
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -222,6 +223,8 @@ class BrowserViewModel(
         scope.launch {
             val report = try {
                 moveToTrash.invoke(listOf(photo))
+            } catch (ce: CancellationException) {
+                throw ce
             } catch (t: Throwable) {
                 _deleteEvents.trySend("Delete failed: ${t.message}")
                 return@launch

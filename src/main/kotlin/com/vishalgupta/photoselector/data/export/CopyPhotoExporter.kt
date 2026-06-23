@@ -4,7 +4,9 @@ import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
 import com.vishalgupta.photoselector.domain.repository.CopyReport
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.nio.file.Files
 import java.nio.file.Path
@@ -28,6 +30,10 @@ class CopyPhotoExporter {
         val total = favourites.size
 
         for ((index, photo) in favourites.withIndex()) {
+            // Cooperative cancellation: a cancelled copy stops promptly instead of grinding through
+            // every remaining file, and the per-file catch below never mis-records the cancellation
+            // (a ClosedByInterruptException) as a "failed" file.
+            ensureActive()
             try {
                 val target = resolveTarget(destDir, photo, policy)
                 if (target == null) {
@@ -46,6 +52,8 @@ class CopyPhotoExporter {
                     }
                     copied++
                 }
+            } catch (ce: CancellationException) {
+                throw ce
             } catch (t: Throwable) {
                 failed += photo to t
             }

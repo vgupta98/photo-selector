@@ -42,6 +42,7 @@ import com.vishalgupta.photoselector.presentation.designsystem.organism.BrowserC
 import com.vishalgupta.photoselector.presentation.designsystem.organism.LibraryRail
 import com.vishalgupta.photoselector.presentation.grid.GridScreen
 import com.vishalgupta.photoselector.presentation.grid.GridUiState
+import com.vishalgupta.photoselector.presentation.grid.TileIndex
 import com.vishalgupta.photoselector.presentation.survey.SurveyScreen
 import com.vishalgupta.photoselector.presentation.survey.SurveyTile
 import com.vishalgupta.photoselector.presentation.survey.SurveyUiState
@@ -275,7 +276,7 @@ class ScreenSplitScreenshotTest {
                                 selectsId to setOf(PhotoId("p7")),
                             ),
                             selection = setOf(PhotoId("p2"), PhotoId("p3"), PhotoId("p6")),
-                            anchorIndex = 6,
+                            anchorIndex = TileIndex(6),
                         ),
                         onBack = null,
                     )
@@ -352,7 +353,7 @@ class ScreenSplitScreenshotTest {
                                 Category.FAVOURITES_ID to setOf(PhotoId("a")),
                                 selectsId to setOf(PhotoId("a")),
                             ),
-                            focusedIndex = 0,
+                            focusedIndex = TileIndex(0),
                         ),
                         onBack = null,
                         categoryToast = CategoryToggle(
@@ -488,7 +489,7 @@ class ScreenSplitScreenshotTest {
                             photos = testPhotos,
                             scope = CategoryScope.AllPhotos,
                             categories = categories,
-                            focusedIndex = 0,
+                            focusedIndex = TileIndex(0),
                         ),
                         onBack = null,
                     )

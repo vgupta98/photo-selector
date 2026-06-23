@@ -34,7 +34,7 @@ internal fun displayGroupsFor(groups: List<PhotoGroup>, expandedBurstId: PhotoId
 internal sealed interface GridRenderItem {
     data class Tile(
         val group: PhotoGroup,
-        val displayIndex: Int,
+        val displayIndex: TileIndex,
         // True when this tile is a frame of the currently expanded burst (drives the inline accent).
         val expandedFrame: Boolean,
     ) : GridRenderItem
@@ -57,11 +57,11 @@ internal fun buildRenderItems(groups: List<PhotoGroup>, expandedBurstId: PhotoId
         if (group is PhotoGroup.Burst && group.groupId == expandedBurstId) {
             items += GridRenderItem.BurstHeader(group)
             for (frame in group.photos) {
-                items += GridRenderItem.Tile(PhotoGroup.Single(frame), displayIndex++, expandedFrame = true)
+                items += GridRenderItem.Tile(PhotoGroup.Single(frame), TileIndex(displayIndex++), expandedFrame = true)
             }
             items += GridRenderItem.BurstFooter(group)
         } else {
-            items += GridRenderItem.Tile(group, displayIndex++, expandedFrame = false)
+            items += GridRenderItem.Tile(group, TileIndex(displayIndex++), expandedFrame = false)
         }
     }
     return items
@@ -76,7 +76,7 @@ internal fun buildRenderItems(groups: List<PhotoGroup>, expandedBurstId: PhotoId
  * footer directly above the post-burst tiles), falling back to the nearest preceding tile when the
  * render index lands on a trailing footer with no tile after it.
  */
-internal fun tileDisplayIndexForRenderItem(renderItems: List<GridRenderItem>, renderIndex: Int): Int? {
+internal fun tileDisplayIndexForRenderItem(renderItems: List<GridRenderItem>, renderIndex: Int): TileIndex? {
     if (renderItems.isEmpty()) return null
     val start = renderIndex.coerceIn(0, renderItems.lastIndex)
     for (i in start..renderItems.lastIndex) {
@@ -95,7 +95,7 @@ internal fun tileDisplayIndexForRenderItem(renderItems: List<GridRenderItem>, re
  * [androidx.compose.foundation.lazy.grid.LazyGridItemInfo.index] matching), since those APIs speak
  * render-item space and an expanded burst's header/footer make the two diverge.
  */
-internal fun renderIndexForTile(renderItems: List<GridRenderItem>, displayIndex: Int): Int? {
+internal fun renderIndexForTile(renderItems: List<GridRenderItem>, displayIndex: TileIndex): Int? {
     val i = renderItems.indexOfFirst { it is GridRenderItem.Tile && it.displayIndex == displayIndex }
     return if (i >= 0) i else null
 }
@@ -108,15 +108,15 @@ internal fun renderIndexForTile(renderItems: List<GridRenderItem>, displayIndex:
  */
 internal fun flatIndexForRenderItem(
     renderItems: List<GridRenderItem>,
-    tileFlatStart: List<Int>,
+    tileFlatStart: List<FlatIndex>,
     renderIndex: Int,
-): Int {
-    val displayIndex = tileDisplayIndexForRenderItem(renderItems, renderIndex) ?: return 0
-    return tileFlatStart.getOrElse(displayIndex) { 0 }
+): FlatIndex {
+    val displayIndex = tileDisplayIndexForRenderItem(renderItems, renderIndex) ?: return FlatIndex.ZERO
+    return tileFlatStart.getOrElse(displayIndex.value) { FlatIndex.ZERO }
 }
 
 /** A laid-out tile's position: its [displayIndex] and the top-left pixel offset of its grid cell. */
-internal data class TilePosition(val displayIndex: Int, val x: Int, val y: Int)
+internal data class TilePosition(val displayIndex: TileIndex, val x: Int, val y: Int)
 
 /**
  * Picks the up/down keyboard target among the laid-out [tiles] by geometry: the nearest tile row in
@@ -128,7 +128,7 @@ internal data class TilePosition(val displayIndex: Int, val x: Int, val y: Int)
  * and the partial rows they create, which the arithmetic model can't represent (it made Down behave
  * like Right). [tiles] must already exclude the non-focusable header/footer items.
  */
-internal fun pickVerticalTarget(tiles: List<TilePosition>, focusedIndex: Int, down: Boolean): Int? {
+internal fun pickVerticalTarget(tiles: List<TilePosition>, focusedIndex: TileIndex, down: Boolean): TileIndex? {
     val current = tiles.firstOrNull { it.displayIndex == focusedIndex } ?: return null
     val inDirection = tiles.filter { if (down) it.y > current.y else it.y < current.y }
     if (inDirection.isEmpty()) return null

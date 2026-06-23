@@ -24,6 +24,7 @@ import com.vishalgupta.photoselector.presentation.common.customCategories
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.navigation.activeCategoryId
 import com.vishalgupta.photoselector.presentation.navigation.slice
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -54,12 +55,12 @@ data class GridUiState(
     val categories: List<Category> = emptyList(),
     val memberships: Map<CategoryId, Set<PhotoId>> = emptyMap(),
     val lastViewedPhotoId: PhotoId? = null,
-    val focusedIndex: Int = -1,
+    val focusedIndex: TileIndex = TileIndex.NONE,
     // Transient multi-select: the tiles the mouse (Cmd/Shift-click, Cmd+A) has picked out for a
     // bulk action. Never persisted; cleared on Esc, scope change, or screen exit. [anchorIndex]
     // is the pivot a Shift-click range extends from.
     val selection: Set<PhotoId> = emptySet(),
-    val anchorIndex: Int? = null,
+    val anchorIndex: TileIndex? = null,
     // Which grouping lens collapses tiles: Off (one tile per photo), Time (bursts, the default),
     // or Similarity (visual). In-memory per grid instance (not persisted). The grid toolbar picks
     // one of the three.
@@ -150,6 +151,8 @@ class GridViewModel(
     // the pass runs in virtual time instead of on a real background thread (which is what made the
     // grid's grouping tests flaky under CI load).
     private val groupingDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    // Flat photo index of the resume point. Crosses to the container (which persists it), so it stays a
+    // plain Int on the wire; the grid converts at this single seam.
     private val onScrollIndexChanged: ((Int) -> Unit)? = null,
     // Reports a lens change up to the container so the next rebuilt grid opens in the same lens.
     private val onGroupingModeChanged: ((GroupingMode) -> Unit)? = null,
@@ -176,7 +179,7 @@ class GridViewModel(
     val groupingOutcomes: Flow<GroupingOutcome> = _groupingOutcomes.receiveAsFlow()
 
     private var scrollSaveJob: Job? = null
-    private var lastKnownIndex: Int? = null
+    private var lastKnownIndex: FlatIndex? = null
 
     // The id-list the current [groups] were computed for; guards against re-grouping (and the
     // singles flicker) when a membership change re-slices to the same set of photos.
@@ -400,14 +403,14 @@ class GridViewModel(
     private fun slicedPhotos(members: Map<CategoryId, Set<PhotoId>>): List<Photo> =
         categoryScope.slice(allPhotos, members[categoryScope.activeCategoryId].orEmpty())
 
-    fun onFirstVisibleItemChanged(index: Int) {
+    fun onFirstVisibleItemChanged(index: FlatIndex) {
         if (categoryScope != CategoryScope.AllPhotos) return
         lastKnownIndex = index
         onScrollIndexChanged?.let { save ->
             scrollSaveJob?.cancel()
             scrollSaveJob = scope.launch {
                 delay(500)
-                save(index)
+                save(index.value)
                 lastKnownIndex = null
             }
         }
@@ -416,13 +419,13 @@ class GridViewModel(
     override fun onClear() {
         val pending = lastKnownIndex
         if (pending != null) {
-            onScrollIndexChanged?.invoke(pending)
+            onScrollIndexChanged?.invoke(pending.value)
         }
         super.onClear()
     }
 
-    fun setFocusedIndex(index: Int) {
-        _state.update { it.copy(focusedIndex = index.coerceIn(-1, (it.displayGroups.size - 1).coerceAtLeast(-1))) }
+    fun setFocusedIndex(index: TileIndex) {
+        _state.update { it.copy(focusedIndex = it.clampTile(index)) }
     }
 
     /**
@@ -441,7 +444,7 @@ class GridViewModel(
         _state.update { st ->
             st.copy(
                 lastViewedPhotoId = id,
-                focusedIndex = if (st.focusedIndex >= 0) refocus(st.displayGroups, id, st.focusedIndex) else st.focusedIndex,
+                focusedIndex = if (st.focusedIndex.isSet) refocus(st.displayGroups, id, st.focusedIndex) else st.focusedIndex,
             )
         }
     }
@@ -457,13 +460,17 @@ class GridViewModel(
         if (id == null) return
         _state.update { st ->
             val idx = st.displayGroups.indexOfFirst { group -> group.photos.any { it.id == id } }
-            if (idx >= 0) st.copy(focusedIndex = idx) else st
+            if (idx >= 0) st.copy(focusedIndex = TileIndex(idx)) else st
         }
     }
 
     /** The frame the focused tile currently represents, the anchor [refocus] re-finds after a reshape. */
     private fun GridUiState.focusedAnchorId(): PhotoId? =
         displayGroups.getOrNull(focusedIndex)?.keyPhoto?.id
+
+    /** Clamp a tile index into the focusable range for these display tiles ([TileIndex.NONE] = no focus). */
+    private fun GridUiState.clampTile(index: TileIndex): TileIndex =
+        TileIndex(index.value.coerceIn(-1, (displayGroups.size - 1).coerceAtLeast(-1)))
 
     /**
      * The tile index in [display] that still represents [anchorId]'s frame, or [fallback] clamped to
@@ -472,12 +479,12 @@ class GridViewModel(
      * keeps the cursor on the photo the user was looking at — clamping a bare index instead would
      * silently slide focus onto a different burst, which made Enter expand the wrong tile.
      */
-    private fun refocus(display: List<PhotoGroup>, anchorId: PhotoId?, fallback: Int): Int {
+    private fun refocus(display: List<PhotoGroup>, anchorId: PhotoId?, fallback: TileIndex): TileIndex {
         if (anchorId != null) {
             val i = display.indexOfFirst { group -> group.photos.any { it.id == anchorId } }
-            if (i >= 0) return i
+            if (i >= 0) return TileIndex(i)
         }
-        return fallback.coerceIn(-1, (display.size - 1).coerceAtLeast(-1))
+        return TileIndex(fallback.value.coerceIn(-1, (display.size - 1).coerceAtLeast(-1)))
     }
 
     /**
@@ -495,16 +502,17 @@ class GridViewModel(
             val open = if (st.expandedBurstId == groupId) null else groupId
             val display = displayGroupsFor(st.groups, open)
             val burst = st.groups.firstOrNull { it.groupId == groupId } as? PhotoGroup.Burst
-            val focus = if (open != null && burst != null) {
+            val match = if (open != null && burst != null) {
                 display.indexOfFirst { it.keyPhoto.id == burst.keyPhoto.id }
             } else {
                 display.indexOfFirst { it.groupId == groupId }
-            }.takeIf { it >= 0 } ?: st.focusedIndex
+            }
+            val focus = match.takeIf { it >= 0 }?.let(::TileIndex) ?: st.focusedIndex
             // Expanding/folding renumbers the tile space, so any stored Shift+click anchor is stale.
             st.copy(
                 expandedBurstId = open,
                 anchorIndex = null,
-                focusedIndex = focus.coerceIn(-1, (display.size - 1).coerceAtLeast(-1)),
+                focusedIndex = TileIndex(focus.value.coerceIn(-1, (display.size - 1).coerceAtLeast(-1))),
             )
         }
     }
@@ -518,12 +526,13 @@ class GridViewModel(
         _state.update { st ->
             val burstId = st.expandedBurstId ?: return@update st
             val display = displayGroupsFor(st.groups, null)
-            val focus = display.indexOfFirst { it.groupId == burstId }.takeIf { it >= 0 } ?: st.focusedIndex
+            val focus = display.indexOfFirst { it.groupId == burstId }.takeIf { it >= 0 }?.let(::TileIndex)
+                ?: st.focusedIndex
             // Folding renumbers the tile space, so any stored Shift+click anchor is stale.
             st.copy(
                 expandedBurstId = null,
                 anchorIndex = null,
-                focusedIndex = focus.coerceIn(-1, (display.size - 1).coerceAtLeast(-1)),
+                focusedIndex = TileIndex(focus.value.coerceIn(-1, (display.size - 1).coerceAtLeast(-1))),
             )
         }
     }
@@ -569,7 +578,7 @@ class GridViewModel(
     // (bulk file, copy, the C entry's flat-index mapping) is unchanged.
 
     /** Cmd+Click: flip the tile's photos in the selection; that tile becomes the range anchor. */
-    fun toggleSelection(index: Int) {
+    fun toggleSelection(index: TileIndex) {
         val group = _state.value.displayGroups.getOrNull(index) ?: return
         val ids = group.photos.mapTo(HashSet()) { it.id }
         _state.update {
@@ -580,13 +589,13 @@ class GridViewModel(
     }
 
     /** Shift+Click: select every photo in the contiguous run of tiles from the anchor to [index]. */
-    fun selectRange(index: Int) {
+    fun selectRange(index: TileIndex) {
         _state.update { st ->
             val display = st.displayGroups
-            if (index !in display.indices) return@update st
-            val anchor = (st.anchorIndex ?: index).coerceIn(display.indices)
-            val lo = minOf(anchor, index)
-            val hi = maxOf(anchor, index)
+            if (index.value !in display.indices) return@update st
+            val anchor = TileIndex((st.anchorIndex ?: index).value.coerceIn(display.indices))
+            val lo = minOf(anchor.value, index.value)
+            val hi = maxOf(anchor.value, index.value)
             val ids = (lo..hi).flatMap { display.getOrNull(it)?.photos.orEmpty() }.mapTo(HashSet()) { it.id }
             st.copy(selection = ids, anchorIndex = anchor)
         }
@@ -644,6 +653,8 @@ class GridViewModel(
             _state.update { it.copy(isBusy = true, progressLabel = "Moving ${targets.size} to Trash…") }
             val report = try {
                 moveToTrash.invoke(targets)
+            } catch (ce: CancellationException) {
+                throw ce
             } catch (t: Throwable) {
                 _state.update { it.copy(isBusy = false, progressLabel = null, toast = "Delete failed: ${t.message}") }
                 return@launch
@@ -750,6 +761,8 @@ class GridViewModel(
                         toast = "Saved ${photos.size} entries to ${destination.fileName}",
                     )
                 }
+            } catch (ce: CancellationException) {
+                throw ce
             } catch (t: Throwable) {
                 _state.update {
                     it.copy(isBusy = false, progressLabel = null, toast = "Export failed: ${t.message}")
@@ -778,6 +791,8 @@ class GridViewModel(
                 _state.update {
                     it.copy(isBusy = false, progressLabel = null, toast = buildReportToast(report))
                 }
+            } catch (ce: CancellationException) {
+                throw ce
             } catch (t: Throwable) {
                 _state.update {
                     it.copy(isBusy = false, progressLabel = null, toast = "Copy failed: ${t.message}")
