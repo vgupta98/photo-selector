@@ -31,7 +31,8 @@ class HeicCaptureMetadataSource : CaptureMetadataSource {
     }
 
     companion object {
-        /** True only on macOS, where the ImageIO bridge is usable (same gate as [HeicDecoder]). */
-        fun isSupportedOnThisPlatform(): Boolean = MacImageIO.isAvailable()
+        /** True only on macOS, where the ImageIO bridge is usable. Delegates to the decoder so the
+         *  "can this platform do HEIC's job" fact lives in one place (the extension set already does). */
+        fun isSupportedOnThisPlatform(): Boolean = HeicDecoder.isSupportedOnThisPlatform()
     }
 }

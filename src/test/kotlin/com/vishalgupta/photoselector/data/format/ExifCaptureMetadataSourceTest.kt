@@ -79,6 +79,55 @@ class ExifCaptureMetadataSourceTest {
         assertEquals(CaptureMetadata.NONE, source.metadataFor(photo))
     }
 
+    // toCaptureMetadata is now the shared raw->domain contract for BOTH JPEG (ExifReader) and HEIC
+    // (MacImageIO), so pin its shaping directly off an ExifCaptureInfo, not just transitively through
+    // the JPEG decode path above - a future HEIC-side change must not silently drift this.
+
+    @Test fun `toCaptureMetadata applies subsec and joins make and model`() {
+        val meta = ExifCaptureInfo(
+            dateTimeOriginal = "2024:01:02 03:04:05",
+            subSecTimeOriginal = "047",
+            make = "Canon",
+            model = "Canon EOS R5",
+            orientation = 6,
+        ).toCaptureMetadata()
+
+        assertEquals(epochUtc("2024:01:02 03:04:05") + 47, meta.takenAtEpochMs)
+        assertEquals("Canon Canon EOS R5", meta.cameraId)
+        assertEquals(6, meta.orientation)
+    }
+
+    @Test fun `toCaptureMetadata maps a placeholder date to null takenAt`() {
+        val meta = ExifCaptureInfo(
+            dateTimeOriginal = "    :  :     :  :  ",
+            subSecTimeOriginal = null,
+            make = "Apple",
+            model = "iPhone 15",
+            orientation = 1,
+        ).toCaptureMetadata()
+
+        assertNull(meta.takenAtEpochMs)
+        assertEquals("Apple iPhone 15", meta.cameraId)
+    }
+
+    @Test fun `toCaptureMetadata yields a model-only camera id`() {
+        val meta = ExifCaptureInfo(
+            dateTimeOriginal = null,
+            subSecTimeOriginal = null,
+            make = null,
+            model = "iPhone 15",
+            orientation = null,
+        ).toCaptureMetadata()
+
+        assertEquals("iPhone 15", meta.cameraId)
+        assertNull(meta.takenAtEpochMs)
+        assertNull(meta.orientation)
+    }
+
+    private fun epochUtc(dateTimeOriginal: String): Long = LocalDateTime
+        .parse(dateTimeOriginal, DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss"))
+        .toInstant(ZoneOffset.UTC).toEpochMilli()
+
     private fun write(bytes: ByteArray): Photo {
         val path = Files.createTempFile("capture-meta-", ".jpg").also {
             tempFiles.add(it)
