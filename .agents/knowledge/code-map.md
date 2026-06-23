@@ -82,7 +82,9 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   owns create/rename/delete — see organism `LibraryRail`),
   `GridDisplayModel` (top-level tile-index *helpers*, not a class —
   `displayGroupsFor`/`buildRenderItems` explode the open burst into per-frame
-  tiles, plus `renderIndexForTile` etc.), `GridViewportAnchor` (scroll anchoring).
+  tiles, plus `renderIndexForTile` etc.), `GridViewportAnchor` (scroll anchoring),
+  `GridIndex` (the `FlatIndex` / `TileIndex` value classes that make the
+  flat-vs-tile distinction a compile error).
 - `browser/` — `BrowserScreen` + `…ViewModel`, `ZoomableImage`, `ZoomState`.
   Reused inside Inspect's browse mode (`embedded`, `onSwitchToGrid`).
 - `inspect/` — `InspectScreen` + `InspectViewModel`: one fixed photo set viewed

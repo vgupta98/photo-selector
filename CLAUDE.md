@@ -103,7 +103,12 @@ Clean architecture, single Gradle module, package
     space, shared via `GridDisplayModel`); browser/Inspect nav and every
     persisted scroll index (`BrowsePosition.lastIndex`) stay **flat photo
     indices**. The grid is the *sole* translator (`tileIndexForFlat`) — never put
-    a tile index on the nav wire or a flat index into grid focus.
+    a tile index on the nav wire or a flat index into grid focus. These two
+    spaces are now distinct `@JvmInline value class`es (`grid/GridIndex.kt`):
+    `FlatIndex` (nav/persistence) and `TileIndex` (focus/selection), so mixing
+    them is a compile error. Conversions are deliberate `.value` / `FlatIndex(…)`
+    calls that cluster at the grid's App-facing edges; the third space — the
+    LazyGrid render-item index — stays a plain `Int`.
   - Re-anchor focus by **photo identity** on every reshape
     (`GridViewModel.refocus`), never a bare index — a regroup renumbers tiles
     under the cursor, so an index silently slides onto a different burst.
