@@ -17,8 +17,10 @@ import com.vishalgupta.photoselector.data.ai.PhotoFeatureExtractor
 import com.vishalgupta.photoselector.data.ai.SimilarityPhotoGrouper
 import com.vishalgupta.photoselector.data.trash.DesktopPhotoTrash
 import com.vishalgupta.photoselector.data.format.CachingCaptureMetadataSource
+import com.vishalgupta.photoselector.data.format.CompositeCaptureMetadataSource
 import com.vishalgupta.photoselector.data.format.DefaultPhotoFormatRegistry
 import com.vishalgupta.photoselector.data.format.ExifCaptureMetadataSource
+import com.vishalgupta.photoselector.data.format.HeicCaptureMetadataSource
 import com.vishalgupta.photoselector.data.format.HeicDecoder
 import com.vishalgupta.photoselector.data.format.JpegDecoder
 import com.vishalgupta.photoselector.data.format.PngDecoder
@@ -116,9 +118,17 @@ class AppContainer {
         diskCache = diskThumbnailCache,
     )
 
-    // Shared across grids so each photo's EXIF (capture time + camera) is read at most once per
-    // session; the cache is what makes burst re-grouping on every re-slice cheap.
-    private val captureMetadataSource = CachingCaptureMetadataSource(ExifCaptureMetadataSource())
+    // Shared across grids so each photo's capture metadata (time + camera) is read at most once per
+    // session; the cache is what makes burst re-grouping on every re-slice cheap. JPEG goes through the
+    // JVM EXIF reader; HEIC (macOS only) through the ImageIO bridge, so HEIC bursts now group too.
+    private val captureMetadataSource = CachingCaptureMetadataSource(
+        CompositeCaptureMetadataSource(
+            buildList {
+                add(ExifCaptureMetadataSource())
+                if (HeicCaptureMetadataSource.isSupportedOnThisPlatform()) add(HeicCaptureMetadataSource())
+            },
+        ),
+    )
 
     // Visual-similarity grouping (GroupingMode.Similarity). The learned MobileNetV3-Small embedder
     // (OnnxEmbeddingModel) is the on-device default; if its bundled blob can't load we fall back to
@@ -144,7 +154,8 @@ class AppContainer {
             concurrency = decodeParallelism,
             // Capture time corroborates the visual cut: the time-boosted rule also joins frames taken
             // within seconds of each other, recovering same-moment bursts the embedding alone missed.
-            // Reuses the same memoized source as the Time lens; HEIC (no EXIF time) falls back to visual.
+            // Reuses the same memoized source as the Time lens; a frame with no capture time (a PNG,
+            // a stripped JPEG, or HEIC off macOS) falls back to the visual cut.
             captureMetadataSource = captureMetadataSource,
             joinRule = SimilarityGrouper.timeBoosted(),
         ),

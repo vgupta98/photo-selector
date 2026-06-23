@@ -163,7 +163,9 @@ class GroupingResultCache(
         // not be served). v2: dropped the unused keyIsSuggested field; v1 entries are rejected and
         // recompute. v3: SimilarityGrouper switched to the per-event Adaptive threshold.
         // v4: SimilarityGrouper added the capture-time boost (timeBoosted JoinRule), so groupings change.
-        const val FORMAT_VERSION = 4
+        // v5: HEIC now yields capture time (HeicCaptureMetadataSource), so the boost fires on HEIC folders
+        // that previously had none — their cached groupings would otherwise be served stale (same content key).
+        const val FORMAT_VERSION = 5
         const val DEFAULT_MAX_BYTES: Long = 64L * 1024 * 1024
         private const val FILE_EXTENSION = "grp"
     }

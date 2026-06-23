@@ -33,10 +33,13 @@ Clean architecture, single Gradle module, package
   the suggested-sharpest for a similarity cluster.
 - `data/` — repository implementations: `filesystem/`, `categories/`,
   `image/` (decoding), `format/` (per-format `PhotoDecoder`s; `macos/`
-  holds the JNA→ImageIO bridge that backs both `HeicDecoder` and
-  `RawDecoder` — see **Known gotchas**; `ExifReader` also backs
-  `ExifCaptureMetadataSource` — capture time + camera for burst grouping,
-  memoized per session by `CachingCaptureMetadataSource`), `ai/` (on-device
+  holds the JNA→ImageIO bridge that backs `HeicDecoder`, `RawDecoder` *and*
+  HEIC capture-metadata reads — see **Known gotchas**. Capture time + camera
+  for burst grouping come through the `CaptureMetadataSource` seam per format:
+  `ExifReader`→`ExifCaptureMetadataSource` (JPEG) and
+  `MacImageIO`→`HeicCaptureMetadataSource` (HEIC), chained by
+  `CompositeCaptureMetadataSource` and memoized per session by
+  `CachingCaptureMetadataSource`), `ai/` (on-device
   visual-similarity grouping: the `EmbeddingModel` seam — the learned
   `OnnxEmbeddingModel` (MobileNetV3-Small via ONNX Runtime, default) and the
   classical, dependency-free `DownscaleGrayEmbeddingModel` (load-failure
@@ -264,19 +267,23 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   like HEIC — handed bytes, Sony ARW returns an empty source and Nikon NEF
   downgrades to its embedded thumbnail. Don't unify the two paths onto
   `decodeToBgra`.
-- **Burst grouping reads capture time from JPEG EXIF only, and never
-  falls back to mtime.** `ExifReader` is JPEG-only, so HEIC (and any
-  EXIF-less file) has no `DateTimeOriginal`. `BurstGrouper` deliberately
-  treats a frame with no readable capture time as ungroupable — it stays
-  a `Single` — rather than leaning on file mtime, because a bulk copy
-  flattens mtime and over-groups unrelated photos (the original mtime
-  fallback shipped exactly that bug). So today **HEIC never groups**;
-  the way to make it group is reading HEIC capture time (an ImageIO read,
-  the same bridge `MacImageIO` already uses), not loosening the heuristic.
-  Grouping can also be switched off or to another lens from the grid toolbar
-  (`GridUiState.groupingMode`), and is recomputed off-thread on every
-  re-slice, which is why `CachingCaptureMetadataSource` exists — keep it
-  in the wiring.
+- **Burst grouping reads capture time from EXIF/ImageIO, and never falls
+  back to mtime.** `BurstGrouper` deliberately treats a frame with no
+  readable capture time as ungroupable — it stays a `Single` — rather than
+  leaning on file mtime, because a bulk copy flattens mtime and over-groups
+  unrelated photos (the original mtime fallback shipped exactly that bug). So
+  any EXIF-less file (a PNG, a stripped JPEG) never groups; do **not** add an
+  mtime fallback to fix it. Capture time is read per-format behind the
+  `CaptureMetadataSource` seam: JPEG via the JVM `ExifReader` (`ExifReader` is
+  JPEG-only), HEIC via the macOS ImageIO bridge
+  (`HeicCaptureMetadataSource` → `MacImageIO.readCaptureInfo`, the same bridge
+  that decodes HEIC pixels), chained by `CompositeCaptureMetadataSource`
+  (first non-NONE). So HEIC **does** group on macOS now; off macOS (no bridge)
+  it has no capture time and stays ungroupable. A future Windows reader slots
+  into the composite the same way. Grouping can also be switched off or to
+  another lens from the grid toolbar (`GridUiState.groupingMode`), and is
+  recomputed off-thread on every re-slice, which is why
+  `CachingCaptureMetadataSource` exists — keep it in the wiring.
 - **Similarity grouping merges only *adjacent* frames and never crosses a folder
   boundary** (same contiguity rule as `BurstGrouper`; the expand-in-place burst
   UI fences a contiguous run, and a folder is an event boundary). The cosine cut

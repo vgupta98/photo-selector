@@ -85,8 +85,8 @@ object SimilarityGrouper {
      * e.g. ~0.90) has a high median, so the cut rides up toward [MAX_THRESHOLD] and the burst can
      * shatter into singles. A run mixing a burst with ordinary frames is unaffected. For time-stamped
      * runs [timeBoosted] backstops this — a rapid uniform burst rejoins on the capture-time gap despite
-     * the inflated cut — so the residual is only HEIC/EXIF-less folders and uniform sequences slower
-     * than the boost window.
+     * the inflated cut — so the residual is only frames with no capture time (a stripped JPEG, or HEIC
+     * off macOS) and uniform sequences slower than the boost window.
      */
     val Adaptive: ThresholdRule = ThresholdRule { cosines ->
         if (cosines.isEmpty()) MAX_THRESHOLD
@@ -114,7 +114,8 @@ object SimilarityGrouper {
     /**
      * Visual OR a capture-time boost: two frames taken within [boostWithinMs] also join at a relaxed
      * [boostFloor] cosine, because frames seconds apart are almost always the same moment even when the
-     * embedding drifts. A null gap (no capture time, e.g. HEIC) falls back to visual-only, so the boost
+     * embedding drifts. A null gap (no capture time, e.g. a stripped JPEG or off-macOS HEIC) falls
+     * back to visual-only, so the boost
      * can never *block* a visual join — only add one. Keep the window tight; see the class KDoc. As a
      * side effect this also backstops [Adaptive]'s uniform-burst blind spot for time-stamped runs.
      */
