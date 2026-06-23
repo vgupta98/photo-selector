@@ -11,7 +11,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/platform-macOS-111111" alt="Platform: macOS" />
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT" />
-  <img src="https://img.shields.io/github/stars/vgupta98/photo-selector?style=social" alt="GitHub stars" />
+  <img src="https://img.shields.io/github/stars/vgupta98/rhenium?style=social" alt="GitHub stars" />
 </p>
 
 Rhenium is a free, open-source, keyboard-driven photo culler for macOS. Open a
@@ -77,13 +77,12 @@ For developers:
 ### Option A — Homebrew (recommended)
 
 ```sh
-brew install --cask vgupta98/tap/photo-selector
+brew install --cask vgupta98/tap/rhenium
 ```
 
 This taps the repo and installs **Rhenium.app** into `/Applications`. Update it
-later with `brew upgrade --cask photo-selector`, or remove it with
-`brew uninstall --cask photo-selector`. (The cask keeps its original
-`photo-selector` token even though the app is now Rhenium.)
+later with `brew upgrade --cask rhenium`, or remove it with
+`brew uninstall --cask rhenium`.
 
 Because the app isn't notarised by Apple, macOS Gatekeeper blocks it on the first
 launch. Homebrew prints the fix in its caveats — clear the quarantine flag once:
@@ -96,7 +95,7 @@ or right-click the app in Finder and choose **Open**. You only need to do this o
 
 ### Option B — Download the DMG
 
-1. Download `Rhenium-1.0.0.dmg` from the [Releases](https://github.com/vgupta98/photo-selector/releases) page (or build it yourself — see below).
+1. Download `Rhenium-1.0.0.dmg` from the [Releases](https://github.com/vgupta98/rhenium/releases) page (or build it yourself — see below).
 2. Open the DMG and drag **Rhenium.app** to `/Applications`.
 3. **First launch — get past the Gatekeeper warning.** The app is not notarised by Apple, so on the very first launch macOS will show a dialog like *"Apple could not verify 'Rhenium' is free of malware…"*. To allow it:
    1. Click **Done** to dismiss the dialog.
@@ -135,8 +134,8 @@ The **library rail** down the left lists every scope — All Photos, Favourites,
 ## Build from source
 
 ```bash
-git clone https://github.com/vgupta98/photo-selector.git
-cd photo-selector
+git clone https://github.com/vgupta98/rhenium.git
+cd rhenium
 
 # Run directly
 ./gradlew run
