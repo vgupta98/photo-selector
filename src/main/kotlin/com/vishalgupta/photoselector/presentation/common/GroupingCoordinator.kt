@@ -70,6 +70,11 @@ class GroupingCoordinator(
         val ids = photos.map { it.id }
         current?.let { if (currentIds == ids && it.isActive) return it }
         current?.cancel()
+        // A genuine supersede (different slice): clear any armed progress so the new pass starts from a
+        // clean slate. Otherwise the bar would carry the old slice's count *and denominator* through the
+        // new pass's grace window — a stale value with the wrong total. The new grace timer re-arms from
+        // its own count below.
+        _progress.value = null
         currentIds = ids
         val gen = ++generation
         val deferred = scope.async {
@@ -80,6 +85,8 @@ class GroupingCoordinator(
             val latest = AtomicInteger(0)
             val grace = launch {
                 delay(GRACE_MS)
+                // photos.size is the same total the per-photo callbacks publish (the grouper reports
+                // total == photos.size), so the denominator is stable whichever path arms the bar first.
                 if (generation == gen) _progress.value = Progress(latest.get(), photos.size)
             }
             try {
