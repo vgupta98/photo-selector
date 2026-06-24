@@ -189,7 +189,11 @@ compose.desktop {
             packageVersion = project.version.toString()
             description = "Browse, favourite and export wedding photos."
             copyright = "Copyright (c) 2026 Vishal Gupta"
-            modules("java.desktop", "java.naming", "jdk.unsupported")
+            // java.net.http backs the update checker's HttpClient (HttpUpdateRepository). jpackage
+            // ships a trimmed jlink runtime with ONLY the modules listed here, so an omitted module
+            // is a ClassNotFoundException at runtime in the packaged app (but not under ./gradlew run,
+            // which uses the full JDK) — add the module whenever new code reaches into a fresh one.
+            modules("java.desktop", "java.naming", "java.net.http", "jdk.unsupported")
 
             macOS {
                 bundleID = "com.vishalgupta.rhenium"
