@@ -92,7 +92,9 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   (fit-to-cell pick, no zoom).
 - `common/` — non-UI plumbing: `NativeFileDialogs`, `MacSystemActions` /
   `SystemActions`, `CategoryHotkeys`, `CategoryToggle`, `GroupingMode`,
-  `HoverOverlay`, `PlatformLabels`.
+  `GroupingCoordinator` (owns the one background Similarity pass, decoupled from
+  any grid's displayed lens — survives lens switches and navigation; exposes a
+  `progress` flow for the off-grid hint), `HoverOverlay`, `PlatformLabels`.
 
 ## presentation/designsystem/ — Atomic Design
 
@@ -100,8 +102,11 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   three only); `AppTypography`/`AppShapes` go via `MaterialTheme`. Files:
   `Color`, `Spacing`, `Dimens`, `Type`, `Shape`.
 - `atom/` — `Buttons`, `FavouriteStar`, `LoadingIndicator`.
-- `molecule/` — incl. `GroupingModeToggle` (lens segments + hover tooltips),
-  `GroupingProgressBanner` (cold-pass framing), `SimilarityCoachmark` (first-run
+- `molecule/` — incl. `GroupingModeToggle` (lens segments + hover tooltips; the
+  Similar segment carries a determinate ring while the background pass runs),
+  `GroupingProgressBanner` (cold-pass framing), `BackgroundGroupingChip` (the
+  off-grid "still grouping" pill, composed from `PillToast`),
+  `SimilarityCoachmark` (first-run
   callout), `BurstExpandedHeader`/`Footer`, the `*KeyboardLegend` set,
   `CategoryActionsMenu`, `ExportMenu` (txt + copy-to-folder, the
   exporter plugin-headroom slot), `ConflictPolicyButton`, `PillToast`,
@@ -118,7 +123,7 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 | --- | --- |
 | Grid focus / selection / keyboard filing | `grid/GridViewModel.kt`, `grid/GridDisplayModel.kt` |
 | Burst expand-in-place behaviour | `grid/GridViewModel.kt` (`expandedBurstId` state), `grid/GridDisplayModel.kt` (`displayGroupsFor`/`buildRenderItems`), molecule `BurstExpanded*` |
-| Grouping lens (Off / Time / Similarity) | `domain/grouping/`, `data/ai/SimilarityPhotoGrouper.kt`, `grid/GridViewModel.kt` |
+| Grouping lens (Off / Time / Similarity) | `domain/grouping/`, `data/ai/SimilarityPhotoGrouper.kt`, `grid/GridViewModel.kt`, `presentation/common/GroupingCoordinator.kt` (background Similarity), `App.kt` (off-grid hint) |
 | Scroll position / index translation | `grid/GridScreen.kt` (`tileIndexForFlat`), `grid/GridViewportAnchor.kt`, `grid/GridDisplayModel.kt`, `data/browse/` |
 | Categories / Favourites | `data/categories/`, `domain/repository/CategoriesRepository.kt`, `common/CategoryHotkeys.kt`, `designsystem/organism/LibraryRail.kt` |
 | Grid chrome (rail / top bar / collapse) | `designsystem/organism/LibraryRail.kt`, `grid/LibraryRailViewModel.kt`, `designsystem/organism/GridTopBar.kt`, `grid/GridScreen.kt`, `App.kt` (rail mounted beside the grid, `railCollapsed`) |
