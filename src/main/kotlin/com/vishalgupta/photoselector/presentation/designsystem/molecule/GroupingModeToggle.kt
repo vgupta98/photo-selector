@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BurstMode
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.PlainTooltip
@@ -21,6 +22,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.vishalgupta.photoselector.presentation.common.GroupingMode
 
@@ -53,6 +56,12 @@ fun GroupingModeToggle(
     mode: GroupingMode,
     onSelect: (GroupingMode) -> Unit,
     modifier: Modifier = Modifier,
+    // Progress of the background Similarity pass (0..1), or null when none is running. When set, the
+    // Similar segment swaps its sparkle for a determinate ring so the lens reads as "still working"
+    // whatever lens is currently shown — the on-grid half of the background-pass hint. Determinate (not
+    // an indeterminate spinner) on purpose: an infinite animation here would hang the screenshot
+    // harness's `waitForIdle`, the same trap the icon-slot note below describes.
+    similarityProgress: Float? = null,
 ) {
     val modes = GroupingMode.entries
     SingleChoiceSegmentedButtonRow(modifier) {
@@ -72,14 +81,28 @@ fun GroupingModeToggle(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // contentDescription carries the lens name (matching the visible label) so the
-                        // segment is locatable by name for accessibility and tests; the glyph living in
-                        // the *content* (not the animating icon slot) is what keeps the control idle.
-                        Icon(
-                            imageVector = candidate.icon,
-                            contentDescription = candidate.label,
-                            modifier = Modifier.size(18.dp),
-                        )
+                        val ringProgress = similarityProgress?.takeIf { candidate == GroupingMode.Similarity }
+                        if (ringProgress != null) {
+                            // Same 18.dp footprint as the glyph so the segment's uniform-width measure
+                            // doesn't churn when the ring swaps in. The contentDescription keeps the
+                            // segment locatable by name (matching the glyph branch below).
+                            CircularProgressIndicator(
+                                progress = { ringProgress },
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .semantics { contentDescription = candidate.label },
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            // contentDescription carries the lens name (matching the visible label) so
+                            // the segment is locatable by name for accessibility and tests; the glyph
+                            // living in the *content* (not the animating icon slot) keeps the control idle.
+                            Icon(
+                                imageVector = candidate.icon,
+                                contentDescription = candidate.label,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
                         Text(text = candidate.label, maxLines = 1, softWrap = false)
                     }
                 }

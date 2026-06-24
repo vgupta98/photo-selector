@@ -91,9 +91,18 @@ Clean architecture, single Gradle module, package
   sets no `returnScrollIndex` (back-out lands on the warm All Photos grid).
 - **The grid is grouping/presentation only — mind the three index spaces.** The
   toolbar's segmented control picks a lens (`GridUiState.groupingMode`: `Off |
-  Time | Similarity`, Time default); a non-`Off` mode resolves to one
-  `PhotoGrouper` and regroups off-thread behind a determinate progress bar
-  (`GridUiState.grouping`) for the cold, minute-long similarity pass. Adjacent
+  Time | Similarity`, Time default); a non-`Off` mode regroups off-thread behind
+  a determinate progress bar. **Time** regroups inline on the grid view model
+  (`GridUiState.grouping`). **Similarity** is decoupled from the displayed lens:
+  the cold, minute-long pass is owned by a folder-scoped `GroupingCoordinator`
+  (`presentation/common/`) that, once started, runs to completion across a lens
+  switch *or* navigation (its result is cached, so the work is never wasted) and
+  dies only on a root change. Its progress (`GridUiState.similarityProgress`,
+  mirrored from the coordinator) drives the always-visible cues — a determinate
+  ring on the Similar tab in any lens, the framing banner when Similarity is
+  shown, and the off-grid `BackgroundGroupingChip` overlaid by `App`. Switching
+  the lens cancels only the *display* wiring (`similarityApplyJob`), never the
+  coordinator's pass. Adjacent
   burst frames collapse into one `PhotoGroup.Burst` tile; clicking expands it in
   place (`GridDisplayModel` explodes `expandedBurstId` into per-frame tiles
   fenced by a header/footer — one burst open at a time, `Esc` peels selection →

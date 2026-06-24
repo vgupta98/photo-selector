@@ -21,6 +21,7 @@ import com.vishalgupta.photoselector.domain.repository.TrashReport
 import com.vishalgupta.photoselector.domain.usecase.CopyPhotosToFolderUseCase
 import com.vishalgupta.photoselector.domain.usecase.ExportPhotosTxtUseCase
 import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
+import com.vishalgupta.photoselector.presentation.common.GroupingCoordinator
 import com.vishalgupta.photoselector.presentation.common.GroupingMode
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.testing.FakeCategoriesRepository
@@ -38,6 +39,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -155,7 +157,12 @@ class GridSelectionTest {
         moveToTrash = MovePhotosToTrashUseCase(trash),
         imageLoader = noOpImageLoader,
         captureMetadataSource = metadata,
-        similarityGrouper = similarityGrouper,
+        // Wrap the fake grouper in a coordinator on the same test dispatcher so the background
+        // Similarity pass runs in virtual time and settles under advanceUntilIdle, just like the
+        // inline regroup. Null grouper -> null coordinator (Similarity degrades to singles).
+        groupingCoordinator = similarityGrouper?.let {
+            GroupingCoordinator(it, parentJob = null, dispatcher = dispatcher ?: Dispatchers.IO)
+        },
         initialGroupingMode = initialGroupingMode,
         hasSeenSimilarityCoachmark = hasSeenSimilarityCoachmark,
         onSimilarityCoachmarkSeen = onSimilarityCoachmarkSeen,
@@ -385,6 +392,53 @@ class GridSelectionTest {
         advanceUntilIdle()
         assertEquals(Category.FAVOURITES_ID to photos[suggested].id, repo.toggleCalls.single())
 
+        vm.onClear()
+    }
+
+    @Test
+    fun similarityPass_keepsRunningAcrossALensSwitchAndIsReusedOnReturn() = runTest {
+        // The bug this guards: switching the lens off Similarity used to cancel the in-flight pass. Now
+        // the GroupingCoordinator owns it, so it survives a detour through Time (and a return) as ONE
+        // pass. A gate keeps group() suspended so we can switch lenses while it is mid-flight; the call
+        // counter proves it is neither cancelled (which would force a fresh call on return) nor restarted.
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val calls = java.util.concurrent.atomic.AtomicInteger(0)
+        val similarity = object : PhotoGrouper {
+            override suspend fun group(photos: List<Photo>, onProgress: GroupingProgress): List<PhotoGroup> {
+                calls.incrementAndGet()
+                gate.await()
+                return listOf(PhotoGroup.Burst(photos))
+            }
+        }
+        val vm = viewModel(
+            FakeCategoriesRepository(categories),
+            similarityGrouper = similarity,
+            initialGroupingMode = GroupingMode.Similarity,
+            dispatcher = StandardTestDispatcher(testScheduler),
+        )
+        advanceUntilIdle()
+        // The pass is running (one call, gated) and reporting progress for the always-visible cues.
+        assertEquals(1, calls.get())
+        assertNotNull("the running pass reports progress", vm.state.value.similarityProgress)
+        assertEquals(photos.size, vm.state.value.groups.size) // still singles: group() hasn't returned
+
+        // Detour through Time: the displayed lens changes, but the background pass must not be cancelled.
+        vm.setGroupingMode(GroupingMode.Time)
+        advanceUntilIdle()
+        assertEquals("switching lens must not restart or cancel the pass", 1, calls.get())
+        assertNotNull("the pass keeps reporting while another lens is shown", vm.state.value.similarityProgress)
+
+        // Return to Similarity: re-attaches to the SAME in-flight pass rather than starting another.
+        vm.setGroupingMode(GroupingMode.Similarity)
+        advanceUntilIdle()
+        assertEquals("returning to the lens re-attaches, not re-runs", 1, calls.get())
+
+        // Let the one pass finish: its groups land and the progress cue clears.
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(1, vm.state.value.groups.size) // the single burst
+        assertNull("progress clears when the pass completes", vm.state.value.similarityProgress)
+        assertEquals(1, calls.get())
         vm.onClear()
     }
 

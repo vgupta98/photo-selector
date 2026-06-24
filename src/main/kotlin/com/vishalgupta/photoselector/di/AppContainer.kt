@@ -48,27 +48,29 @@ import com.vishalgupta.photoselector.domain.usecase.ExportPhotosTxtUseCase
 import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
 import com.vishalgupta.photoselector.domain.usecase.ScanRootFolderUseCase
 import com.vishalgupta.photoselector.presentation.browser.BrowserViewModel
+import com.vishalgupta.photoselector.presentation.common.GroupingCoordinator
+import com.vishalgupta.photoselector.presentation.common.GroupingMode
+import com.vishalgupta.photoselector.presentation.common.MacSystemActions
+import com.vishalgupta.photoselector.presentation.common.SystemActions
 import com.vishalgupta.photoselector.presentation.grid.GridViewModel
 import com.vishalgupta.photoselector.presentation.grid.LibraryRailViewModel
 import com.vishalgupta.photoselector.presentation.inspect.InspectMode
 import com.vishalgupta.photoselector.presentation.inspect.InspectViewModel
-import com.vishalgupta.photoselector.presentation.survey.SurveyViewModel
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.navigation.GridRetentionKey
 import com.vishalgupta.photoselector.presentation.navigation.MAX_INSPECT_GRID_PHOTOS
+import com.vishalgupta.photoselector.presentation.navigation.Screen
 import com.vishalgupta.photoselector.presentation.navigation.activeCategoryId
 import com.vishalgupta.photoselector.presentation.navigation.slice
-import com.vishalgupta.photoselector.presentation.common.GroupingMode
-import com.vishalgupta.photoselector.presentation.common.MacSystemActions
-import com.vishalgupta.photoselector.presentation.common.SystemActions
-import com.vishalgupta.photoselector.presentation.navigation.Screen
 import com.vishalgupta.photoselector.presentation.rootpicker.RootFolderPickerViewModel
+import com.vishalgupta.photoselector.presentation.survey.SurveyViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.Json
 import java.nio.file.Path
 
@@ -162,6 +164,19 @@ class AppContainer {
         cache = groupingResultCache,
         modelId = embeddingModel.id,
     )
+
+    // Owns the one background Similarity pass, decoupled from any grid's displayed lens so it runs to
+    // completion across lens switches and navigation. Process-lifetime parent (appScope) with [reset]
+    // on a root change, so the stable [groupingActivity] flow can be collected once by the navigation
+    // host for the off-grid hint. Runs on Dispatchers.IO, matching the grid's old grouping dispatcher.
+    private val groupingCoordinator = GroupingCoordinator(
+        grouper = similarityGrouper,
+        parentJob = appScope.coroutineContext[Job],
+        dispatcher = Dispatchers.IO,
+    )
+
+    /** Progress of the background Similarity pass (null when idle), for the navigation host's hint. */
+    val groupingActivity: StateFlow<GroupingCoordinator.Progress?> get() = groupingCoordinator.progress
 
     private fun loadEmbeddingModel(): EmbeddingModel = try {
         OnnxEmbeddingModel.Loader.fromResource()
@@ -388,7 +403,7 @@ class AppContainer {
             moveToTrash = movePhotosToTrashUseCase,
             imageLoader = imageLoader,
             captureMetadataSource = captureMetadataSource,
-            similarityGrouper = similarityGrouper,
+            groupingCoordinator = groupingCoordinator,
             initialGroupingMode = lastGroupingMode,
             // Global flag, read at build time; the in-memory cache keeps later grids coherent once
             // it's been dismissed. The callback persists the dismissal so it never reappears.
@@ -425,6 +440,9 @@ class AppContainer {
         // Rails hold no pending writes to flush; folderJob.cancel below tears their scopes down, so
         // just drop the references for the new root.
         retainedRails.clear()
+        // Drop any in-flight background Similarity pass and clear its progress; the coordinator object
+        // itself stays (the host collects its flow), only the per-root work is reset.
+        groupingCoordinator.reset()
         _folderJob.cancel()
         _folderJob = SupervisorJob(appScope.coroutineContext[Job])
         categoriesRepository.clearContext()
