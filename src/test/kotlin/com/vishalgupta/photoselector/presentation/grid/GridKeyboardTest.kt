@@ -75,7 +75,7 @@ class GridKeyboardTest {
     @OptIn(ExperimentalTestApi::class)
     @Test
     fun firstArrowPress_fromUnfocused_focusesFirstVisibleTile() {
-        val captured = mutableListOf<Int>()
+        val captured = mutableListOf<TileIndex>()
         rule.setContent {
             AppTheme {
                 Surface(Modifier.size(800.dp, 600.dp)) {
@@ -83,7 +83,7 @@ class GridKeyboardTest {
                         state = GridUiState(
                             photos = testPhotos,
                             scope = CategoryScope.AllPhotos,
-                            focusedIndex = -1,
+                            focusedIndex = TileIndex(-1),
                         ),
                         initialScrollIndex = 0,
                         onTileClick = {},
@@ -107,7 +107,7 @@ class GridKeyboardTest {
 
         // The shortcut path fires onSetFocusedIndex(0) and returns, so we expect
         // exactly one emission with index 0 — not a directional-math result.
-        assertEquals(listOf(0), captured)
+        assertEquals(listOf(TileIndex(0)), captured)
     }
 
     @OptIn(ExperimentalTestApi::class)
@@ -121,7 +121,7 @@ class GridKeyboardTest {
                         state = GridUiState(
                             photos = testPhotos,
                             scope = CategoryScope.AllPhotos,
-                            focusedIndex = 0,
+                            focusedIndex = TileIndex(0),
                         ),
                         initialScrollIndex = 0,
                         onTileClick = {},
@@ -385,7 +385,7 @@ class GridKeyboardTest {
                             groups = groups,
                             scope = CategoryScope.AllPhotos,
                             groupingMode = GroupingMode.Time,
-                            focusedIndex = 1, // the burst tile
+                            focusedIndex = TileIndex(1), // the burst tile
                         ),
                         initialScrollIndex = 0,
                         onTileClick = {},
@@ -487,7 +487,7 @@ class GridKeyboardTest {
                                 photos = burstA.photos + burstB.photos,
                                 groups = groups,
                                 scope = CategoryScope.AllPhotos,
-                                focusedIndex = -1,
+                                focusedIndex = TileIndex(-1),
                             ),
                         )
                     }
@@ -499,7 +499,7 @@ class GridKeyboardTest {
                         onBack = null,
                         onSetFocusedIndex = { idx ->
                             val max = state.displayGroups.size - 1
-                            state = state.copy(focusedIndex = idx.coerceIn(-1, max.coerceAtLeast(-1)))
+                            state = state.copy(focusedIndex = TileIndex(idx.value.coerceIn(-1, max.coerceAtLeast(-1))))
                         },
                         onToggleMembershipAtFocus = {},
                         onToggleCustomCategoryAtFocus = {},
@@ -512,10 +512,10 @@ class GridKeyboardTest {
                             val open = if (state.expandedBurstId == id) null else id
                             val display = displayGroupsFor(state.groups, open)
                             val focus = display.indexOfFirst { it.groupId == id }.takeIf { it >= 0 }
-                                ?: state.focusedIndex
+                                ?: state.focusedIndex.value
                             state = state.copy(
                                 expandedBurstId = open,
-                                focusedIndex = focus.coerceIn(-1, (display.size - 1).coerceAtLeast(-1)),
+                                focusedIndex = TileIndex(focus.coerceIn(-1, (display.size - 1).coerceAtLeast(-1))),
                             )
                         },
                     )
@@ -550,7 +550,7 @@ class GridKeyboardTest {
     @Test
     fun deletingTheMouseFocusedTile_keepsArrowKeysWorking() {
         val photos = (0 until 4).map { photoNamed("p$it") }
-        val movedTo = mutableListOf<Int>()
+        val movedTo = mutableListOf<TileIndex>()
         rule.setContent {
             AppTheme {
                 Surface(Modifier.size(1000.dp, 800.dp)) {
@@ -563,7 +563,7 @@ class GridKeyboardTest {
                                 photos = photos,
                                 groups = photos.map(PhotoGroup::Single),
                                 scope = CategoryScope.AllPhotos,
-                                focusedIndex = -1,
+                                focusedIndex = TileIndex(-1),
                                 selection = setOf(photos[1].id),
                             ),
                         )
@@ -576,7 +576,7 @@ class GridKeyboardTest {
                         onBack = null,
                         onSetFocusedIndex = { idx ->
                             movedTo += idx
-                            state = state.copy(focusedIndex = idx.coerceIn(-1, (state.displayGroups.size - 1).coerceAtLeast(-1)))
+                            state = state.copy(focusedIndex = TileIndex(idx.value.coerceIn(-1, (state.displayGroups.size - 1).coerceAtLeast(-1))))
                         },
                         onToggleMembershipAtFocus = {},
                         onToggleCustomCategoryAtFocus = {},
@@ -591,7 +591,7 @@ class GridKeyboardTest {
                                 photos = remaining,
                                 groups = remaining.map(PhotoGroup::Single),
                                 selection = emptySet(),
-                                focusedIndex = -1,
+                                focusedIndex = TileIndex(-1),
                             )
                         },
                     )
@@ -640,7 +640,7 @@ class GridKeyboardTest {
                             photos = manyPhotos,
                             groups = manyPhotos.map(PhotoGroup::Single),
                             scope = CategoryScope.AllPhotos,
-                            focusedIndex = 0, // the ring sits at the top, far above the retained scroll
+                            focusedIndex = TileIndex(0), // the ring sits at the top, far above the retained scroll
                         ),
                         initialScrollIndex = 0,
                         retainedGridState = gridState,
@@ -689,7 +689,7 @@ class GridKeyboardTest {
                             photos = photos,
                             groups = photos.map(PhotoGroup::Single),
                             scope = CategoryScope.AllPhotos,
-                            focusedIndex = -1, // pure-mouse user, NO ring - resume must still fire
+                            focusedIndex = TileIndex(-1), // pure-mouse user, NO ring - resume must still fire
                         ),
                         initialScrollIndex = 0,
                         retainedGridState = gridState,
@@ -735,8 +735,8 @@ class GridKeyboardTest {
                     gridStateRef = gridState
                     // focusedIndex flips from -1 to the reveal target shortly after mount, exactly as
                     // seating the ring for the jump does - the change that used to cancel the scroll.
-                    var focused by remember { mutableStateOf(-1) }
-                    LaunchedEffect(Unit) { focused = 60 }
+                    var focused by remember { mutableStateOf(TileIndex(-1)) }
+                    LaunchedEffect(Unit) { focused = TileIndex(60) }
                     GridScreen(
                         state = GridUiState(
                             photos = photos,
@@ -789,7 +789,7 @@ class GridKeyboardTest {
                             photos = photos,
                             groups = photos.map(PhotoGroup::Single),
                             scope = CategoryScope.AllPhotos,
-                            focusedIndex = -1,
+                            focusedIndex = TileIndex(-1),
                             lastViewedPhotoId = photos[60].id, // marker points off-screen, but must not scroll
                         ),
                         initialScrollIndex = 0,
@@ -830,7 +830,7 @@ class GridKeyboardTest {
     fun coldStartWithPhotosLoadingAfterMount_scrollsToTheRestoredIndex() {
         val photos = (0 until 80).map { photoNamed("p$it") }
         lateinit var gridStateRef: LazyGridState
-        val reported = mutableListOf<Int>()
+        val reported = mutableListOf<FlatIndex>()
         rule.setContent {
             AppTheme {
                 Surface(Modifier.size(800.dp, 600.dp)) {
@@ -845,7 +845,7 @@ class GridKeyboardTest {
                             photos = if (photosLoaded) photos else emptyList(),
                             groups = if (photosLoaded) photos.map(PhotoGroup::Single) else emptyList(),
                             scope = CategoryScope.AllPhotos,
-                            focusedIndex = -1,
+                            focusedIndex = TileIndex(-1),
                         ),
                         initialScrollIndex = 50, // the persisted resume point
                         retainedGridState = gridState,
@@ -875,7 +875,7 @@ class GridKeyboardTest {
         // And it must NOT have persisted 0 as its final reported position (the resume-point wipe).
         assertTrue(
             "cold start persisted 0, wiping the saved resume point (reported=$reported)",
-            reported.lastOrNull()?.let { it in 44..56 } == true,
+            reported.lastOrNull()?.let { it.value in 44..56 } == true,
         )
     }
 
@@ -914,7 +914,7 @@ class GridKeyboardTest {
                                 groups = photos.map(PhotoGroup::Single),
                                 scope = CategoryScope.AllPhotos,
                                 groupingMode = GroupingMode.Off,
-                                focusedIndex = -1,
+                                focusedIndex = TileIndex(-1),
                             ),
                         )
                     }
@@ -932,7 +932,7 @@ class GridKeyboardTest {
                         onExportTxt = {},
                         onCopyToFolder = {},
                         onDismissToast = {},
-                        onFirstVisibleItemChanged = { reportedTopFlat = it },
+                        onFirstVisibleItemChanged = { reportedTopFlat = it.value },
                         imageLoader = noOpImageLoader,
                         // Mirror the view model: the Time lens collapses the two bursts, Off is flat singles.
                         onSelectGroupingMode = { mode ->
@@ -995,7 +995,7 @@ class GridKeyboardTest {
                                 groups = photos.map(PhotoGroup::Single),
                                 scope = CategoryScope.AllPhotos,
                                 groupingMode = GroupingMode.Off,
-                                focusedIndex = 95,
+                                focusedIndex = TileIndex(95),
                             ),
                         )
                     }
@@ -1013,18 +1013,18 @@ class GridKeyboardTest {
                         onExportTxt = {},
                         onCopyToFolder = {},
                         onDismissToast = {},
-                        onFirstVisibleItemChanged = { reportedTopFlat = it },
+                        onFirstVisibleItemChanged = { reportedTopFlat = it.value },
                         imageLoader = noOpImageLoader,
                         onSelectGroupingMode = { mode ->
                             val newGroups = if (mode == GroupingMode.Time) timeGroups else photos.map(PhotoGroup::Single)
                             // Mimic GridViewModel.refocus: keep the cursor on the same photo's frame,
                             // whose tile index leaps once p50..p89 collapse into one burst.
-                            val anchorId = state.displayGroups.getOrNull(state.focusedIndex)?.keyPhoto?.id
+                            val anchorId = state.displayGroups.getOrNull(state.focusedIndex.value)?.keyPhoto?.id
                             val newFocus = newGroups.indexOfFirst { g -> g.photos.any { it.id == anchorId } }
                             state = state.copy(
                                 groupingMode = mode,
                                 groups = newGroups,
-                                focusedIndex = if (newFocus >= 0) newFocus else state.focusedIndex,
+                                focusedIndex = if (newFocus >= 0) TileIndex(newFocus) else state.focusedIndex,
                             )
                         },
                     )
@@ -1081,7 +1081,7 @@ class GridKeyboardTest {
                                 groups = photos.map(PhotoGroup::Single),
                                 scope = CategoryScope.AllPhotos,
                                 groupingMode = GroupingMode.Off,
-                                focusedIndex = -1,
+                                focusedIndex = TileIndex(-1),
                             ),
                         )
                     }
@@ -1099,7 +1099,7 @@ class GridKeyboardTest {
                         onExportTxt = {},
                         onCopyToFolder = {},
                         onDismissToast = {},
-                        onFirstVisibleItemChanged = { reportedTopFlat = it },
+                        onFirstVisibleItemChanged = { reportedTopFlat = it.value },
                         imageLoader = noOpImageLoader,
                         onSelectGroupingMode = { mode ->
                             state = state.copy(
@@ -1185,7 +1185,7 @@ class GridKeyboardTest {
                             groups = groups,
                             scope = CategoryScope.AllPhotos,
                             groupingMode = mode,
-                            focusedIndex = -1,
+                            focusedIndex = TileIndex(-1),
                         ),
                         initialScrollIndex = 0,
                         retainedGridState = gridState,
@@ -1200,7 +1200,7 @@ class GridKeyboardTest {
                         onExportTxt = {},
                         onCopyToFolder = {},
                         onDismissToast = {},
-                        onFirstVisibleItemChanged = { reportedTopFlat = it },
+                        onFirstVisibleItemChanged = { reportedTopFlat = it.value },
                         imageLoader = noOpImageLoader,
                         onSelectGroupingMode = { m ->
                             mode = m
