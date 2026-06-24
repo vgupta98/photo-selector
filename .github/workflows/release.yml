@@ -176,7 +176,7 @@ jobs:
             --notes-file /tmp/notes.md \
             "$DMG"
 
-      - name: Bump Homebrew cask
+      - name: Bump Homebrew cask and update feed
         env:
           # SSH deploy key with write access to vgupta98/homebrew-tap. A deploy
           # key is scoped to that single repo; the default GITHUB_TOKEN can't
@@ -184,6 +184,7 @@ jobs:
           DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
           VERSION: ${{ steps.version.outputs.version }}
           DMG: ${{ steps.artifact.outputs.path }}
+          REPO: ${{ github.repository }}
         run: |
           # Load the deploy key into a throwaway ssh-agent for this step.
           mkdir -p ~/.ssh
@@ -196,14 +197,34 @@ jobs:
           # macOS runner: BSD sed needs the '' empty-suffix argument for -i.
           sed -i '' -E "s/^  version \".*\"/  version \"${VERSION}\"/" "$CASK"
           sed -i '' -E "s/^  sha256 \".*\"/  sha256 \"${SHA}\"/" "$CASK"
+          # Update the in-app update feed the same tap repo hosts. Only the release *facts*
+          # (latest / dmgUrl / notesUrl) are rewritten; the hand-edited policy fields (rollout,
+          # minimumVersion, mandatory) are preserved, so a staged rollout or a kill switch set
+          # between releases survives the next release's bump.
+          python3 - "tap/update-manifest.json" "$VERSION" "$REPO" <<'PY'
+          import json, os, sys
+          path, version, repo = sys.argv[1], sys.argv[2], sys.argv[3]
+          data = {}
+          if os.path.exists(path):
+              with open(path) as f:
+                  data = json.load(f)
+          data["latest"] = version
+          data["dmgUrl"] = f"https://github.com/{repo}/releases/download/v{version}/Rhenium-{version}.dmg"
+          data["notesUrl"] = f"https://github.com/{repo}/releases/tag/v{version}"
+          data.setdefault("rollout", 1.0)
+          data.setdefault("mandatory", False)
+          with open(path, "w") as f:
+              json.dump(data, f, indent=2)
+              f.write("\n")
+          PY
           cd tap
-          if git diff --quiet; then
-            echo "Cask already at ${VERSION} — nothing to bump."
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "Cask and feed already at ${VERSION} — nothing to bump."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Casks/rhenium.rb
+          git add Casks/rhenium.rb update-manifest.json
           git commit -m "Update rhenium to ${VERSION}"
           git push
 

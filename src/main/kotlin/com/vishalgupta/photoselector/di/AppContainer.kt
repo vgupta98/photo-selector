@@ -1,5 +1,6 @@
 package com.vishalgupta.photoselector.di
 
+import com.vishalgupta.photoselector.BuildConfig
 import com.vishalgupta.photoselector.data.browse.JsonBrowsePositionRepository
 import com.vishalgupta.photoselector.data.export.CompositePhotoExporter
 import com.vishalgupta.photoselector.data.export.CopyPhotoExporter
@@ -7,6 +8,7 @@ import com.vishalgupta.photoselector.data.export.TxtPhotoExporter
 import com.vishalgupta.photoselector.data.categories.JsonCategoriesRepository
 import com.vishalgupta.photoselector.data.filesystem.FileSystemPhotoRepository
 import com.vishalgupta.photoselector.data.prefs.JsonAppPreferences
+import com.vishalgupta.photoselector.data.update.HttpUpdateRepository
 import com.vishalgupta.photoselector.data.ai.CachingPhotoGrouper
 import com.vishalgupta.photoselector.data.ai.DownscaleGrayEmbeddingModel
 import com.vishalgupta.photoselector.data.ai.EmbeddingCache
@@ -43,6 +45,10 @@ import com.vishalgupta.photoselector.domain.repository.BrowsePositionRepository
 import com.vishalgupta.photoselector.domain.repository.PhotoExporter
 import com.vishalgupta.photoselector.domain.repository.PhotoRepository
 import com.vishalgupta.photoselector.domain.repository.PhotoTrash
+import com.vishalgupta.photoselector.domain.update.AppVersion
+import com.vishalgupta.photoselector.domain.update.CheckForUpdateUseCase
+import com.vishalgupta.photoselector.domain.update.UpdateRepository
+import com.vishalgupta.photoselector.domain.update.rolloutBucket
 import com.vishalgupta.photoselector.domain.usecase.CopyPhotosToFolderUseCase
 import com.vishalgupta.photoselector.domain.usecase.ExportPhotosTxtUseCase
 import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
@@ -64,6 +70,7 @@ import com.vishalgupta.photoselector.presentation.navigation.activeCategoryId
 import com.vishalgupta.photoselector.presentation.navigation.slice
 import com.vishalgupta.photoselector.presentation.rootpicker.RootFolderPickerViewModel
 import com.vishalgupta.photoselector.presentation.survey.SurveyViewModel
+import com.vishalgupta.photoselector.presentation.update.UpdateViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -72,7 +79,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.Json
+import java.net.http.HttpClient
+import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
 
 class AppContainer {
 
@@ -214,6 +224,16 @@ class AppContainer {
     // cache dir, written through the shared AtomicJsonWriter.
     private val appPreferences: AppPreferencesRepository =
         JsonAppPreferences(cacheDir.resolve("preferences.json"), json)
+
+    // Notify-only update checker. One shared HttpClient (the app's only network use) reads the hosted
+    // manifest; the use case decides eligibility. The manifest URL is baked into BuildConfig at build time.
+    private val httpClient: HttpClient = HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(10))
+        .build()
+    private val updateRepository: UpdateRepository =
+        HttpUpdateRepository(BuildConfig.UPDATE_MANIFEST_URL, json, httpClient)
+    private val checkForUpdateUseCase = CheckForUpdateUseCase(updateRepository)
+
     private val exporter: PhotoExporter = CompositePhotoExporter(TxtPhotoExporter(), CopyPhotoExporter())
     private val photoTrash: PhotoTrash = DesktopPhotoTrash()
 
@@ -273,6 +293,30 @@ class AppContainer {
         if (screen !is Screen.Browser) currentPhotoPath.value = null
         currentScreen.value = screen
     }
+
+    /**
+     * App-lifetime update-banner holder. Built once and parented to [appScope] (not a folder job) so the
+     * single launch check survives root and screen changes. The whole feature is muted for a
+     * Homebrew-managed install, which updates through `brew upgrade` — the in-app updater must not fight it.
+     */
+    fun updateViewModel(): UpdateViewModel = UpdateViewModel(
+        checkForUpdate = checkForUpdateUseCase,
+        currentVersion = AppVersion.parseOrNull(BuildConfig.VERSION) ?: AppVersion(0, 0, 0),
+        osVersion = AppVersion.parseOrNull(System.getProperty("os.version").orEmpty()),
+        rolloutBucket = rolloutBucket(appPreferences.installId()),
+        autoCheckEnabled = appPreferences.isAutoUpdateCheckEnabled() && !isHomebrewManaged(),
+        skippedVersion = { appPreferences.skippedUpdateVersion() },
+        onSkipVersion = { appPreferences.setSkippedUpdateVersion(it) },
+        openUrl = { systemActions.openUrl(it) },
+        parentJob = appScope.coroutineContext[Job],
+    )
+
+    // Heuristic: a Homebrew cask records the app under a Caskroom prefix (arch-dependent). If one for
+    // Rhenium exists, the install is brew-managed and self-update would desync brew's metadata, so we
+    // defer to `brew upgrade` and suppress the in-app checker entirely.
+    private fun isHomebrewManaged(): Boolean =
+        sequenceOf("/opt/homebrew/Caskroom/rhenium", "/usr/local/Caskroom/rhenium")
+            .any { Files.exists(Path.of(it)) }
 
     fun rootPickerViewModel(): RootFolderPickerViewModel = RootFolderPickerViewModel(
         scanRootFolder = scanUseCase,
