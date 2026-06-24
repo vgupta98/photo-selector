@@ -116,12 +116,12 @@ class GridViewportAnchorTest {
         val anchor = anchorAt(topIndex = 0, initial = null)
         // First reconcile is the initial reshape (lastReconciledGroups is null) with no anchor and nothing
         // armed: it takes the re-pin branch, which no-ops on a null anchor - so it neither scrolls nor arms.
-        anchor.reconcile(renderItems, tiles, emptyList(), focusedIndex = 3, groups = groups)
+        anchor.reconcile(renderItems, tiles, emptyList(), focusedIndex = TileIndex(3), groups = groups)
         assertTrue("an unarmed reconcile does not arm a focus scroll", !anchor.pendingFocusScroll)
         // Arm via a real cursor move, then reconcile on the SAME grouping instance (no reshape): the focus
         // branch runs and consumes the flag; focus is unset so it returns before any real scroll.
         anchor.onCursorMove(focusChanged = true)
-        anchor.reconcile(renderItems, tiles, emptyList(), focusedIndex = -1, groups = groups)
+        anchor.reconcile(renderItems, tiles, emptyList(), focusedIndex = TileIndex(-1), groups = groups)
         assertTrue("the pending focus flag is consumed", !anchor.pendingFocusScroll)
     }
 }

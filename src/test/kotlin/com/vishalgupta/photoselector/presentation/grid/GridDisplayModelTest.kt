@@ -42,7 +42,7 @@ class GridDisplayModelTest {
             val display = displayGroupsFor(groups, expanded)
             // Same groups, same order, and displayIndex is the position in the display space.
             assertEquals(display, renderTiles.map { it.group })
-            renderTiles.forEachIndexed { i, tile -> assertEquals(i, tile.displayIndex) }
+            renderTiles.forEachIndexed { i, tile -> assertEquals(TileIndex(i), tile.displayIndex) }
         }
     }
 
@@ -79,42 +79,43 @@ class GridDisplayModelTest {
     // while the tile space (and tileFlatStart) is a b c d e -> [0,1,2,3,4]. The two diverge by the
     // header/footer once a burst is open, which is the scroll/anchor-drift bug this maps away.
     private val expandedRenderItems = buildRenderItems(groups, expandedBurstId = burst.groupId)
-    private val expandedTileFlatStart = listOf(0, 1, 2, 3, 4) // every frame its own tile when open
+    private val expandedTileFlatStart = listOf(0, 1, 2, 3, 4).map(::FlatIndex) // every frame its own tile when open
 
     @Test fun `a header or footer maps to the first visible tile, not an offset flat index`() {
         // Header (render 1) -> first frame b (flat 1); footer (render 5) -> post-burst tile e (flat 4).
-        assertEquals(1, flatIndexForRenderItem(expandedRenderItems, expandedTileFlatStart, 1))
-        assertEquals(4, flatIndexForRenderItem(expandedRenderItems, expandedTileFlatStart, 5))
+        assertEquals(FlatIndex(1), flatIndexForRenderItem(expandedRenderItems, expandedTileFlatStart, 1))
+        assertEquals(FlatIndex(4), flatIndexForRenderItem(expandedRenderItems, expandedTileFlatStart, 5))
     }
 
     @Test fun `tiles after the header map through the tile space, not the render index`() {
         // render 2 is tile b (flat 1) - the naive tileFlatStart[2] would have returned 2 (off by one).
-        assertEquals(1, flatIndexForRenderItem(expandedRenderItems, expandedTileFlatStart, 2))
+        assertEquals(FlatIndex(1), flatIndexForRenderItem(expandedRenderItems, expandedTileFlatStart, 2))
         // render 6 is the trailing tile e (flat 4) - naive tileFlatStart[6] is out of range -> 0, the bug.
-        assertEquals(4, flatIndexForRenderItem(expandedRenderItems, expandedTileFlatStart, 6))
+        assertEquals(FlatIndex(4), flatIndexForRenderItem(expandedRenderItems, expandedTileFlatStart, 6))
     }
 
     @Test fun `renderIndexForTile is the inverse of the render-to-tile map, and null off the end`() {
         // Expanded render items: 0:Tile(a) 1:Header 2:Tile(b) 3:Tile(c) 4:Tile(d) 5:Footer 6:Tile(e).
         // A tile displayIndex resolves to the render slot the focus effect must scroll to.
-        assertEquals(0, renderIndexForTile(expandedRenderItems, 0)) // a
-        assertEquals(2, renderIndexForTile(expandedRenderItems, 1)) // b - skips the header
-        assertEquals(6, renderIndexForTile(expandedRenderItems, 4)) // e - skips header + footer
-        assertNull(renderIndexForTile(expandedRenderItems, 99)) // no such tile
+        assertEquals(0, renderIndexForTile(expandedRenderItems, TileIndex(0))) // a
+        assertEquals(2, renderIndexForTile(expandedRenderItems, TileIndex(1))) // b - skips the header
+        assertEquals(6, renderIndexForTile(expandedRenderItems, TileIndex(4))) // e - skips header + footer
+        assertNull(renderIndexForTile(expandedRenderItems, TileIndex(99))) // no such tile
 
         // Round-trips with tileDisplayIndexForRenderItem for every tile.
         for (displayIndex in 0..4) {
-            val renderIndex = renderIndexForTile(expandedRenderItems, displayIndex)!!
-            assertEquals(displayIndex, tileDisplayIndexForRenderItem(expandedRenderItems, renderIndex))
+            val renderIndex = renderIndexForTile(expandedRenderItems, TileIndex(displayIndex))!!
+            assertEquals(TileIndex(displayIndex), tileDisplayIndexForRenderItem(expandedRenderItems, renderIndex))
         }
     }
 
     @Test fun `collapsed render items map one-to-one and empty input is safe`() {
         val collapsed = buildRenderItems(groups, expandedBurstId = null)
-        assertEquals(0, flatIndexForRenderItem(collapsed, listOf(0, 1, 4), 0)) // a
-        assertEquals(1, flatIndexForRenderItem(collapsed, listOf(0, 1, 4), 1)) // burst tile
-        assertEquals(4, flatIndexForRenderItem(collapsed, listOf(0, 1, 4), 2)) // e
-        assertEquals(0, flatIndexForRenderItem(emptyList(), emptyList(), 3)) // no items -> 0
+        val flatStart = listOf(0, 1, 4).map(::FlatIndex)
+        assertEquals(FlatIndex(0), flatIndexForRenderItem(collapsed, flatStart, 0)) // a
+        assertEquals(FlatIndex(1), flatIndexForRenderItem(collapsed, flatStart, 1)) // burst tile
+        assertEquals(FlatIndex(4), flatIndexForRenderItem(collapsed, flatStart, 2)) // e
+        assertEquals(FlatIndex(0), flatIndexForRenderItem(emptyList(), emptyList(), 3)) // no items -> 0
     }
 
     // --- vertical keyboard navigation (geometry, not index arithmetic) -----------------------
@@ -128,33 +129,33 @@ class GridDisplayModelTest {
     //   [footer]
     //   row y=400 : 4(e) 5(f)
     private val expandedLayout = listOf(
-        TilePosition(displayIndex = 0, x = 0, y = 0),                                   // a
-        TilePosition(1, x = 0, y = 200), TilePosition(2, x = 100, y = 200), TilePosition(3, x = 200, y = 200), // b c d
-        TilePosition(4, x = 0, y = 400), TilePosition(5, x = 100, y = 400),             // e f
+        TilePosition(displayIndex = TileIndex(0), x = 0, y = 0),                        // a
+        TilePosition(TileIndex(1), x = 0, y = 200), TilePosition(TileIndex(2), x = 100, y = 200), TilePosition(TileIndex(3), x = 200, y = 200), // b c d
+        TilePosition(TileIndex(4), x = 0, y = 400), TilePosition(TileIndex(5), x = 100, y = 400),  // e f
     )
 
     @Test fun `down from the lone first tile lands on the frame directly below, not sideways`() {
         // The reported bug: Down moved sideways (to index 1's right neighbour) because the column
         // count collapsed to 1. Geometry sends it straight down to b (index 1, same column x=0).
-        assertEquals(1, pickVerticalTarget(expandedLayout, focusedIndex = 0, down = true))
+        assertEquals(TileIndex(1), pickVerticalTarget(expandedLayout, focusedIndex = TileIndex(0), down = true))
     }
 
     @Test fun `down from a middle frame lands in the row below at the nearest column`() {
         // From c (index 2, x=100) down -> the e/f row; nearest column is f (index 5, x=100).
-        assertEquals(5, pickVerticalTarget(expandedLayout, focusedIndex = 2, down = true))
+        assertEquals(TileIndex(5), pickVerticalTarget(expandedLayout, focusedIndex = TileIndex(2), down = true))
         // From d (index 3, x=200) down -> e/f row has no x=200 tile; nearest is f (x=100).
-        assertEquals(5, pickVerticalTarget(expandedLayout, focusedIndex = 3, down = true))
+        assertEquals(TileIndex(5), pickVerticalTarget(expandedLayout, focusedIndex = TileIndex(3), down = true))
     }
 
     @Test fun `up from a trailing single returns into the burst frames`() {
         // From e (index 4, x=0) up -> the b/c/d row, nearest column is b (index 1, x=0).
-        assertEquals(1, pickVerticalTarget(expandedLayout, focusedIndex = 4, down = false))
+        assertEquals(TileIndex(1), pickVerticalTarget(expandedLayout, focusedIndex = TileIndex(4), down = false))
     }
 
     @Test fun `no row in the direction returns null so the caller can fall back`() {
-        assertNull(pickVerticalTarget(expandedLayout, focusedIndex = 0, down = false)) // nothing above a
-        assertNull(pickVerticalTarget(expandedLayout, focusedIndex = 5, down = true))  // nothing below f
-        assertNull(pickVerticalTarget(expandedLayout, focusedIndex = 99, down = true)) // cursor off-screen
+        assertNull(pickVerticalTarget(expandedLayout, focusedIndex = TileIndex(0), down = false)) // nothing above a
+        assertNull(pickVerticalTarget(expandedLayout, focusedIndex = TileIndex(5), down = true))  // nothing below f
+        assertNull(pickVerticalTarget(expandedLayout, focusedIndex = TileIndex(99), down = true)) // cursor off-screen
     }
 
     private fun photo(id: String): Photo = Photo(

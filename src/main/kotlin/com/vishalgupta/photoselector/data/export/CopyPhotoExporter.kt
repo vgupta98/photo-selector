@@ -4,7 +4,9 @@ import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.RootFolder
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
 import com.vishalgupta.photoselector.domain.repository.CopyReport
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.nio.file.Files
 import java.nio.file.Path
@@ -28,6 +30,11 @@ class CopyPhotoExporter {
         val total = favourites.size
 
         for ((index, photo) in favourites.withIndex()) {
+            // Cooperative cancellation: ensureActive() throws if the scope was cancelled, so a
+            // cancelled bulk copy stops at the next file boundary rather than copying every remaining
+            // file. (Files.copy isn't interruptible here — no runInterruptible — so any in-flight file
+            // simply finishes first.)
+            ensureActive()
             try {
                 val target = resolveTarget(destDir, photo, policy)
                 if (target == null) {
@@ -46,6 +53,11 @@ class CopyPhotoExporter {
                     }
                     copied++
                 }
+            } catch (ce: CancellationException) {
+                // Defensive and consistent with the other call sites; this try body has no suspend
+                // call, so it can't actually originate a CancellationException today. ensureActive()
+                // above is what does the real cancellation work.
+                throw ce
             } catch (t: Throwable) {
                 failed += photo to t
             }
