@@ -196,6 +196,11 @@ class GridViewModel(
     // Cancelled when the grid stops showing Similarity — but that only stops the display wiring, never
     // the pass itself, which the GroupingCoordinator owns and runs to completion regardless.
     private var similarityApplyJob: Job? = null
+    // Generation of the background pass this grid last requested (captured from the coordinator). The
+    // progress collector shows this grid's "still grouping" cues only while the coordinator's *active*
+    // generation still matches — i.e. the one running pass is grouping this grid's slice, not another
+    // scope's that has since superseded it. Null until this grid first requests Similarity.
+    private var similarityPassGeneration: Int? = null
 
     // Mirrors [GridUiState.groupingMode]; [GroupingMode.Off] keeps one tile per photo and skips the
     // off-thread regroup entirely. The grouper for a mode comes from [grouperFor].
@@ -259,18 +264,27 @@ class GridViewModel(
             }
             .launchIn(scope)
 
-        // Mirror the coordinator's background Similarity progress into state. This single field drives
-        // every "still grouping" cue — the Similar-tab ring (in any lens), the determinate banner (when
-        // Similarity is the displayed lens), and the off-grid chip — so the pass keeps reporting even
-        // while the grid shows another lens. The coordinator already applies the grace window, so a
-        // warm (cache-hit) pass never flashes here. [grouping] stays untouched: it is the inline Time
-        // bar's alone.
-        groupingCoordinator?.progress
-            ?.onEach { progress ->
-                val status = progress?.let { GroupingStatus(it.processed, it.total) }
-                _state.update { it.copy(similarityProgress = status) }
-            }
-            ?.launchIn(scope)
+        // Mirror the coordinator's background Similarity progress into state, but only while the running
+        // pass is grouping *this* grid's slice — i.e. the coordinator's active generation still matches
+        // the one we captured when this grid requested it. The coordinator runs a single global pass, so
+        // without this gate every retained grid would mirror it and light a determinate ring on the
+        // Similar tab of a scope whose Similarity would group an entirely different set: a precise
+        // percentage that is wrong for that tab. This field drives every "still grouping" cue for this
+        // grid — the Similar-tab ring (in any lens) and the banner (when Similarity is shown); the
+        // off-grid chip is fed separately and globally by the host. The coordinator already applies the
+        // grace window, so a warm (cache-hit) pass never flashes here. [grouping] stays untouched: it is
+        // the inline Time bar's alone. Comparing generations is O(1), so it is safe per progress tick.
+        val coordinator = groupingCoordinator
+        if (coordinator != null) {
+            coordinator.progress
+                .onEach { progress ->
+                    val status = progress
+                        ?.takeIf { coordinator.activeGeneration == similarityPassGeneration }
+                        ?.let { GroupingStatus(it.processed, it.total) }
+                    _state.update { it.copy(similarityProgress = status) }
+                }
+                .launchIn(scope)
+        }
     }
 
     /**
@@ -342,6 +356,9 @@ class GridViewModel(
             return
         }
         val deferred = coordinator.groupingFor(photos)
+        // Capture which pass is ours (same thread, right after the request) so the progress collector can
+        // tell this grid's pass from one a different scope later supersedes.
+        similarityPassGeneration = coordinator.activeGeneration
         similarityApplyJob = scope.launch {
             // The display bar is owned by the coordinator-progress collector (it clears on completion),
             // so the apply must not also null it out — pass clearDisplayBar = false.
