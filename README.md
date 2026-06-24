@@ -106,6 +106,12 @@ or right-click the app in Finder and choose **Open**. You only need to do this o
 
 Then, with either option: launch Rhenium, click **"Choose folder…"**, point it at your photo root, wait for the scan, then start browsing.
 
+### Updating
+
+Rhenium checks for a new version on launch and shows an in-app banner when one is available — click **Download** to get the latest DMG (or **Skip** / **Later** to dismiss it). The check reads a small public file and sends nothing about you.
+
+Installed via Homebrew? Update with `brew upgrade --cask rhenium` instead; the in-app banner stays out of Homebrew's way.
+
 ### Keyboard shortcuts
 
 | Key | Action |
