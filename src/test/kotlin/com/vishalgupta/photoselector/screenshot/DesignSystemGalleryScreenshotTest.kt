@@ -20,10 +20,13 @@ import com.vishalgupta.photoselector.presentation.designsystem.atom.AppOutlinedB
 import com.vishalgupta.photoselector.presentation.designsystem.atom.AppTextButton
 import com.vishalgupta.photoselector.presentation.designsystem.atom.FavouriteStar
 import com.vishalgupta.photoselector.presentation.designsystem.atom.LoadingIndicator
+import com.vishalgupta.photoselector.presentation.common.GroupingMode
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.BackgroundGroupingChip
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BusyBar
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ConflictPolicyButton
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ErrorPlaceholder
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.FavouritesButton
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.GroupingModeToggle
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToast
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToastDefaults
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
@@ -46,7 +49,7 @@ class DesignSystemGalleryScreenshotTest {
     fun design_system_gallery() {
         rule.setContent {
             AppTheme {
-                Surface(Modifier.size(720.dp, 760.dp)) {
+                Surface(Modifier.size(720.dp, 880.dp)) {
                     Column(
                         Modifier.fillMaxWidth().padding(AppTheme.spacing.lg),
                         verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.lg),
@@ -78,6 +81,21 @@ class DesignSystemGalleryScreenshotTest {
                                 text = "Unfavourited",
                                 leadingIcon = { FavouriteStar(filled = false, modifier = Modifier.size(AppTheme.dimens.iconSm)) },
                             )
+                        }
+
+                        Text("Background grouping", style = MaterialTheme.typography.titleMedium)
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.lg),
+                        ) {
+                            // The Similar tab carries a determinate ring while the pass runs (here while
+                            // the Bursts lens is shown), and the off-grid chip mirrors it.
+                            GroupingModeToggle(
+                                mode = GroupingMode.Time,
+                                onSelect = {},
+                                similarityProgress = 0.42f,
+                            )
+                            BackgroundGroupingChip(processed = 42, total = 100)
                         }
 
                         Text("Busy bar", style = MaterialTheme.typography.titleMedium)

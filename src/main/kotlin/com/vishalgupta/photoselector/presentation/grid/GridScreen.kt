@@ -608,6 +608,9 @@ fun GridScreen(
                 onCopyToFolder = onCopyToFolder,
                 groupingMode = state.groupingMode,
                 onSelectGroupingMode = onSelectGroupingModeAnchored,
+                similarityProgress = state.similarityProgress
+                    ?.takeIf { it.total > 0 }
+                    ?.let { it.processed.toFloat() / it.total },
             )
         }
 
@@ -617,19 +620,19 @@ fun GridScreen(
 
         // Non-blocking determinate progress while a grouping lens computes. Unlike the busy bar above
         // it doesn't lock the toolbar — the user can keep scrolling the singles grid while the model
-        // works. The cold Similarity pass is a ~minute-long on-device run, so it gets the framing
-        // banner (what's happening + the privacy line); the Time regroup is sub-second and never earns
-        // it, so it stays the bare bar.
+        // works. Two independent sources: the inline Time regroup (sub-second, the bare bar) reads
+        // [grouping]; the background Similarity pass reads [similarityProgress]. The Similarity pass is
+        // a ~minute-long on-device run, so it gets the framing banner (what's happening + the privacy
+        // line) while it is the displayed lens; in any other lens its progress shows only on the tab.
         state.grouping?.takeIf { it.total > 0 }?.let { g ->
-            if (state.groupingMode == GroupingMode.Similarity) {
-                GroupingProgressBanner(processed = g.processed, total = g.total)
-            } else {
-                BusyBar(
-                    label = "Grouping ${g.processed} / ${g.total}",
-                    progress = g.processed.toFloat() / g.total,
-                )
-            }
+            BusyBar(
+                label = "Grouping ${g.processed} / ${g.total}",
+                progress = g.processed.toFloat() / g.total,
+            )
         }
+        state.similarityProgress
+            ?.takeIf { it.total > 0 && state.groupingMode == GroupingMode.Similarity }
+            ?.let { g -> GroupingProgressBanner(processed = g.processed, total = g.total) }
 
         // First-run callout for the Similarity lens — a dismissible card under the toolbar (near the
         // lens toggle), not a modal: the user can ignore it and keep culling. Shown once, then never.

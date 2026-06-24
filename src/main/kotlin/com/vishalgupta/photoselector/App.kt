@@ -5,9 +5,11 @@ import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -24,6 +26,7 @@ import androidx.compose.ui.Modifier
 import com.vishalgupta.photoselector.di.AppContainer
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.presentation.browser.BrowserScreen
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.BackgroundGroupingChip
 import com.vishalgupta.photoselector.presentation.designsystem.organism.LibraryRail
 import com.vishalgupta.photoselector.presentation.grid.GridScreen
 import com.vishalgupta.photoselector.presentation.inspect.InspectScreen
@@ -38,6 +41,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun App(container: AppContainer) {
     val screen by container.currentScreen.collectAsState()
+    // The background Similarity pass keeps running across navigation; this is its off-grid hint. On the
+    // Grid the tab ring + banner carry it, so the chip is shown only on the other screens.
+    val groupingActivity by container.groupingActivity.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
     // Scroll position retained per (root, scope) for the session, alongside the retained view models
@@ -54,6 +60,7 @@ fun App(container: AppContainer) {
 
     AppTheme {
         Surface(Modifier.fillMaxSize()) {
+          Box(Modifier.fillMaxSize()) {
             when (val s = screen) {
                 Screen.RootPicker -> {
                     val vm = remember { container.rootPickerViewModel() }
@@ -318,6 +325,19 @@ fun App(container: AppContainer) {
                     )
                 }
             }
+
+            // Off-grid background-grouping hint. The grid carries its own cues (tab ring + banner), so
+            // the chip is suppressed there to avoid doubling up; every other screen gets it.
+            groupingActivity?.takeIf { screen !is Screen.Grid }?.let { activity ->
+                BackgroundGroupingChip(
+                    processed = activity.processed,
+                    total = activity.total,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(AppTheme.spacing.lg),
+                )
+            }
+          }
         }
     }
 }
