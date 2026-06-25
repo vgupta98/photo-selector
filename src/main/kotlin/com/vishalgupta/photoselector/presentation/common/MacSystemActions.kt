@@ -10,4 +10,8 @@ class MacSystemActions : SystemActions {
     override fun openWithDefaultApp(path: Path) {
         ProcessBuilder("open", path.toString()).start()
     }
+
+    override fun openUrl(url: String) {
+        ProcessBuilder("open", url).start()
+    }
 }

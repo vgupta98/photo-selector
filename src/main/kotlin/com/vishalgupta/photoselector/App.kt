@@ -5,7 +5,9 @@ import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +29,7 @@ import com.vishalgupta.photoselector.di.AppContainer
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.presentation.browser.BrowserScreen
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BackgroundGroupingChip
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.UpdateAvailableBanner
 import com.vishalgupta.photoselector.presentation.designsystem.organism.LibraryRail
 import com.vishalgupta.photoselector.presentation.grid.GridScreen
 import com.vishalgupta.photoselector.presentation.inspect.InspectScreen
@@ -45,6 +48,12 @@ fun App(container: AppContainer) {
     // Grid the tab ring + banner carry it, so the chip is shown only on the other screens.
     val groupingActivity by container.groupingActivity.collectAsState()
     val coroutineScope = rememberCoroutineScope()
+
+    // App-lifetime, notify-only update checker. Built once and kept across navigation; the launch check
+    // fires after the first composition. Muted entirely for opted-out or Homebrew-managed installs.
+    val updateViewModel = remember { container.updateViewModel() }
+    val updateState by updateViewModel.state.collectAsState()
+    LaunchedEffect(Unit) { updateViewModel.check() }
 
     // Scroll position retained per (root, scope) for the session, alongside the retained view models
     // in the container. Held here (not inside the Grid branch, which leaves composition on every
@@ -326,16 +335,29 @@ fun App(container: AppContainer) {
                 }
             }
 
-            // Off-grid background-grouping hint. The grid carries its own cues (tab ring + banner), so
-            // the chip is suppressed there to avoid doubling up; every other screen gets it.
-            groupingActivity?.takeIf { screen !is Screen.Grid }?.let { activity ->
-                BackgroundGroupingChip(
-                    processed = activity.processed,
-                    total = activity.total,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(AppTheme.spacing.lg),
-                )
+            // Bottom-end overlay stack, stacked so they never overlap when both show. The off-grid
+            // background-grouping hint is suppressed on the Grid (its tab ring + banner carry it there);
+            // the update banner shows on every screen.
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(AppTheme.spacing.lg),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.sm),
+            ) {
+                groupingActivity?.takeIf { screen !is Screen.Grid }?.let { activity ->
+                    BackgroundGroupingChip(processed = activity.processed, total = activity.total)
+                }
+                updateState.available?.let { available ->
+                    UpdateAvailableBanner(
+                        versionLabel = available.versionLabel,
+                        mandatory = available.mandatory,
+                        onDownload = updateViewModel::onDownload,
+                        onLater = updateViewModel::onLater,
+                        onSkip = if (available.mandatory) null else updateViewModel::onSkip,
+                        onViewNotes = if (available.notesUrl != null) updateViewModel::onViewNotes else null,
+                    )
+                }
             }
           }
         }

@@ -257,6 +257,17 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   classes were tried and abandoned — don't reintroduce them.
 - **`packageDmg` only runs on macOS.** CI uses `macos-latest`; locally you
   need to be on a Mac.
+- **A new JDK module must be added to the jpackage `modules(...)` list.** The
+  release bundles a trimmed jlink runtime, so code reaching an unlisted module
+  (the update checker's `HttpClient` → `java.net.http`) throws
+  `ClassNotFoundException` in the packaged app but **not** under `./gradlew run`
+  — validate against the packaged app, like the ProGuard keeps below.
+- **The update checker is notify-only, driven by a hosted feed (not an in-app
+  flag).** It GETs `update-manifest.json` from the `homebrew-tap` repo (URL in
+  the generated `BuildConfig`) and only notifies, never installs. The feed
+  decides everything — `rollout` (staged, bucketed locally from a never-sent
+  install id), `minimumVersion`, `mandatory`; pull a bad build via `rollout: 0`.
+  Homebrew installs are muted; silent install needs signing/notarization (later).
 - **The release DMG is ProGuard-minified — keep-rules are load-bearing.**
   `packageReleaseDmg` tree-shakes the whole classpath, so anything reached only
   via reflection/JNI/codegen (ONNX's native bindings, the JNA HEIC/RAW bridge,

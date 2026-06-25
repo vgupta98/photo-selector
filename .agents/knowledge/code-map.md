@@ -38,6 +38,10 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   default adds same-moment frames via the capture-time gap, `VisualOnly` the
   no-time fallback), `CaptureMetadata` + `CaptureMetadataSource`.
 - `format/` — `PhotoDecoder`, `PhotoFormat`, `PhotoFormatRegistry` interfaces.
+- `update/` — the notify-only update checker: `AppVersion` (tolerant SemVer +
+  `rolloutBucket`), `UpdateManifest`/`UpdateStatus`, the `UpdateRepository` seam, and
+  `CheckForUpdateUseCase` (pure eligibility: newer / OS floor / staged-rollout wave /
+  mandatory floor).
 
 ## data/ — implementations
 
@@ -62,8 +66,11 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   `SharpnessScorer`, `PhotoFeatureExtractor` (+ `PhotoFeatures`), `EmbeddingCache`,
   `SimilarityPhotoGrouper` (adapter onto `PhotoGrouper`); `GroupingResultCache` +
   `CachingPhotoGrouper` (memoize the computed grouping so lens re-entry is instant).
-- `prefs/` — `JsonAppPreferences` (global one-off flags, e.g. the first-run
-  Similarity coachmark "seen" bit; one small JSON via `AtomicJsonWriter`).
+- `prefs/` — `JsonAppPreferences` (global one-off flags: the first-run Similarity
+  coachmark "seen" bit, plus the update checker's opt-out / skipped-version / stable
+  rollout install-id; one small JSON via `AtomicJsonWriter`).
+- `update/` — `UpdateManifestDto` (feed JSON shape) + `HttpUpdateRepository` (the app's
+  only outbound call: a JDK-`HttpClient` GET of the hosted manifest; every failure → null).
 - `export/` — `CopyPhotoExporter`, `TxtPhotoExporter`, `CompositePhotoExporter`.
 - `trash/` — `DesktopPhotoTrash` (move-to-Trash via AWT Desktop).
 - `io/` — `AtomicJsonWriter` (shared atomic JSON write; categories + browse).
@@ -92,6 +99,9 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   `survey/` and `browser/` view models as its two facets.
 - `survey/` — `SurveyScreen` + `…ViewModel`: Inspect's overview-grid facet
   (fit-to-cell pick, no zoom).
+- `update/` — `UpdateViewModel`: app-lifetime, notify-only. Runs one launch check, applies
+  the user's skipped-version choice, and turns banner actions into a browser open. Mounted by
+  `App` as a bottom-end overlay (`UpdateAvailableBanner`).
 - `common/` — non-UI plumbing: `NativeFileDialogs`, `MacSystemActions` /
   `SystemActions`, `CategoryHotkeys`, `CategoryToggle`, `GroupingMode`,
   `GroupingCoordinator` (owns the one background Similarity pass, decoupled from
@@ -108,6 +118,7 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   Similar segment carries a determinate ring while the background pass runs),
   `GroupingProgressBanner` (cold-pass framing), `BackgroundGroupingChip` (the
   off-grid "still grouping" pill, composed from `PillToast`),
+  `UpdateAvailableBanner` (the bottom-end "new version ready" card; notify-only),
   `SimilarityCoachmark` (first-run
   callout), `BurstExpandedHeader`/`Footer`, the `*KeyboardLegend` set,
   `CategoryActionsMenu`, `ExportMenu` (txt + copy-to-folder, the
@@ -135,6 +146,7 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 | Inspect (grid + browse toggle) | `presentation/inspect/`, `presentation/survey/`, `presentation/browser/` |
 | Adding a screen | `presentation/navigation/Screen.kt`, `App.kt`, `di/AppContainer.kt` |
 | Theming / new shared component | `presentation/designsystem/` (theme → atom → molecule → organism) |
+| Auto-update (notify-only) check | `domain/update/`, `data/update/`, `presentation/update/UpdateViewModel.kt`, `App.kt` (banner overlay), `di/AppContainer.kt` (wiring + Homebrew mute), `build.gradle.kts` (`generateBuildConfig`), `.github/workflows/release.yml` (feed publish) |
 | Export / trash | `data/export/`, `data/trash/`, matching `domain/usecase/` |
 
 ## Key build files
