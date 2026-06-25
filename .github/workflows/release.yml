@@ -197,10 +197,14 @@ jobs:
           # macOS runner: BSD sed needs the '' empty-suffix argument for -i.
           sed -i '' -E "s/^  version \".*\"/  version \"${VERSION}\"/" "$CASK"
           sed -i '' -E "s/^  sha256 \".*\"/  sha256 \"${SHA}\"/" "$CASK"
-          # Update the in-app update feed the same tap repo hosts. Only the release *facts*
-          # (latest / dmgUrl / notesUrl) are rewritten; the hand-edited policy fields (rollout,
-          # minimumVersion, mandatory) are preserved, so a staged rollout or a kill switch set
-          # between releases survives the next release's bump.
+          # Update the in-app update feed the same tap repo hosts. The release *facts*
+          # (latest / dmgUrl / notesUrl) are always rewritten. A *new* latest also resets the
+          # staging policy — rollout back to full, mandatory back off — so a partial wave or a
+          # kill switch (rollout: 0) set on the PREVIOUS version can't silently throttle this one,
+          # and the fix for a killed build ships to everyone instead of inheriting its rollout: 0.
+          # Re-stage by hand on the feed after release if you want a partial wave. The floor fields
+          # (minimumVersion / minOS) are version-spanning policy and left untouched. A re-run for
+          # the same version preserves any manual staging (idempotent).
           python3 - "tap/update-manifest.json" "$VERSION" "$REPO" <<'PY'
           import json, os, sys
           path, version, repo = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -208,11 +212,16 @@ jobs:
           if os.path.exists(path):
               with open(path) as f:
                   data = json.load(f)
+          new_release = data.get("latest") != version
           data["latest"] = version
           data["dmgUrl"] = f"https://github.com/{repo}/releases/download/v{version}/Rhenium-{version}.dmg"
           data["notesUrl"] = f"https://github.com/{repo}/releases/tag/v{version}"
-          data.setdefault("rollout", 1.0)
-          data.setdefault("mandatory", False)
+          if new_release:
+              data["rollout"] = 1.0
+              data["mandatory"] = False
+          else:
+              data.setdefault("rollout", 1.0)
+              data.setdefault("mandatory", False)
           with open(path, "w") as f:
               json.dump(data, f, indent=2)
               f.write("\n")

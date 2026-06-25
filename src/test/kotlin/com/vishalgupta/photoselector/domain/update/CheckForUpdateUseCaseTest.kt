@@ -74,4 +74,12 @@ class CheckForUpdateUseCaseTest {
     @Test fun `the OS floor passing still offers the update`() = runTest {
         assertIs<UpdateStatus.Available>(check(manifest(minOs = "13.0")))
     }
+
+    @Test fun `an unknown OS version fails open and still offers the update`() = runTest {
+        // os.version unparseable -> osVersion null. Notify-only errs toward informing the user
+        // rather than hiding the update, so the OS floor is skipped when the OS can't be read.
+        val status = CheckForUpdateUseCase(FakeUpdateRepository(manifest(minOs = "15.0")))
+            .invoke(current, osVersion = null, rolloutBucket = 0.5)
+        assertIs<UpdateStatus.Available>(status)
+    }
 }

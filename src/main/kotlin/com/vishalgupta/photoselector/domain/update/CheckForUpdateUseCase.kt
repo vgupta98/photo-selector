@@ -16,7 +16,10 @@ class CheckForUpdateUseCase(private val repository: UpdateRepository) {
         val manifest = repository.fetchManifest() ?: return UpdateStatus.Unknown
         if (manifest.latest <= current) return UpdateStatus.UpToDate
 
-        // Don't offer a build this machine is too old to run.
+        // Don't offer a build this machine is too old to run. A null osVersion (os.version didn't
+        // parse) skips the floor on purpose: a notifier should err toward informing the user, who can
+        // judge for themselves, rather than silently hiding an update over an unreadable os.version —
+        // which never happens on the supported macOS anyway. Locked by a unit test.
         if (manifest.minOs != null && osVersion != null && osVersion < manifest.minOs) {
             return UpdateStatus.UpToDate
         }
@@ -34,16 +37,4 @@ class CheckForUpdateUseCase(private val repository: UpdateRepository) {
             mandatory = manifest.mandatory || belowFloor,
         )
     }
-}
-
-/**
- * Maps a stable per-install id to a fixed point in `[0.0, 1.0)` for staged rollout. Deterministic
- * (`String.hashCode` is spec-defined, so the same id always lands in the same place), so an install
- * stays on one side of the [UpdateManifest.rollout] cut across checks instead of flickering in and out
- * of the wave. Computed entirely on-device — the id is never transmitted — which is what keeps the
- * "no telemetry" promise intact while still supporting a server-staged rollout.
- */
-fun rolloutBucket(installId: String): Double {
-    val unsigned = installId.hashCode().toLong() and 0xFFFFFFFFL
-    return unsigned.toDouble() / 0x1_0000_0000L
 }

@@ -16,6 +16,7 @@ data class UpdateManifestDto(
     val dmgUrl: String,
     val notesUrl: String? = null,
     val minimumVersion: String? = null,
+    // Feed key is `minOS` (the platform's own capitalisation); the domain field is `minOs`.
     val minOS: String? = null,
     val rollout: Double = 1.0,
     val mandatory: Boolean = false,
