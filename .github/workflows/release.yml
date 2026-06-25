@@ -30,8 +30,8 @@ jobs:
       contents: write
     steps:
       # Actions are pinned to full commit SHAs, not moving tags: this job loads the
-      # TAP_DEPLOY_KEY and RELEASE_PAT, so a hijacked action tag must never run here.
-      # The `# vX.Y.Z` comment is the readable version — bump both together (mirrors ci.yml).
+      # TAP_APP_PRIVATE_KEY (to mint a tap-scoped token), so a hijacked action tag must
+      # never run here. The `# vX.Y.Z` comment is the readable version — bump both together.
       - name: Check out main at merge commit
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -184,23 +184,30 @@ jobs:
             --notes-file /tmp/notes.md \
             "$DMG"
 
+      - name: Mint a scoped, short-lived token for the tap
+        id: tap-token
+        # GitHub App installation token (app: rhenium-tap-bumper) scoped to contents:write on ONLY
+        # homebrew-tap and expiring in ~1h — replaces the non-expiring read-write SSH deploy key.
+        # SHA-pinned like every other action here; bump the `# vX.Y.Z` and SHA together.
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.TAP_APP_ID }}
+          private-key: ${{ secrets.TAP_APP_PRIVATE_KEY }}
+          owner: vgupta98
+          repositories: homebrew-tap
+
       - name: Bump Homebrew cask and update feed
         env:
-          # SSH deploy key with write access to vgupta98/homebrew-tap. A deploy
-          # key is scoped to that single repo; the default GITHUB_TOKEN can't
-          # push to a different repo.
-          DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
+          # Short-lived GitHub App installation token minted above: contents:write on only
+          # homebrew-tap. The default GITHUB_TOKEN can't push to another repo; this can, and
+          # nothing else — and it expires in ~1h, so a leak is not a standing key.
+          TOKEN: ${{ steps.tap-token.outputs.token }}
           VERSION: ${{ steps.version.outputs.version }}
           DMG: ${{ steps.artifact.outputs.path }}
           REPO: ${{ github.repository }}
         run: |
-          # Load the deploy key into a throwaway ssh-agent for this step.
-          mkdir -p ~/.ssh
-          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
-          eval "$(ssh-agent -s)"
-          ssh-add - <<< "$DEPLOY_KEY"
           SHA=$(shasum -a 256 "$DMG" | awk '{print $1}')
-          git clone git@github.com:vgupta98/homebrew-tap.git tap
+          git clone "https://x-access-token:${TOKEN}@github.com/vgupta98/homebrew-tap.git" tap
           CASK=tap/Casks/rhenium.rb
           # macOS runner: BSD sed needs the '' empty-suffix argument for -i.
           sed -i '' -E "s/^  version \".*\"/  version \"${VERSION}\"/" "$CASK"
