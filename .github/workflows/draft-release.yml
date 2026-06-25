@@ -19,8 +19,10 @@ jobs:
     name: Open release PR
     runs-on: ubuntu-latest
     steps:
+      # Pinned to a full commit SHA, not a moving tag (mirrors ci.yml). `# vX.Y.Z` is the
+      # human-readable version — bump both together when upgrading.
       - name: Check out develop
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: develop
           fetch-depth: 0
