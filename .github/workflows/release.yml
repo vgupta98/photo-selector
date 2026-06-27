@@ -220,7 +220,9 @@ jobs:
           # Re-stage by hand on the feed after release if you want a partial wave. The floor fields
           # (minimumVersion / minOS) are version-spanning policy and left untouched. A re-run for
           # the same version preserves any manual staging (idempotent).
-          python3 - "tap/update-manifest.json" "$VERSION" "$REPO" <<'PY'
+          # Feed path must match updateManifestUrl in build.gradle.kts.
+          mkdir -p tap/rhenium
+          python3 - "tap/rhenium/update-manifest.json" "$VERSION" "$REPO" <<'PY'
           import json, os, sys
           path, version, repo = sys.argv[1], sys.argv[2], sys.argv[3]
           data = {}
@@ -248,7 +250,7 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Casks/rhenium.rb update-manifest.json
+          git add Casks/rhenium.rb rhenium/update-manifest.json
           git commit -m "Update rhenium to ${VERSION}"
           git push
 
