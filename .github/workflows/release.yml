@@ -220,8 +220,7 @@ jobs:
           # Re-stage by hand on the feed after release if you want a partial wave. The floor fields
           # (minimumVersion / minOS) are version-spanning policy and left untouched. A re-run for
           # the same version preserves any manual staging (idempotent).
-          # The feed lives in a per-app folder (tap/rhenium/) so the tap can host other apps'
-          # feeds alongside it; the URL baked into BuildConfig points at the same path.
+          # Feed path must match updateManifestUrl in build.gradle.kts.
           mkdir -p tap/rhenium
           python3 - "tap/rhenium/update-manifest.json" "$VERSION" "$REPO" <<'PY'
           import json, os, sys
