@@ -21,7 +21,7 @@ kotlin {
 // the `version` above stays the single source of truth instead of a hand-synced runtime constant. The
 // feed is a static JSON hosted in the Homebrew tap repo (already write-access wired in release.yml);
 // editing it there is the kill switch / staged-rollout control. A tiny codegen task — no plugin.
-val updateManifestUrl = "https://raw.githubusercontent.com/vgupta98/homebrew-tap/main/update-manifest.json"
+val updateManifestUrl = "https://raw.githubusercontent.com/vgupta98/homebrew-tap/main/rhenium/update-manifest.json"
 val generateBuildConfig by tasks.registering {
     val outputDir = layout.buildDirectory.dir("generated/buildconfig")
     val versionValue = project.version.toString()

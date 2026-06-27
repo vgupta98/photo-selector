@@ -42,10 +42,13 @@ Three workflows in `.github/workflows/`:
 ## The in-app update feed
 
 `release.yml`'s final step does double duty in the tap repo: it bumps the
-Homebrew cask (`Casks/rhenium.rb`) *and* rewrites `update-manifest.json`, the
-feed the notify-only update checker reads (CLAUDE.md → "the update checker is
-notify-only"). Per release it sets `latest` / `dmgUrl` / `notesUrl`, and on a
-*new* version resets the staging policy:
+Homebrew cask (`Casks/rhenium.rb`) *and* rewrites `rhenium/update-manifest.json`,
+the feed the notify-only update checker reads (CLAUDE.md → "the update checker is
+notify-only"). The feed lives in a per-app folder (`rhenium/`) so the tap can
+host other apps' feeds alongside it; the URL baked into `BuildConfig`
+(`build.gradle.kts` → `updateManifestUrl`) must point at the same path. Per
+release it sets `latest` / `dmgUrl` / `notesUrl`, and on a *new* version resets
+the staging policy:
 
 - `rollout` → `1.0` (full) and `mandatory` → `false`. A partial wave or a kill
   switch from the *previous* version does **not** carry over — so a fix for a
