@@ -22,10 +22,9 @@ nothing ever leaves your machine.
 
 > **macOS today — Windows support is on the roadmap.** Star and watch the repo to follow along.
 
-<!-- TODO(marketing): add a 10–15s screen-capture GIF of keyboard culling + the
-     "Similar" grouping lens right here. This is the single highest-impact thing
-     on the page — a culling app sells on motion, not prose. -->
-<!-- ![Rhenium in action](docs/demo.gif) -->
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/28e42474-28ce-4a21-8863-0fc2ac2d6ef8" width="800" alt="Rhenium in action — the Similar lens collapses near-identical frames into one tile, then keyboard culling files the keeper" />
+</p>
 
 ## Why Rhenium
 
