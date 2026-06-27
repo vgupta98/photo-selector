@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rhenium — Free, private photo culling for macOS</title>
+<meta name="description" content="Rhenium is a free, open-source, keyboard-driven photo culler for macOS. An on-device AI groups your near-identical frames so you cull one moment per keystroke. A private, free alternative to AfterShoot and Photo Mechanic — nothing ever leaves your Mac." />
+<link rel="canonical" href="https://vgupta98.github.io/rhenium/" />
+<link rel="icon" type="image/png" href="assets/icon.png" />
+
+<!-- Open Graph / Twitter -->
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://vgupta98.github.io/rhenium/" />
+<meta property="og:title" content="Rhenium — Free, private photo culling for macOS" />
+<meta property="og:description" content="An on-device AI groups your near-identical frames so you cull one moment per keystroke. Free, open source, 100% local. A private alternative to AfterShoot and Photo Mechanic." />
+<meta property="og:image" content="https://vgupta98.github.io/rhenium/assets/poster.jpg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Rhenium — Free, private photo culling for macOS" />
+<meta name="twitter:description" content="An on-device AI groups your near-identical frames so you cull one moment per keystroke. Free, open source, 100% local." />
+<meta name="twitter:image" content="https://vgupta98.github.io/rhenium/assets/poster.jpg" />
+
+<style>
+  :root{
+    --bg:#0c0e12; --panel:#14171d; --panel-2:#191d25; --line:#262b35;
+    --text:#e8eaf0; --muted:#9aa4b4; --accent:#5b8cff; --accent-2:#7c5bff;
+    --radius:14px; --maxw:1080px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:inherit}
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 24px}
+  .btn{
+    display:inline-flex; align-items:center; gap:8px; cursor:pointer;
+    border:1px solid var(--line); background:var(--panel-2); color:var(--text);
+    padding:12px 18px; border-radius:11px; font-weight:600; font-size:15px;
+    text-decoration:none; transition:.15s ease;
+  }
+  .btn:hover{border-color:#3a4150; transform:translateY(-1px)}
+  .btn.primary{
+    background:linear-gradient(135deg,var(--accent),var(--accent-2));
+    border-color:transparent; color:#fff; box-shadow:0 8px 30px rgba(91,140,255,.25);
+  }
+  .btn.primary:hover{box-shadow:0 10px 36px rgba(91,140,255,.4)}
+
+  /* Nav */
+  header{position:sticky; top:0; z-index:20; backdrop-filter:blur(10px);
+    background:rgba(12,14,18,.72); border-bottom:1px solid var(--line)}
+  .nav{display:flex; align-items:center; justify-content:space-between; height:64px}
+  .brand{display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.2px}
+  .brand img{width:30px; height:30px; border-radius:7px}
+  .nav-right{display:flex; align-items:center; gap:14px}
+  .nav-right a.ghost{color:var(--muted); text-decoration:none; font-size:15px}
+  .nav-right a.ghost:hover{color:var(--text)}
+
+  /* Hero */
+  .hero{text-align:center; padding:72px 0 28px}
+  .pill{display:inline-block; font-size:13px; color:var(--muted); border:1px solid var(--line);
+    background:var(--panel); padding:6px 13px; border-radius:999px; margin-bottom:22px}
+  h1{font-size:clamp(34px,6vw,60px); line-height:1.05; margin:0 0 18px; letter-spacing:-1px}
+  h1 .grad{background:linear-gradient(120deg,var(--accent),var(--accent-2));
+    -webkit-background-clip:text; background-clip:text; color:transparent}
+  .sub{font-size:clamp(17px,2.4vw,21px); color:var(--muted); max-width:680px; margin:0 auto 28px}
+  .cta-row{display:flex; gap:14px; justify-content:center; flex-wrap:wrap; align-items:center}
+  .trust{margin-top:20px; color:var(--muted); font-size:14px}
+  .trust b{color:var(--text); font-weight:600}
+
+  /* Video */
+  .video-shell{margin:42px auto 0; max-width:960px; border:1px solid var(--line);
+    border-radius:var(--radius); overflow:hidden; background:#000;
+    box-shadow:0 30px 80px rgba(0,0,0,.5)}
+  .video-shell video{display:block; width:100%; height:auto}
+
+  /* Sections */
+  section{padding:64px 0}
+  .eyebrow{color:var(--accent); font-weight:700; font-size:13px; letter-spacing:1.5px; text-transform:uppercase; text-align:center}
+  h2{font-size:clamp(26px,4vw,38px); text-align:center; margin:10px 0 8px; letter-spacing:-.5px}
+  .section-sub{text-align:center; color:var(--muted); max-width:620px; margin:0 auto 40px}
+
+  .steps{display:grid; grid-template-columns:repeat(3,1fr); gap:18px}
+  .step{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:26px}
+  .step .n{width:34px; height:34px; border-radius:9px; display:flex; align-items:center; justify-content:center;
+    font-weight:700; background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:#fff; margin-bottom:14px}
+  .step h3{margin:0 0 6px; font-size:18px}
+  .step p{margin:0; color:var(--muted); font-size:15px}
+
+  .grid{display:grid; grid-template-columns:repeat(3,1fr); gap:18px}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:24px}
+  .card h3{margin:0 0 8px; font-size:17px}
+  .card p{margin:0; color:var(--muted); font-size:14.5px}
+  .ic{font-size:22px; margin-bottom:12px; display:block}
+
+  .band{background:linear-gradient(180deg,var(--panel),var(--panel-2)); border-top:1px solid var(--line); border-bottom:1px solid var(--line)}
+  .band .inner{max-width:740px; margin:0 auto; text-align:center}
+  .band h2{margin-top:0}
+
+  table.cmp{width:100%; border-collapse:collapse; margin-top:8px; font-size:15px}
+  table.cmp th, table.cmp td{padding:13px 14px; border-bottom:1px solid var(--line); text-align:left}
+  table.cmp th{color:var(--muted); font-weight:600}
+  table.cmp td.rh{color:var(--text); font-weight:600}
+  table.cmp .yes{color:#46d39a; font-weight:700}
+  table.cmp .no{color:#6b7280}
+
+  /* Install */
+  .code{display:flex; align-items:center; justify-content:space-between; gap:12px;
+    background:#0a0c10; border:1px solid var(--line); border-radius:11px; padding:14px 16px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:14px; color:#d8def0; max-width:560px; margin:0 auto}
+  .code button{background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+    border-radius:8px; padding:6px 11px; cursor:pointer; font-size:13px}
+  .note{max-width:620px; margin:22px auto 0; color:var(--muted); font-size:14px; text-align:center}
+  .note a{color:var(--accent)}
+
+  /* FAQ */
+  .faq{max-width:760px; margin:0 auto}
+  details{border:1px solid var(--line); border-radius:11px; background:var(--panel); padding:0 18px; margin-bottom:12px}
+  details summary{cursor:pointer; padding:16px 0; font-weight:600; list-style:none; display:flex; justify-content:space-between; align-items:center}
+  details summary::-webkit-details-marker{display:none}
+  details summary::after{content:"+"; color:var(--muted); font-size:20px}
+  details[open] summary::after{content:"–"}
+  details p{margin:0 0 16px; color:var(--muted); font-size:15px}
+
+  footer{border-top:1px solid var(--line); padding:40px 0; color:var(--muted); font-size:14px}
+  .foot{display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px}
+  .foot a{color:var(--muted); text-decoration:none; margin-left:18px}
+  .foot a:hover{color:var(--text)}
+
+  @media (max-width:760px){
+    .steps,.grid{grid-template-columns:1fr}
+    .hero{padding:48px 0 16px}
+    section{padding:48px 0}
+    .nav-right a.ghost.hide{display:none}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <div class="brand"><img src="assets/icon.png" alt="Rhenium icon" /> Rhenium</div>
+    <div class="nav-right">
+      <a class="ghost hide" href="#features">Features</a>
+      <a class="ghost hide" href="#install">Install</a>
+      <a class="ghost" href="https://github.com/vgupta98/rhenium" target="_blank" rel="noopener">GitHub</a>
+      <a class="btn primary" href="https://github.com/vgupta98/rhenium/releases/latest">Download</a>
+    </div>
+  </div>
+</header>
+
+<!-- HERO -->
+<div class="wrap hero">
+  <span class="pill">macOS &middot; 100% on-device &middot; open source</span>
+  <h1>Cull thousands of shots<br /><span class="grad">in minutes.</span></h1>
+  <p class="sub">Rhenium is a free, keyboard-driven photo culler for macOS. It groups your near-identical frames for you — so you make one decision per <em>moment</em>, not one per frame. And nothing ever leaves your Mac.</p>
+  <div class="cta-row">
+    <a class="btn primary" href="https://github.com/vgupta98/rhenium/releases/latest">Download for macOS</a>
+    <a class="btn" href="#install">Install with Homebrew</a>
+  </div>
+  <div class="trust">Free &amp; <b>open source</b> &nbsp;·&nbsp; no account, no cloud, no subscription &nbsp;·&nbsp; macOS 12+</div>
+
+  <div class="video-shell">
+    <video autoplay loop muted playsinline poster="assets/poster.jpg">
+      <source src="assets/demo.mp4" type="video/mp4" />
+    </video>
+  </div>
+</div>
+
+<!-- HOW IT WORKS -->
+<section id="how">
+  <div class="wrap">
+    <div class="eyebrow">How it works</div>
+    <h2>One decision per moment</h2>
+    <p class="section-sub">A burst of twelve near-identical frames should be one keystroke, not twelve. Rhenium makes it so.</p>
+    <div class="steps">
+      <div class="step"><div class="n">1</div><h3>Open a folder</h3><p>Point Rhenium at a folder of JPEG, PNG, HEIC or camera RAW. It scans 30,000+ photos with live progress — no import, no catalog.</p></div>
+      <div class="step"><div class="n">2</div><h3>It groups the duplicates</h3><p>An on-device AI collapses visually near-identical frames into one tile, with the sharpest shot suggested as your pick. No other open-source culler does this.</p></div>
+      <div class="step"><div class="n">3</div><h3>Cull with one key</h3><p>Arrow through, press a single key to file the keeper, never reach for the mouse. File into Favourites or any category you like.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="wrap">
+    <div class="eyebrow">Features</div>
+    <h2>Built for culling at scale</h2>
+    <p class="section-sub">Everything a fast cull needs, and nothing that gets in the way.</p>
+    <div class="grid">
+      <div class="card"><span class="ic">&#129518;</span><h3>On-device similarity grouping</h3><p>A bundled neural model finds near-identical frames — and a burst detector catches rapid sequences — entirely on your machine.</p></div>
+      <div class="card"><span class="ic">&#9000;</span><h3>Keyboard-first</h3><p>Arrow keys to move, one key to file, digits for categories. Designed so your hand never leaves the keyboard.</p></div>
+      <div class="card"><span class="ic">&#128247;</span><h3>Reads what you shoot</h3><p>JPEG, PNG, HEIC (the iPhone default) and camera RAW — Canon, Sony, Nikon, Fujifilm, Adobe DNG, Panasonic and Olympus.</p></div>
+      <div class="card"><span class="ic">&#128193;</span><h3>Categories &amp; export</h3><p>Sort into as many flat lists as you like — Selects, Maybes, For Album X. Export a list as text, or copy the photos to a folder.</p></div>
+      <div class="card"><span class="ic">&#128269;</span><h3>Inspect side by side</h3><p>Pull a group or a hand-picked selection into a focused view — scan them as a grid, then browse full-screen with pan and zoom.</p></div>
+      <div class="card"><span class="ic">&#9889;</span><h3>Fast on huge shoots</h3><p>Cancellable scans, an LRU bitmap cache and a prefetcher keep 30k+ photo folders smooth.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- PRIVACY -->
+<section class="band">
+  <div class="wrap inner">
+    <div class="eyebrow">Private by design</div>
+    <h2>Your clients' photos never touch a network</h2>
+    <p class="sub" style="margin:0 auto">100% local. The similarity model — and every pixel it scores — runs entirely on your Mac. No upload, no account, no telemetry. Open source, so you can read exactly what it does.</p>
+  </div>
+</section>
+
+<!-- COMPARISON / SEO -->
+<section id="compare">
+  <div class="wrap">
+    <div class="eyebrow">Why Rhenium</div>
+    <h2>A free, private alternative</h2>
+    <p class="section-sub">If you've looked at AfterShoot, Narrative Select, or Photo Mechanic for culling, here's how Rhenium compares.</p>
+    <table class="cmp">
+      <thead><tr><th>&nbsp;</th><th class="rh">Rhenium</th><th>AfterShoot</th><th>Photo Mechanic</th></tr></thead>
+      <tbody>
+        <tr><td>Price</td><td class="rh"><span class="yes">Free</span></td><td>Subscription</td><td>~$139</td></tr>
+        <tr><td>AI grouping of duplicates</td><td class="rh"><span class="yes">Yes</span></td><td>Yes</td><td class="no">No</td></tr>
+        <tr><td>100% on-device / private</td><td class="rh"><span class="yes">Yes</span></td><td class="no">Cloud-assisted</td><td><span class="yes">Yes</span></td></tr>
+        <tr><td>Open source</td><td class="rh"><span class="yes">Yes</span></td><td class="no">No</td><td class="no">No</td></tr>
+        <tr><td>No account required</td><td class="rh"><span class="yes">Yes</span></td><td class="no">No</td><td><span class="yes">Yes</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- INSTALL -->
+<section id="install" class="band">
+  <div class="wrap">
+    <div class="eyebrow">Install</div>
+    <h2>Up and running in a minute</h2>
+    <p class="section-sub">Two ways to install. The bundled app brings its own Java runtime — there's nothing else to set up.</p>
+
+    <p style="text-align:center; color:var(--muted); margin:0 0 10px; font-weight:600">Homebrew (recommended)</p>
+    <div class="code">
+      <code id="brew">brew install --cask vgupta98/tap/rhenium</code>
+      <button onclick="copyBrew()">Copy</button>
+    </div>
+
+    <p style="text-align:center; color:var(--muted); margin:26px 0 14px; font-weight:600">or download the DMG</p>
+    <div class="cta-row">
+      <a class="btn primary" href="https://github.com/vgupta98/rhenium/releases/latest">Download the latest DMG</a>
+    </div>
+
+    <p class="note">First launch shows a macOS security prompt because Rhenium isn't notarised by Apple <em>yet</em> (that's a paid step we're funding through <a href="https://github.com/sponsors/vgupta98" target="_blank" rel="noopener">sponsorship</a>). It's fully open source — you can read every line. Just <b>right-click the app &rarr; Open</b> once, or follow the one-time steps in the <a href="https://github.com/vgupta98/rhenium#install--run-end-user" target="_blank" rel="noopener">README</a>.</p>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq">
+  <div class="wrap">
+    <div class="eyebrow">FAQ</div>
+    <h2>Questions</h2>
+    <div class="faq" style="margin-top:36px">
+      <details><summary>Is it really free?</summary><p>Yes. Rhenium is free and open source under the MIT license. No trial, no paywall, no subscription.</p></details>
+      <details><summary>Are my photos private?</summary><p>Completely. Everything runs on your Mac — the similarity model, the decoding, all of it. Nothing is uploaded, there's no account, and there's no telemetry. The source is public so you can verify it.</p></details>
+      <details><summary>Why does macOS warn me when I open it?</summary><p>Because the app isn't notarised by Apple yet — notarisation requires a paid Apple Developer account we're raising funds for. The warning isn't a sign of malware; it's just the absence of a paid Apple signature. Right-click the app and choose Open the first time, and it launches normally after that.</p></details>
+      <details><summary>What formats does it read?</summary><p>JPEG, PNG, HEIC/HEIF, and camera RAW from Canon, Sony, Nikon, Fujifilm, Adobe (DNG), Panasonic and Olympus. HEIC and RAW are decoded through macOS's own image frameworks.</p></details>
+      <details><summary>Is there a Windows version?</summary><p>Not yet — Rhenium is macOS-only today, with Windows support on the roadmap. Star and watch the repo to follow along.</p></details>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot">
+    <div>Rhenium — free, open-source photo culling for macOS. MIT licensed.</div>
+    <div>
+      <a href="https://github.com/vgupta98/rhenium" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/vgupta98/rhenium/releases/latest">Download</a>
+      <a href="https://github.com/sponsors/vgupta98" target="_blank" rel="noopener">Sponsor</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  function copyBrew(){
+    var t = document.getElementById('brew').innerText;
+    navigator.clipboard.writeText(t).then(function(){
+      var b = event.target; var old = b.innerText; b.innerText = 'Copied'; setTimeout(function(){ b.innerText = old; }, 1400);
+    });
+  }
+</script>
+</body>
+</html>
