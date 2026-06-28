@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "com.vishalgupta.photoselector"
-version = "1.6.0"
+version = "1.7.0"
 
 kotlin {
     jvmToolchain(17)
