@@ -19,11 +19,13 @@ import com.vishalgupta.photoselector.domain.usecase.ExportPhotosTxtUseCase
 import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
 import com.vishalgupta.photoselector.presentation.StateHolder
 import com.vishalgupta.photoselector.presentation.common.CategoryToggle
+import com.vishalgupta.photoselector.presentation.common.GroupingCoordinator
 import com.vishalgupta.photoselector.presentation.common.GroupingMode
 import com.vishalgupta.photoselector.presentation.common.customCategories
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.navigation.activeCategoryId
 import com.vishalgupta.photoselector.presentation.navigation.slice
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -54,12 +56,12 @@ data class GridUiState(
     val categories: List<Category> = emptyList(),
     val memberships: Map<CategoryId, Set<PhotoId>> = emptyMap(),
     val lastViewedPhotoId: PhotoId? = null,
-    val focusedIndex: Int = -1,
+    val focusedIndex: TileIndex = TileIndex.NONE,
     // Transient multi-select: the tiles the mouse (Cmd/Shift-click, Cmd+A) has picked out for a
     // bulk action. Never persisted; cleared on Esc, scope change, or screen exit. [anchorIndex]
     // is the pivot a Shift-click range extends from.
     val selection: Set<PhotoId> = emptySet(),
-    val anchorIndex: Int? = null,
+    val anchorIndex: TileIndex? = null,
     // Which grouping lens collapses tiles: Off (one tile per photo), Time (bursts, the default),
     // or Similarity (visual). In-memory per grid instance (not persisted). The grid toolbar picks
     // one of the three.
@@ -72,10 +74,16 @@ data class GridUiState(
     val showSimilarityCoachmark: Boolean = false,
     val isBusy: Boolean = false,
     val progressLabel: String? = null,
-    // Live progress of an in-flight regroup (the cold Similarity pass is a ~minute-long wait), or
-    // null when no grouping is running. Drives a non-blocking progress bar — unlike [isBusy], it does
-    // not lock the toolbar, so the user can keep scrolling while the model works.
+    // Live progress of an in-flight *displayed-lens* regroup (the Time pass), or null when none is
+    // running. Drives a non-blocking progress bar — unlike [isBusy], it does not lock the toolbar, so
+    // the user can keep scrolling while the model works.
     val grouping: GroupingStatus? = null,
+    // Live progress of the background Similarity pass (owned by the GroupingCoordinator, not this
+    // grid's display lens), or null when none is running. Distinct from [grouping] because the pass
+    // keeps running — and keeps reporting — even while the grid shows a different lens, so it drives
+    // the always-visible "still grouping" cues (the determinate ring on the Similar tab here, and the
+    // off-grid chip in the navigation host) regardless of [groupingMode].
+    val similarityProgress: GroupingStatus? = null,
     val toast: String? = null,
 ) {
     /** True when any grouping lens is active — drives the off-thread regroup and tile collapse. */
@@ -130,9 +138,10 @@ class GridViewModel(
     // Reads capture time + camera per photo for burst grouping; memoized across re-groups. Backs
     // the [GroupingMode.Time] lens.
     private val captureMetadataSource: CaptureMetadataSource,
-    // Backs the [GroupingMode.Similarity] lens. Null when no embedding model is wired (e.g. tests,
-    // or a platform without one): the Similarity option then degrades to ungrouped singles.
-    private val similarityGrouper: PhotoGrouper? = null,
+    // Owns the background [GroupingMode.Similarity] pass, decoupled from this grid's displayed lens so
+    // it survives a lens switch or navigation. Null when no embedding model is wired (e.g. tests, or a
+    // platform without one): the Similarity option then degrades to ungrouped singles.
+    private val groupingCoordinator: GroupingCoordinator? = null,
     // The lens this grid opens in. A grid is retained across navigation, so its lens already survives
     // a Grid -> Browser -> Grid round trip; this seed (the session's last choice) only sets the lens
     // for a *freshly built* grid - the first visit to a given (root, scope).
@@ -150,6 +159,8 @@ class GridViewModel(
     // the pass runs in virtual time instead of on a real background thread (which is what made the
     // grid's grouping tests flaky under CI load).
     private val groupingDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    // Flat photo index of the resume point. Crosses to the container (which persists it), so it stays a
+    // plain Int on the wire; the grid converts at this single seam.
     private val onScrollIndexChanged: ((Int) -> Unit)? = null,
     // Reports a lens change up to the container so the next rebuilt grid opens in the same lens.
     private val onGroupingModeChanged: ((GroupingMode) -> Unit)? = null,
@@ -176,12 +187,23 @@ class GridViewModel(
     val groupingOutcomes: Flow<GroupingOutcome> = _groupingOutcomes.receiveAsFlow()
 
     private var scrollSaveJob: Job? = null
-    private var lastKnownIndex: Int? = null
+    private var lastKnownIndex: FlatIndex? = null
 
     // The id-list the current [groups] were computed for; guards against re-grouping (and the
     // singles flicker) when a membership change re-slices to the same set of photos.
     private var lastGroupedIds: List<PhotoId>? = null
+    // The inline (Time) regroup pass. Cancelled freely on a re-slice or lens switch — it is cheap and
+    // bound to the displayed lens.
     private var groupingJob: Job? = null
+    // The job that *applies* the background Similarity result to this grid's display (and announces it).
+    // Cancelled when the grid stops showing Similarity — but that only stops the display wiring, never
+    // the pass itself, which the GroupingCoordinator owns and runs to completion regardless.
+    private var similarityApplyJob: Job? = null
+    // Generation of the background pass this grid last requested (captured from the coordinator). The
+    // progress collector shows this grid's "still grouping" cues only while the coordinator's *active*
+    // generation still matches — i.e. the one running pass is grouping this grid's slice, not another
+    // scope's that has since superseded it. Null until this grid first requests Similarity.
+    private var similarityPassGeneration: Int? = null
 
     // Mirrors [GridUiState.groupingMode]; [GroupingMode.Off] keeps one tile per photo and skips the
     // off-thread regroup entirely. The grouper for a mode comes from [grouperFor].
@@ -195,11 +217,15 @@ class GridViewModel(
     // first picks the Similarity lens. Persisted once via [onSimilarityCoachmarkSeen] on dismissal.
     private var similarityCoachmarkPending = !hasSeenSimilarityCoachmark
 
-    /** The grouper backing [mode], or null for [GroupingMode.Off] (and Similarity with no model wired). */
+    /**
+     * The inline grouper backing [mode], or null for the modes that don't run one inline: [Off] (one
+     * tile per photo) and [Similarity] (run off the display lens by the [GroupingCoordinator], not
+     * here). Only [Time] groups synchronously on the grid's own scope.
+     */
     private fun grouperFor(mode: GroupingMode): PhotoGrouper? = when (mode) {
         GroupingMode.Off -> null
         GroupingMode.Time -> timeGrouper
-        GroupingMode.Similarity -> similarityGrouper
+        GroupingMode.Similarity -> null
     }
 
     private val timeGrouper: PhotoGrouper = burstGrouper(captureMetadataSource)
@@ -237,11 +263,31 @@ class GridViewModel(
                 }
                 // Only collapse when a lens is active; otherwise the singles set above stands and we
                 // record the slice so a membership re-slice doesn't needlessly re-run.
-                if (sliceChanged) {
-                    if (groupingMode != GroupingMode.Off) regroup(photos, ids, groupingMode) else lastGroupedIds = ids
-                }
+                if (sliceChanged) triggerGrouping(groupingMode, photos, ids)
             }
             .launchIn(scope)
+
+        // Mirror the coordinator's background Similarity progress into state, but only while the running
+        // pass is grouping *this* grid's slice — i.e. the coordinator's active generation still matches
+        // the one we captured when this grid requested it. The coordinator runs a single global pass, so
+        // without this gate every retained grid would mirror it and light a determinate ring on the
+        // Similar tab of a scope whose Similarity would group an entirely different set: a precise
+        // percentage that is wrong for that tab. This field drives every "still grouping" cue for this
+        // grid — the Similar-tab ring (in any lens) and the banner (when Similarity is shown); the
+        // off-grid chip is fed separately and globally by the host. The coordinator already applies the
+        // grace window, so a warm (cache-hit) pass never flashes here. [grouping] stays untouched: it is
+        // the inline Time bar's alone. Comparing generations is O(1), so it is safe per progress tick.
+        val coordinator = groupingCoordinator
+        if (coordinator != null) {
+            coordinator.progress
+                .onEach { progress ->
+                    val status = progress
+                        ?.takeIf { coordinator.activeGeneration == similarityPassGeneration }
+                        ?.let { GroupingStatus(it.processed, it.total) }
+                    _state.update { it.copy(similarityProgress = status) }
+                }
+                .launchIn(scope)
+        }
     }
 
     /**
@@ -266,20 +312,60 @@ class GridViewModel(
                 // Switching lens collapses bursts back to singles (or vice-versa) under the cursor;
                 // keep focus on the same frame rather than on whatever tile inherits the old index.
                 focusedIndex = refocus(singles, it.focusedAnchorId(), it.focusedIndex),
+                // Reset the inline Time bar; the Similarity banner reads [similarityProgress] (the live
+                // background pass) directly, so arriving on Similarity mid-pass shows it without seeding.
+                grouping = null,
                 // Show the one-time coachmark the first time Similarity is actively picked; switching to
                 // any other lens hides it (it never resurfaces once dismissed — pending guards that).
                 showSimilarityCoachmark = mode == GroupingMode.Similarity && similarityCoachmarkPending,
             )
         }
-        if (mode != GroupingMode.Off) {
-            // announce = true: this is the deliberate lens pick, the one pass whose result the grid
-            // surfaces (a summary, or the empty-result notice). Background re-slices stay silent.
-            regroup(photos, ids, mode, announce = true)
-        } else {
-            groupingJob?.cancel()
-            groupingGeneration++
-            lastGroupedIds = ids
+        // announce = true: this is the deliberate lens pick, the one pass whose result the grid
+        // surfaces (a summary, or the empty-result notice). Background re-slices stay silent.
+        triggerGrouping(mode, photos, ids, announce = true)
+    }
+
+    /**
+     * Routes a (re)grouping for [mode] to the right machinery, cancelling whatever the *previous* lens
+     * was displaying. [Time] regroups inline on this grid's scope; [Similarity] delegates to the
+     * [GroupingCoordinator] so the pass outlives the displayed lens; [Off] just clears the bar. The
+     * key invariant: cancelling [similarityApplyJob] here stops only the *display* wiring — the
+     * coordinator's background pass keeps running and caching, so a lens switch never wastes it.
+     */
+    private fun triggerGrouping(mode: GroupingMode, photos: List<Photo>, ids: List<PhotoId>, announce: Boolean = false) {
+        groupingJob?.cancel()
+        similarityApplyJob?.cancel()
+        when (mode) {
+            GroupingMode.Off -> {
+                groupingGeneration++
+                lastGroupedIds = ids
+                _state.update { it.copy(grouping = null) }
+            }
+            GroupingMode.Time -> regroup(photos, ids, mode, announce)
+            GroupingMode.Similarity -> requestBackgroundGrouping(photos, ids, announce)
+        }
+    }
+
+    /**
+     * Hands the Similarity pass to the [GroupingCoordinator] and wires its result into *this* grid's
+     * display. The pass is started (or re-attached to) immediately, in the coordinator's own scope, so
+     * it is unaffected by this job's lifetime; [similarityApplyJob] only awaits it to apply the groups
+     * and announce. A null coordinator (no model wired) degrades Similarity to the singles already shown.
+     */
+    private fun requestBackgroundGrouping(photos: List<Photo>, ids: List<PhotoId>, announce: Boolean) {
+        lastGroupedIds = ids
+        val coordinator = groupingCoordinator ?: run {
             _state.update { it.copy(grouping = null) }
+            return
+        }
+        val deferred = coordinator.groupingFor(photos)
+        // Capture which pass is ours (same thread, right after the request) so the progress collector can
+        // tell this grid's pass from one a different scope later supersedes.
+        similarityPassGeneration = coordinator.activeGeneration
+        similarityApplyJob = scope.launch {
+            // The display bar is owned by the coordinator-progress collector (it clears on completion),
+            // so the apply must not also null it out — pass clearDisplayBar = false.
+            applyGroupedResult(deferred.await(), ids, GroupingMode.Similarity, announce, clearDisplayBar = false)
         }
     }
 
@@ -345,54 +431,69 @@ class GridViewModel(
             }
             // Stop the timer before clearing, so a bar can't arm after the pass has already finished.
             barJob.cancelAndJoin()
-            // Whether this pass's groups became the live state — set inside the update so it tracks the
-            // bail-vs-apply decision exactly (a referential check would miss the all-singles case, where
-            // StateFlow dedups the value-equal result and keeps the prior reference).
-            var applied = false
-            _state.update { st ->
-                // Bail if the slice moved under us, OR the lens changed while this ran: cancel() is
-                // cooperative, so a regroup that finished computing just as the user switched modes
-                // would otherwise re-apply its groups over a toolbar that now reads a different lens.
-                // Leaving the state untouched keeps whatever the newer pass set, including its bar.
-                if (st.photos.map { it.id } != ids || groupingMode != mode) {
-                    applied = false
-                    st
-                } else {
-                    applied = true
-                    val anchorId = st.focusedAnchorId()
-                    // Keep an expanded burst open only if it survived the re-group as a burst.
-                    val stillExpanded = st.expandedBurstId
-                        ?.takeIf { id -> groups.any { it is PhotoGroup.Burst && it.groupId == id } }
-                    val display = displayGroupsFor(groups, stillExpanded)
-                    // Only when this async pass actually renumbers the tile space (singles ->
-                    // collapsed bursts) is a stored Shift+click anchor (a tile index) stale. If the
-                    // pass yields the same tiles - the common all-singles case - keep the anchor, or a
-                    // mid-grouping Cmd+click would lose its pivot. Matches the synchronous reshapes,
-                    // which null the anchor precisely because they always change the tile shape.
-                    val reshaped = groups != st.groups || stillExpanded != st.expandedBurstId
-                    st.copy(
-                        groups = groups,
-                        expandedBurstId = stillExpanded,
-                        anchorIndex = if (reshaped) null else st.anchorIndex,
-                        // Re-find the focused frame: the tiles just renumbered (singles -> bursts).
-                        focusedIndex = refocus(display, anchorId, st.focusedIndex),
-                        grouping = null,
-                    )
-                }
-            }
-            // Announce the result only for a deliberate lens pick whose groups were actually applied
-            // (a stale pass that bailed must stay silent). Counts come from the applied groups.
-            if (announce && applied) {
-                val burstCount = groups.count { it is PhotoGroup.Burst }
-                val photosInBursts = groups.sumOf { (it as? PhotoGroup.Burst)?.photos?.size ?: 0 }
-                _groupingOutcomes.trySend(
-                    GroupingOutcome(
-                        mode = mode,
-                        burstCount = burstCount,
-                        photosInBursts = photosInBursts,
-                    ),
+            // The Time bar is owned by this pass, so clear it as the groups land (clearDisplayBar).
+            applyGroupedResult(groups, ids, mode, announce, clearDisplayBar = true)
+        }
+    }
+
+    /**
+     * Applies a completed grouping pass's [groups] to the live state and announces it — shared by the
+     * inline Time [regroup] and the background-Similarity apply ([requestBackgroundGrouping]).
+     *
+     * It bails if the slice moved under it, OR the lens changed while the pass ran: cancellation is
+     * cooperative, so a pass that finished computing just as the user switched modes would otherwise
+     * re-apply its groups over a toolbar that now reads a different lens. Leaving the state untouched
+     * keeps whatever the newer pass set. [clearDisplayBar] nulls the displayed-lens bar as the groups
+     * land — true for the Time pass, which owns its bar; false for Similarity, whose bar is owned by
+     * the coordinator-progress collector. Announcing is gated to a deliberate lens pick that actually
+     * applied ([announce] && applied), so a stale or background pass stays silent.
+     */
+    private fun applyGroupedResult(
+        groups: List<PhotoGroup>,
+        ids: List<PhotoId>,
+        mode: GroupingMode,
+        announce: Boolean,
+        clearDisplayBar: Boolean,
+    ) {
+        // Whether this pass's groups became the live state — set inside the update so it tracks the
+        // bail-vs-apply decision exactly (a referential check would miss the all-singles case, where
+        // StateFlow dedups the value-equal result and keeps the prior reference).
+        var applied = false
+        _state.update { st ->
+            if (st.photos.map { it.id } != ids || groupingMode != mode) {
+                applied = false
+                st
+            } else {
+                applied = true
+                val anchorId = st.focusedAnchorId()
+                // Keep an expanded burst open only if it survived the re-group as a burst.
+                val stillExpanded = st.expandedBurstId
+                    ?.takeIf { id -> groups.any { it is PhotoGroup.Burst && it.groupId == id } }
+                val display = displayGroupsFor(groups, stillExpanded)
+                // Only when this async pass actually renumbers the tile space (singles -> collapsed
+                // bursts) is a stored Shift+click anchor (a tile index) stale. If the pass yields the
+                // same tiles - the common all-singles case - keep the anchor, or a mid-grouping
+                // Cmd+click would lose its pivot. Matches the synchronous reshapes, which null the
+                // anchor precisely because they always change the tile shape.
+                val reshaped = groups != st.groups || stillExpanded != st.expandedBurstId
+                st.copy(
+                    groups = groups,
+                    expandedBurstId = stillExpanded,
+                    anchorIndex = if (reshaped) null else st.anchorIndex,
+                    // Re-find the focused frame: the tiles just renumbered (singles -> bursts).
+                    focusedIndex = refocus(display, anchorId, st.focusedIndex),
+                    grouping = if (clearDisplayBar) null else st.grouping,
                 )
             }
+        }
+        // Announce the result only for a deliberate lens pick whose groups were actually applied
+        // (a stale pass that bailed must stay silent). Counts come from the applied groups.
+        if (announce && applied) {
+            val burstCount = groups.count { it is PhotoGroup.Burst }
+            val photosInBursts = groups.sumOf { (it as? PhotoGroup.Burst)?.photos?.size ?: 0 }
+            _groupingOutcomes.trySend(
+                GroupingOutcome(mode = mode, burstCount = burstCount, photosInBursts = photosInBursts),
+            )
         }
     }
 
@@ -400,14 +501,14 @@ class GridViewModel(
     private fun slicedPhotos(members: Map<CategoryId, Set<PhotoId>>): List<Photo> =
         categoryScope.slice(allPhotos, members[categoryScope.activeCategoryId].orEmpty())
 
-    fun onFirstVisibleItemChanged(index: Int) {
+    fun onFirstVisibleItemChanged(index: FlatIndex) {
         if (categoryScope != CategoryScope.AllPhotos) return
         lastKnownIndex = index
         onScrollIndexChanged?.let { save ->
             scrollSaveJob?.cancel()
             scrollSaveJob = scope.launch {
                 delay(500)
-                save(index)
+                save(index.value)
                 lastKnownIndex = null
             }
         }
@@ -416,13 +517,13 @@ class GridViewModel(
     override fun onClear() {
         val pending = lastKnownIndex
         if (pending != null) {
-            onScrollIndexChanged?.invoke(pending)
+            onScrollIndexChanged?.invoke(pending.value)
         }
         super.onClear()
     }
 
-    fun setFocusedIndex(index: Int) {
-        _state.update { it.copy(focusedIndex = index.coerceIn(-1, (it.displayGroups.size - 1).coerceAtLeast(-1))) }
+    fun setFocusedIndex(index: TileIndex) {
+        _state.update { it.copy(focusedIndex = it.clampTile(index)) }
     }
 
     /**
@@ -441,7 +542,7 @@ class GridViewModel(
         _state.update { st ->
             st.copy(
                 lastViewedPhotoId = id,
-                focusedIndex = if (st.focusedIndex >= 0) refocus(st.displayGroups, id, st.focusedIndex) else st.focusedIndex,
+                focusedIndex = if (st.focusedIndex.isSet) refocus(st.displayGroups, id, st.focusedIndex) else st.focusedIndex,
             )
         }
     }
@@ -457,13 +558,17 @@ class GridViewModel(
         if (id == null) return
         _state.update { st ->
             val idx = st.displayGroups.indexOfFirst { group -> group.photos.any { it.id == id } }
-            if (idx >= 0) st.copy(focusedIndex = idx) else st
+            if (idx >= 0) st.copy(focusedIndex = TileIndex(idx)) else st
         }
     }
 
     /** The frame the focused tile currently represents, the anchor [refocus] re-finds after a reshape. */
     private fun GridUiState.focusedAnchorId(): PhotoId? =
         displayGroups.getOrNull(focusedIndex)?.keyPhoto?.id
+
+    /** Clamp a tile index into the focusable range for these display tiles ([TileIndex.NONE] = no focus). */
+    private fun GridUiState.clampTile(index: TileIndex): TileIndex =
+        TileIndex(index.value.coerceIn(-1, (displayGroups.size - 1).coerceAtLeast(-1)))
 
     /**
      * The tile index in [display] that still represents [anchorId]'s frame, or [fallback] clamped to
@@ -472,12 +577,12 @@ class GridViewModel(
      * keeps the cursor on the photo the user was looking at — clamping a bare index instead would
      * silently slide focus onto a different burst, which made Enter expand the wrong tile.
      */
-    private fun refocus(display: List<PhotoGroup>, anchorId: PhotoId?, fallback: Int): Int {
+    private fun refocus(display: List<PhotoGroup>, anchorId: PhotoId?, fallback: TileIndex): TileIndex {
         if (anchorId != null) {
             val i = display.indexOfFirst { group -> group.photos.any { it.id == anchorId } }
-            if (i >= 0) return i
+            if (i >= 0) return TileIndex(i)
         }
-        return fallback.coerceIn(-1, (display.size - 1).coerceAtLeast(-1))
+        return TileIndex(fallback.value.coerceIn(-1, (display.size - 1).coerceAtLeast(-1)))
     }
 
     /**
@@ -495,16 +600,17 @@ class GridViewModel(
             val open = if (st.expandedBurstId == groupId) null else groupId
             val display = displayGroupsFor(st.groups, open)
             val burst = st.groups.firstOrNull { it.groupId == groupId } as? PhotoGroup.Burst
-            val focus = if (open != null && burst != null) {
+            val match = if (open != null && burst != null) {
                 display.indexOfFirst { it.keyPhoto.id == burst.keyPhoto.id }
             } else {
                 display.indexOfFirst { it.groupId == groupId }
-            }.takeIf { it >= 0 } ?: st.focusedIndex
+            }
+            val focus = match.takeIf { it >= 0 }?.let(::TileIndex) ?: st.focusedIndex
             // Expanding/folding renumbers the tile space, so any stored Shift+click anchor is stale.
             st.copy(
                 expandedBurstId = open,
                 anchorIndex = null,
-                focusedIndex = focus.coerceIn(-1, (display.size - 1).coerceAtLeast(-1)),
+                focusedIndex = TileIndex(focus.value.coerceIn(-1, (display.size - 1).coerceAtLeast(-1))),
             )
         }
     }
@@ -518,12 +624,13 @@ class GridViewModel(
         _state.update { st ->
             val burstId = st.expandedBurstId ?: return@update st
             val display = displayGroupsFor(st.groups, null)
-            val focus = display.indexOfFirst { it.groupId == burstId }.takeIf { it >= 0 } ?: st.focusedIndex
+            val focus = display.indexOfFirst { it.groupId == burstId }.takeIf { it >= 0 }?.let(::TileIndex)
+                ?: st.focusedIndex
             // Folding renumbers the tile space, so any stored Shift+click anchor is stale.
             st.copy(
                 expandedBurstId = null,
                 anchorIndex = null,
-                focusedIndex = focus.coerceIn(-1, (display.size - 1).coerceAtLeast(-1)),
+                focusedIndex = TileIndex(focus.value.coerceIn(-1, (display.size - 1).coerceAtLeast(-1))),
             )
         }
     }
@@ -569,7 +676,7 @@ class GridViewModel(
     // (bulk file, copy, the C entry's flat-index mapping) is unchanged.
 
     /** Cmd+Click: flip the tile's photos in the selection; that tile becomes the range anchor. */
-    fun toggleSelection(index: Int) {
+    fun toggleSelection(index: TileIndex) {
         val group = _state.value.displayGroups.getOrNull(index) ?: return
         val ids = group.photos.mapTo(HashSet()) { it.id }
         _state.update {
@@ -580,13 +687,13 @@ class GridViewModel(
     }
 
     /** Shift+Click: select every photo in the contiguous run of tiles from the anchor to [index]. */
-    fun selectRange(index: Int) {
+    fun selectRange(index: TileIndex) {
         _state.update { st ->
             val display = st.displayGroups
-            if (index !in display.indices) return@update st
-            val anchor = (st.anchorIndex ?: index).coerceIn(display.indices)
-            val lo = minOf(anchor, index)
-            val hi = maxOf(anchor, index)
+            if (index.value !in display.indices) return@update st
+            val anchor = TileIndex((st.anchorIndex ?: index).value.coerceIn(display.indices))
+            val lo = minOf(anchor.value, index.value)
+            val hi = maxOf(anchor.value, index.value)
             val ids = (lo..hi).flatMap { display.getOrNull(it)?.photos.orEmpty() }.mapTo(HashSet()) { it.id }
             st.copy(selection = ids, anchorIndex = anchor)
         }
@@ -644,6 +751,8 @@ class GridViewModel(
             _state.update { it.copy(isBusy = true, progressLabel = "Moving ${targets.size} to Trash…") }
             val report = try {
                 moveToTrash.invoke(targets)
+            } catch (ce: CancellationException) {
+                throw ce
             } catch (t: Throwable) {
                 _state.update { it.copy(isBusy = false, progressLabel = null, toast = "Delete failed: ${t.message}") }
                 return@launch
@@ -750,6 +859,8 @@ class GridViewModel(
                         toast = "Saved ${photos.size} entries to ${destination.fileName}",
                     )
                 }
+            } catch (ce: CancellationException) {
+                throw ce
             } catch (t: Throwable) {
                 _state.update {
                     it.copy(isBusy = false, progressLabel = null, toast = "Export failed: ${t.message}")
@@ -778,6 +889,8 @@ class GridViewModel(
                 _state.update {
                     it.copy(isBusy = false, progressLabel = null, toast = buildReportToast(report))
                 }
+            } catch (ce: CancellationException) {
+                throw ce
             } catch (t: Throwable) {
                 _state.update {
                     it.copy(isBusy = false, progressLabel = null, toast = "Copy failed: ${t.message}")

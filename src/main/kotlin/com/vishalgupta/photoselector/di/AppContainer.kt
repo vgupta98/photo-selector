@@ -1,5 +1,6 @@
 package com.vishalgupta.photoselector.di
 
+import com.vishalgupta.photoselector.BuildConfig
 import com.vishalgupta.photoselector.data.browse.JsonBrowsePositionRepository
 import com.vishalgupta.photoselector.data.export.CompositePhotoExporter
 import com.vishalgupta.photoselector.data.export.CopyPhotoExporter
@@ -7,6 +8,7 @@ import com.vishalgupta.photoselector.data.export.TxtPhotoExporter
 import com.vishalgupta.photoselector.data.categories.JsonCategoriesRepository
 import com.vishalgupta.photoselector.data.filesystem.FileSystemPhotoRepository
 import com.vishalgupta.photoselector.data.prefs.JsonAppPreferences
+import com.vishalgupta.photoselector.data.update.HttpUpdateRepository
 import com.vishalgupta.photoselector.data.ai.CachingPhotoGrouper
 import com.vishalgupta.photoselector.data.ai.DownscaleGrayEmbeddingModel
 import com.vishalgupta.photoselector.data.ai.EmbeddingCache
@@ -17,8 +19,10 @@ import com.vishalgupta.photoselector.data.ai.PhotoFeatureExtractor
 import com.vishalgupta.photoselector.data.ai.SimilarityPhotoGrouper
 import com.vishalgupta.photoselector.data.trash.DesktopPhotoTrash
 import com.vishalgupta.photoselector.data.format.CachingCaptureMetadataSource
+import com.vishalgupta.photoselector.data.format.CompositeCaptureMetadataSource
 import com.vishalgupta.photoselector.data.format.DefaultPhotoFormatRegistry
 import com.vishalgupta.photoselector.data.format.ExifCaptureMetadataSource
+import com.vishalgupta.photoselector.data.format.HeicCaptureMetadataSource
 import com.vishalgupta.photoselector.data.format.HeicDecoder
 import com.vishalgupta.photoselector.data.format.JpegDecoder
 import com.vishalgupta.photoselector.data.format.PngDecoder
@@ -29,6 +33,7 @@ import com.vishalgupta.photoselector.data.image.ImageLoader
 import com.vishalgupta.photoselector.data.image.SkikoImageLoader
 import com.vishalgupta.photoselector.domain.format.PhotoFormatRegistry
 import com.vishalgupta.photoselector.domain.grouping.PhotoGrouper
+import com.vishalgupta.photoselector.domain.grouping.SimilarityGrouper
 import com.vishalgupta.photoselector.domain.model.DecodedImage
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
@@ -40,34 +45,44 @@ import com.vishalgupta.photoselector.domain.repository.BrowsePositionRepository
 import com.vishalgupta.photoselector.domain.repository.PhotoExporter
 import com.vishalgupta.photoselector.domain.repository.PhotoRepository
 import com.vishalgupta.photoselector.domain.repository.PhotoTrash
+import com.vishalgupta.photoselector.domain.update.AppVersion
+import com.vishalgupta.photoselector.domain.update.CheckForUpdateUseCase
+import com.vishalgupta.photoselector.domain.update.UpdateRepository
+import com.vishalgupta.photoselector.domain.update.rolloutBucket
 import com.vishalgupta.photoselector.domain.usecase.CopyPhotosToFolderUseCase
 import com.vishalgupta.photoselector.domain.usecase.ExportPhotosTxtUseCase
 import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
 import com.vishalgupta.photoselector.domain.usecase.ScanRootFolderUseCase
 import com.vishalgupta.photoselector.presentation.browser.BrowserViewModel
+import com.vishalgupta.photoselector.presentation.common.GroupingCoordinator
+import com.vishalgupta.photoselector.presentation.common.GroupingMode
+import com.vishalgupta.photoselector.presentation.common.MacSystemActions
+import com.vishalgupta.photoselector.presentation.common.SystemActions
 import com.vishalgupta.photoselector.presentation.grid.GridViewModel
 import com.vishalgupta.photoselector.presentation.grid.LibraryRailViewModel
 import com.vishalgupta.photoselector.presentation.inspect.InspectMode
 import com.vishalgupta.photoselector.presentation.inspect.InspectViewModel
-import com.vishalgupta.photoselector.presentation.survey.SurveyViewModel
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.presentation.navigation.GridRetentionKey
 import com.vishalgupta.photoselector.presentation.navigation.MAX_INSPECT_GRID_PHOTOS
+import com.vishalgupta.photoselector.presentation.navigation.Screen
 import com.vishalgupta.photoselector.presentation.navigation.activeCategoryId
 import com.vishalgupta.photoselector.presentation.navigation.slice
-import com.vishalgupta.photoselector.presentation.common.GroupingMode
-import com.vishalgupta.photoselector.presentation.common.MacSystemActions
-import com.vishalgupta.photoselector.presentation.common.SystemActions
-import com.vishalgupta.photoselector.presentation.navigation.Screen
 import com.vishalgupta.photoselector.presentation.rootpicker.RootFolderPickerViewModel
+import com.vishalgupta.photoselector.presentation.survey.SurveyViewModel
+import com.vishalgupta.photoselector.presentation.update.UpdateViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.Json
+import java.net.http.HttpClient
+import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
 
 class AppContainer {
 
@@ -115,9 +130,17 @@ class AppContainer {
         diskCache = diskThumbnailCache,
     )
 
-    // Shared across grids so each photo's EXIF (capture time + camera) is read at most once per
-    // session; the cache is what makes burst re-grouping on every re-slice cheap.
-    private val captureMetadataSource = CachingCaptureMetadataSource(ExifCaptureMetadataSource())
+    // Shared across grids so each photo's capture metadata (time + camera) is read at most once per
+    // session; the cache is what makes burst re-grouping on every re-slice cheap. JPEG goes through the
+    // JVM EXIF reader; HEIC (macOS only) through the ImageIO bridge, so HEIC bursts now group too.
+    private val captureMetadataSource = CachingCaptureMetadataSource(
+        CompositeCaptureMetadataSource(
+            buildList {
+                add(ExifCaptureMetadataSource())
+                if (HeicCaptureMetadataSource.isSupportedOnThisPlatform()) add(HeicCaptureMetadataSource())
+            },
+        ),
+    )
 
     // Visual-similarity grouping (GroupingMode.Similarity). The learned MobileNetV3-Small embedder
     // (OnnxEmbeddingModel) is the on-device default; if its bundled blob can't load we fall back to
@@ -141,10 +164,29 @@ class AppContainer {
                 decodeForSharpness = ::decodeForSharpness,
             ),
             concurrency = decodeParallelism,
+            // Capture time corroborates the visual cut: the time-boosted rule also joins frames taken
+            // within seconds of each other, recovering same-moment bursts the embedding alone missed.
+            // Reuses the same memoized source as the Time lens; a frame with no capture time (a PNG,
+            // a stripped JPEG, or HEIC off macOS) falls back to the visual cut.
+            captureMetadataSource = captureMetadataSource,
+            joinRule = SimilarityGrouper.timeBoosted(),
         ),
         cache = groupingResultCache,
         modelId = embeddingModel.id,
     )
+
+    // Owns the one background Similarity pass, decoupled from any grid's displayed lens so it runs to
+    // completion across lens switches and navigation. Process-lifetime parent (appScope) with [reset]
+    // on a root change, so the stable [groupingActivity] flow can be collected once by the navigation
+    // host for the off-grid hint. Runs on Dispatchers.IO, matching the grid's old grouping dispatcher.
+    private val groupingCoordinator = GroupingCoordinator(
+        grouper = similarityGrouper,
+        parentJob = appScope.coroutineContext[Job],
+        dispatcher = Dispatchers.IO,
+    )
+
+    /** Progress of the background Similarity pass (null when idle), for the navigation host's hint. */
+    val groupingActivity: StateFlow<GroupingCoordinator.Progress?> get() = groupingCoordinator.progress
 
     private fun loadEmbeddingModel(): EmbeddingModel = try {
         OnnxEmbeddingModel.Loader.fromResource()
@@ -182,6 +224,16 @@ class AppContainer {
     // cache dir, written through the shared AtomicJsonWriter.
     private val appPreferences: AppPreferencesRepository =
         JsonAppPreferences(cacheDir.resolve("preferences.json"), json)
+
+    // Notify-only update checker. One shared HttpClient (the app's only network use) reads the hosted
+    // manifest; the use case decides eligibility. The manifest URL is baked into BuildConfig at build time.
+    private val httpClient: HttpClient = HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(10))
+        .build()
+    private val updateRepository: UpdateRepository =
+        HttpUpdateRepository(BuildConfig.UPDATE_MANIFEST_URL, json, httpClient)
+    private val checkForUpdateUseCase = CheckForUpdateUseCase(updateRepository)
+
     private val exporter: PhotoExporter = CompositePhotoExporter(TxtPhotoExporter(), CopyPhotoExporter())
     private val photoTrash: PhotoTrash = DesktopPhotoTrash()
 
@@ -241,6 +293,30 @@ class AppContainer {
         if (screen !is Screen.Browser) currentPhotoPath.value = null
         currentScreen.value = screen
     }
+
+    /**
+     * App-lifetime update-banner holder. Built once and parented to [appScope] (not a folder job) so the
+     * single launch check survives root and screen changes. The whole feature is muted for a
+     * Homebrew-managed install, which updates through `brew upgrade` — the in-app updater must not fight it.
+     */
+    fun updateViewModel(): UpdateViewModel = UpdateViewModel(
+        checkForUpdate = checkForUpdateUseCase,
+        currentVersion = AppVersion.parseOrNull(BuildConfig.VERSION) ?: AppVersion(0, 0, 0),
+        osVersion = AppVersion.parseOrNull(System.getProperty("os.version").orEmpty()),
+        rolloutBucket = rolloutBucket(appPreferences.installId()),
+        autoCheckEnabled = appPreferences.isAutoUpdateCheckEnabled() && !isHomebrewManaged(),
+        skippedVersion = { appPreferences.skippedUpdateVersion() },
+        onSkipVersion = { appPreferences.setSkippedUpdateVersion(it) },
+        openUrl = { systemActions.openUrl(it) },
+        parentJob = appScope.coroutineContext[Job],
+    )
+
+    // Heuristic: a Homebrew cask records the app under a Caskroom prefix (arch-dependent). If one for
+    // Rhenium exists, the install is brew-managed and self-update would desync brew's metadata, so we
+    // defer to `brew upgrade` and suppress the in-app checker entirely.
+    private fun isHomebrewManaged(): Boolean =
+        sequenceOf("/opt/homebrew/Caskroom/rhenium", "/usr/local/Caskroom/rhenium")
+            .any { Files.exists(Path.of(it)) }
 
     fun rootPickerViewModel(): RootFolderPickerViewModel = RootFolderPickerViewModel(
         scanRootFolder = scanUseCase,
@@ -371,7 +447,7 @@ class AppContainer {
             moveToTrash = movePhotosToTrashUseCase,
             imageLoader = imageLoader,
             captureMetadataSource = captureMetadataSource,
-            similarityGrouper = similarityGrouper,
+            groupingCoordinator = groupingCoordinator,
             initialGroupingMode = lastGroupingMode,
             // Global flag, read at build time; the in-memory cache keeps later grids coherent once
             // it's been dismissed. The callback persists the dismissal so it never reappears.
@@ -408,6 +484,9 @@ class AppContainer {
         // Rails hold no pending writes to flush; folderJob.cancel below tears their scopes down, so
         // just drop the references for the new root.
         retainedRails.clear()
+        // Drop any in-flight background Similarity pass and clear its progress; the coordinator object
+        // itself stays (the host collects its flow), only the per-root work is reset.
+        groupingCoordinator.reset()
         _folderJob.cancel()
         _folderJob = SupervisorJob(appScope.coroutineContext[Job])
         categoriesRepository.clearContext()

@@ -1,5 +1,6 @@
 package com.vishalgupta.photoselector.data.ai
 
+import com.vishalgupta.photoselector.domain.grouping.CaptureMetadataSource
 import com.vishalgupta.photoselector.domain.grouping.GroupingProgress
 import com.vishalgupta.photoselector.domain.grouping.PhotoGrouper
 import com.vishalgupta.photoselector.domain.grouping.SimilarityGrouper
@@ -20,6 +21,11 @@ import java.util.concurrent.atomic.AtomicInteger
  * similarity grouping — it owns the expensive decode/inference; the clustering decision stays pure
  * and unit-tested in the domain layer.
  *
+ * If a [captureMetadataSource] is supplied, each frame's EXIF capture time is read (memoized) during
+ * the same parallel pass and handed to the grouper, so the shipped [SimilarityGrouper.timeBoosted]
+ * [joinRule] can use the time gap as corroborating evidence. With no source (or a frame with no time)
+ * the gap is simply absent and grouping is visual-only.
+ *
  * Extraction runs **bounded-parallel**: a cold pass over thousands of frames is the longest
  * operation in the app, and a single coroutine left a multi-core machine mostly idle. Each frame's
  * decode + embedding is an independent task, and a [Semaphore] of width [concurrency] caps how many
@@ -36,7 +42,9 @@ import java.util.concurrent.atomic.AtomicInteger
 class SimilarityPhotoGrouper(
     private val extractor: PhotoFeatureExtractor,
     private val concurrency: Int = DEFAULT_CONCURRENCY,
-    private val threshold: Float = SimilarityGrouper.DEFAULT_THRESHOLD,
+    private val rule: SimilarityGrouper.ThresholdRule = SimilarityGrouper.Adaptive,
+    private val captureMetadataSource: CaptureMetadataSource? = null,
+    private val joinRule: SimilarityGrouper.JoinRule = SimilarityGrouper.VisualOnly,
 ) : PhotoGrouper {
 
     override suspend fun group(photos: List<Photo>, onProgress: GroupingProgress): List<PhotoGroup> {
@@ -44,6 +52,7 @@ class SimilarityPhotoGrouper(
         val total = photos.size
         val embeddings = ConcurrentHashMap<PhotoId, FloatArray>(total)
         val sharpness = ConcurrentHashMap<PhotoId, Float>(total)
+        val captureTimes = ConcurrentHashMap<PhotoId, Long>(total)
         // Thread-safe running count: tasks finish out of order, so the bar is driven by how many
         // have completed, not by any one task's index. GridViewModel coalesces this to whole-percent
         // ticks and only ever moves the bar forward (see its onProgress handler).
@@ -59,13 +68,16 @@ class SimilarityPhotoGrouper(
                             embeddings[photo.id] = features.embedding
                             sharpness[photo.id] = features.sharpness
                         }
+                        // Capture time is corroborating evidence for the join rule; memoized by the
+                        // source, so this is cheap and shared with the Time lens.
+                        captureMetadataSource?.metadataFor(photo)?.takenAtEpochMs?.let { captureTimes[photo.id] = it }
                     }
                     onProgress(processed.incrementAndGet(), total)
                 }
             }
         }
         // coroutineScope joined all tasks; every surviving feature is in the maps.
-        return SimilarityGrouper.group(photos, embeddings, sharpness, threshold)
+        return SimilarityGrouper.group(photos, embeddings, sharpness, captureTimes, rule, joinRule)
     }
 
     private companion object {

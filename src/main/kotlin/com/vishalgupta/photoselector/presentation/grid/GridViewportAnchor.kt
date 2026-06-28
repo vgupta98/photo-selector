@@ -48,7 +48,7 @@ internal class GridViewportAnchor(
     initialAnchor: PhotoId?,
     // The returned FLAT scroll index to fall back to on a cold start while no identity anchor exists yet
     // (on a real cold launch photos arrive after mount, so [initialAnchor] is null); null on a warm return.
-    private val coldFlatFallback: Int?,
+    private val coldFlatFallback: FlatIndex?,
     // A photo to bring on-screen once, on the first [reconcile], REGARDLESS of the keyboard ring — the
     // warm-return resume ("scroll to the photo I was just looking at") and the "Show in All Photos" jump.
     // Resolved by identity, so it works for a mouse-only user with no ring at all (the old resume rode the
@@ -129,8 +129,8 @@ internal class GridViewportAnchor(
     suspend fun reconcile(
         renderItems: List<GridRenderItem>,
         tiles: List<PhotoGroup>,
-        tileFlatStart: List<Int>,
-        focusedIndex: Int,
+        tileFlatStart: List<FlatIndex>,
+        focusedIndex: TileIndex,
         groups: List<PhotoGroup>,
     ) {
         val reshaped = groups !== lastReconciledGroups
@@ -155,7 +155,7 @@ internal class GridViewportAnchor(
         val id = pendingRevealId ?: return
         pendingRevealId = null
         val tile = tiles.indexOfFirst { group -> group.photos.any { it.id == id } }
-        if (tile >= 0) scrollTileIntoView(renderItems, tile)
+        if (tile >= 0) scrollTileIntoView(renderItems, TileIndex(tile))
     }
 
     /**
@@ -166,11 +166,13 @@ internal class GridViewportAnchor(
     private suspend fun repinToAnchor(
         renderItems: List<GridRenderItem>,
         tiles: List<PhotoGroup>,
-        tileFlatStart: List<Int>,
+        tileFlatStart: List<FlatIndex>,
     ) {
         if (userHeldViewport) return
-        val tile = anchoredPhotoId
-            ?.let { id -> tiles.indexOfFirst { group -> group.photos.any { it.id == id } }.takeIf { it >= 0 } }
+        val tile: TileIndex = anchoredPhotoId
+            ?.let { id ->
+                tiles.indexOfFirst { group -> group.photos.any { it.id == id } }.takeIf { it >= 0 }?.let(::TileIndex)
+            }
             ?: coldFlatFallback?.let { tileIndexForFlat(tileFlatStart, it) }
             ?: return
         val target = renderIndexForTile(renderItems, tile) ?: return
@@ -183,8 +185,8 @@ internal class GridViewportAnchor(
      * animateScrollToItem) speaks RENDER-ITEM space, which gains header/footer rows when a burst is open -
      * so convert before addressing it, or we'd mis-detect visibility and scroll to the wrong row.
      */
-    private suspend fun scrollTileIntoView(renderItems: List<GridRenderItem>, tileIndex: Int) {
-        if (tileIndex < 0) return
+    private suspend fun scrollTileIntoView(renderItems: List<GridRenderItem>, tileIndex: TileIndex) {
+        if (!tileIndex.isSet) return
         val renderIdx = renderIndexForTile(renderItems, tileIndex) ?: return
         val layout = gridState.layoutInfo
         val item = layout.visibleItemsInfo.firstOrNull { it.index == renderIdx }
@@ -206,7 +208,7 @@ internal class GridViewportAnchor(
 internal fun rememberGridViewportAnchor(
     gridState: LazyGridState,
     initialAnchor: PhotoId?,
-    coldFlatFallback: Int?,
+    coldFlatFallback: FlatIndex?,
     revealPhotoId: PhotoId? = null,
 ): GridViewportAnchor = remember(gridState) {
     GridViewportAnchor(gridState, initialAnchor, coldFlatFallback, revealPhotoId)

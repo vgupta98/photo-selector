@@ -11,7 +11,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/platform-macOS-111111" alt="Platform: macOS" />
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT" />
-  <img src="https://img.shields.io/github/stars/vgupta98/photo-selector?style=social" alt="GitHub stars" />
+  <img src="https://img.shields.io/github/stars/vgupta98/rhenium?style=social" alt="GitHub stars" />
 </p>
 
 Rhenium is a free, open-source, keyboard-driven photo culler for macOS. Open a
@@ -22,10 +22,9 @@ nothing ever leaves your machine.
 
 > **macOS today — Windows support is on the roadmap.** Star and watch the repo to follow along.
 
-<!-- TODO(marketing): add a 10–15s screen-capture GIF of keyboard culling + the
-     "Similar" grouping lens right here. This is the single highest-impact thing
-     on the page — a culling app sells on motion, not prose. -->
-<!-- ![Rhenium in action](docs/demo.gif) -->
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/28e42474-28ce-4a21-8863-0fc2ac2d6ef8" width="800" alt="Rhenium in action — the Similar lens collapses near-identical frames into one tile, then keyboard culling files the keeper" />
+</p>
 
 ## Why Rhenium
 
@@ -55,7 +54,7 @@ Built with Kotlin + Compose Multiplatform Desktop, following Clean Architecture.
 - **Delete to Trash** — pick photos in the grid and **Delete** (or `Cmd`+`Delete`) moves them to the macOS Trash after a confirmation; in the full-screen browser `Cmd`+`Delete` removes the current photo and advances to the next. Recoverable from Finder, and the deleted photos are dropped from every category.
 - **Persistent** — categories are stored as a single `.photo-selector-categories.json` file inside your photo folder. Switch folders and each retains its own lists.
 - **Inspect** — select two or more tiles in the grid (or press `C` on a focused group, or `C` in the browser for the current photo + its neighbour) to view a fixed set of photos together. It opens as an overview grid you can scan at a glance; press `Enter` (or the top-bar toggle) to **browse** the set full-screen, one photo at a time with pan/zoom, then toggle back. Arrows or `Tab` move the highlighted tile; `F` / `1`…`9` file it; `Esc` steps back to the grid, then out to wherever you opened Inspect from. A large set (past the overview cap, like a long burst) opens straight into browse.
-- **Grouping lenses** — collapse near-identical frames into one grid tile with a count badge, so a moment is a single decision instead of a dozen near-identical thumbnails. A segmented control in the grid toolbar (or `G` to cycle it from the keyboard) picks the lens: **off** (flat grid), **bursts** (frames from the same camera within ~2 seconds — needs a real capture time, which today comes from JPEG EXIF, so HEIC isn't burst-grouped yet), or **similar** (visually near-identical shots, grouped on-device — nothing leaves your Mac — regardless of when they were taken, with the suggested-sharpest frame marked **Pick** as the representative; a hint you can override). The first cold similarity pass shows a one-time explainer and a progress banner; afterwards the result is cached, so re-opening the lens on an unchanged folder is instant, and a one-line summary names what was grouped. Hover a grouped tile for **Review →** (or press `C` with it focused) to open its frames straight in **Inspect**, or click it to **unfold it in place** and cull the frames inline with the usual keys (`F` / `1`…`9` file the focused frame); click **Collapse** (or `Esc`) to fold it back.
+- **Grouping lenses** — collapse near-identical frames into one grid tile with a count badge, so a moment is a single decision instead of a dozen near-identical thumbnails. A segmented control in the grid toolbar (or `G` to cycle it from the keyboard) picks the lens: **off** (flat grid), **bursts** (frames from the same camera within ~2 seconds — needs a real capture time, read from JPEG EXIF and, on macOS, from HEIC too), or **similar** (visually near-identical shots, grouped on-device — nothing leaves your Mac — regardless of when they were taken, with the suggested-sharpest frame marked **Pick** as the representative; a hint you can override). The first cold similarity pass shows a one-time explainer and a progress banner — and it keeps running in the background if you switch lenses or move to another screen (the Similar tab keeps a small progress ring, and a chip tracks it elsewhere), so you're never stuck waiting on the grid. Afterwards the result is cached, so re-opening the lens on an unchanged folder is instant, and a one-line summary names what was grouped. Hover a grouped tile for **Review →** (or press `C` with it focused) to open its frames straight in **Inspect**, or click it to **unfold it in place** and cull the frames inline with the usual keys (`F` / `1`…`9` file the focused frame); click **Collapse** (or `Esc`) to fold it back.
 - **Category grids** with thumbnails; click any thumbnail to jump back to that photo in the browser. When viewing a category photo full-screen, **Show in All Photos** (top bar, or press `A`) jumps to where it sits in the full library.
 - **Toast feedback** on every Favourites toggle so you can never silently lose a selection.
 - **Export TXT** — write a category's photos as relative paths, one per line, UTF-8.
@@ -77,13 +76,12 @@ For developers:
 ### Option A — Homebrew (recommended)
 
 ```sh
-brew install --cask vgupta98/tap/photo-selector
+brew install --cask vgupta98/tap/rhenium
 ```
 
 This taps the repo and installs **Rhenium.app** into `/Applications`. Update it
-later with `brew upgrade --cask photo-selector`, or remove it with
-`brew uninstall --cask photo-selector`. (The cask keeps its original
-`photo-selector` token even though the app is now Rhenium.)
+later with `brew upgrade --cask rhenium`, or remove it with
+`brew uninstall --cask rhenium`.
 
 Because the app isn't notarised by Apple, macOS Gatekeeper blocks it on the first
 launch. Homebrew prints the fix in its caveats — clear the quarantine flag once:
@@ -96,7 +94,7 @@ or right-click the app in Finder and choose **Open**. You only need to do this o
 
 ### Option B — Download the DMG
 
-1. Download `Rhenium-1.0.0.dmg` from the [Releases](https://github.com/vgupta98/photo-selector/releases) page (or build it yourself — see below).
+1. Download `Rhenium-1.0.0.dmg` from the [Releases](https://github.com/vgupta98/rhenium/releases) page (or build it yourself — see below).
 2. Open the DMG and drag **Rhenium.app** to `/Applications`.
 3. **First launch — get past the Gatekeeper warning.** The app is not notarised by Apple, so on the very first launch macOS will show a dialog like *"Apple could not verify 'Rhenium' is free of malware…"*. To allow it:
    1. Click **Done** to dismiss the dialog.
@@ -106,6 +104,12 @@ or right-click the app in Finder and choose **Open**. You only need to do this o
    5. Double-click the app again — this time it launches normally. You only need to do this once.
 
 Then, with either option: launch Rhenium, click **"Choose folder…"**, point it at your photo root, wait for the scan, then start browsing.
+
+### Updating
+
+Rhenium checks for a new version on launch and shows an in-app banner when one is available — click **Download** to get the latest DMG (or **Skip** / **Later** to dismiss it). The check reads a small public file and sends nothing about you.
+
+Installed via Homebrew? Update with `brew upgrade --cask rhenium` instead; the in-app banner stays out of Homebrew's way.
 
 ### Keyboard shortcuts
 
@@ -135,8 +139,8 @@ The **library rail** down the left lists every scope — All Photos, Favourites,
 ## Build from source
 
 ```bash
-git clone https://github.com/vgupta98/photo-selector.git
-cd photo-selector
+git clone https://github.com/vgupta98/rhenium.git
+cd rhenium
 
 # Run directly
 ./gradlew run

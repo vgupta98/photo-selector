@@ -240,13 +240,13 @@ fun GridScreen(
     onTileClick: (index: Int) -> Unit,
     onChangeFolder: () -> Unit,
     onBack: (() -> Unit)?,
-    onSetFocusedIndex: (Int) -> Unit,
+    onSetFocusedIndex: (TileIndex) -> Unit,
     onToggleMembershipAtFocus: () -> Unit,
     onToggleCustomCategoryAtFocus: (slot: Int) -> Unit,
     onExportTxt: () -> Unit,
     onCopyToFolder: (ConflictPolicy) -> Unit,
     onDismissToast: () -> Unit,
-    onFirstVisibleItemChanged: (Int) -> Unit = {},
+    onFirstVisibleItemChanged: (FlatIndex) -> Unit = {},
     onSelectGroupingMode: (GroupingMode) -> Unit = {},
     onToggleBurstExpansion: (PhotoId) -> Unit = {},
     onCollapseBurst: () -> Unit = {},
@@ -258,8 +258,8 @@ fun GridScreen(
     groupingNotice: String? = null,
     // Multi-select plumbing. Defaulted so the stateless screen can be hosted (tests, previews)
     // without wiring selection — a grid with no selection handlers simply never selects.
-    onToggleSelection: (Int) -> Unit = {},
-    onSelectRange: (Int) -> Unit = {},
+    onToggleSelection: (TileIndex) -> Unit = {},
+    onSelectRange: (TileIndex) -> Unit = {},
     onSelectAll: () -> Unit = {},
     onClearSelection: () -> Unit = {},
     onFileSelectionIntoFavourites: () -> Unit = {},
@@ -294,14 +294,14 @@ fun GridScreen(
     // the grid's own tile index.
     val tileFlatStart = remember(tiles) {
         var acc = 0
-        tiles.map { group -> acc.also { acc += group.photos.size } }
+        tiles.map { group -> FlatIndex(acc).also { acc += group.photos.size } }
     }
     // initialScrollIndex is a FLAT photo index (which photo to reveal); convert to its tile, since a
     // burst makes the two diverge. Grouping settles asynchronously, so a later effect re-anchors.
     // Prefer the host-retained scroll state (so a warm return keeps the exact position); fall back to
     // a self-owned one seeded from initialScrollIndex for the stateless hosting that has no retention.
     val ownGridState = rememberLazyGridState(
-        initialFirstVisibleItemIndex = tileIndexForFlat(tileFlatStart, initialScrollIndex),
+        initialFirstVisibleItemIndex = tileIndexForFlat(tileFlatStart, FlatIndex(initialScrollIndex)).value,
     )
     val gridState = retainedGridState ?: ownGridState
     // What we hand back to the browser / Compare / Survey / persistence is a FLAT photo index, so no
@@ -337,11 +337,11 @@ fun GridScreen(
     // tileFlatStart only change on a regroup/expansion, which is exactly when the resolver *should*
     // be rebuilt - so key on them (and the two stable callbacks) and the onClick identity holds steady
     // through the hot path.
-    val openTile: (Int) -> Unit = remember(tiles, tileFlatStart, onTileClick, onToggleBurstExpansion) {
+    val openTile: (TileIndex) -> Unit = remember(tiles, tileFlatStart, onTileClick, onToggleBurstExpansion) {
         open@{ tileIndex ->
             val group = tiles.getOrNull(tileIndex) ?: return@open
             when (group) {
-                is PhotoGroup.Single -> onTileClick(tileFlatStart[tileIndex])
+                is PhotoGroup.Single -> onTileClick(tileFlatStart[tileIndex.value].value)
                 is PhotoGroup.Burst -> onToggleBurstExpansion(group.groupId)
             }
         }
@@ -353,12 +353,12 @@ fun GridScreen(
     // index on the nav wire). Any size opens: Inspect itself shows a long burst (past the grid cap) in
     // browse mode rather than declining. Remembered like [openTile] so the hover CTA and the
     // focused-group `C` share one stable resolver and the tiles keep skipping.
-    val openReview: (Int) -> Unit =
+    val openReview: (TileIndex) -> Unit =
         remember(tiles, tileFlatStart, renderItems, gridState, onInspectSelection) {
             review@{ tileIndex ->
                 val group = tiles.getOrNull(tileIndex) as? PhotoGroup.Burst ?: return@review
-                val start = tileFlatStart[tileIndex]
-                onInspectSelection((start until start + group.photos.size).toList(), firstVisibleFlat())
+                val start = tileFlatStart[tileIndex.value].value
+                onInspectSelection((start until start + group.photos.size).toList(), firstVisibleFlat().value)
             }
         }
 
@@ -387,13 +387,13 @@ fun GridScreen(
     val anchor = rememberGridViewportAnchor(
         gridState = gridState,
         initialAnchor = if (anchorInitialScroll) state.photos.getOrNull(initialScrollIndex)?.id else null,
-        coldFlatFallback = initialScrollIndex.takeIf { anchorInitialScroll },
+        coldFlatFallback = FlatIndex(initialScrollIndex).takeIf { anchorInitialScroll },
         revealPhotoId = revealPhotoId.takeIf { !anchorInitialScroll },
     )
     // Moves the keyboard cursor: tells the anchor the user took the viewport over (releases the re-pin) and,
     // on an actual change, arms the focus-into-view scroll. The no-op-at-edge guard lives here because the
     // change is relative to the current focus; the holder owns the flag and the scroll itself.
-    val moveFocus: (Int) -> Unit = { target ->
+    val moveFocus: (TileIndex) -> Unit = { target ->
         anchor.onCursorMove(focusChanged = target != state.focusedIndex)
         onSetFocusedIndex(target)
     }
@@ -492,7 +492,7 @@ fun GridScreen(
                 // with a 2+ selection. A large selection isn't declined — Inspect opens it browse-only.
                 if (!meta && event.key == Key.C && state.selection.size >= 2) {
                     val indices = state.photos.indices.filter { state.photos[it].id in state.selection }
-                    onInspectSelection(indices, firstVisibleFlat())
+                    onInspectSelection(indices, firstVisibleFlat().value)
                     return@onPreviewKeyEvent true
                 }
                 // C with no multi-select but a collapsed group focused: review that group's run with
@@ -514,11 +514,11 @@ fun GridScreen(
                 }
                 val isArrow = event.key == Key.DirectionLeft || event.key == Key.DirectionRight ||
                     event.key == Key.DirectionUp || event.key == Key.DirectionDown
-                if (isArrow && state.focusedIndex < 0 && maxIndex >= 0) {
+                if (isArrow && !state.focusedIndex.isSet && maxIndex >= 0) {
                     // Seed focus on the first visible TILE. firstVisibleItemIndex is render-item space
                     // (header/footer included when a burst is open), so map it into tile space first.
-                    val seed = tileDisplayIndexForRenderItem(renderItems, gridState.firstVisibleItemIndex) ?: 0
-                    moveFocus(seed.coerceIn(0, maxIndex))
+                    val seed = tileDisplayIndexForRenderItem(renderItems, gridState.firstVisibleItemIndex)?.value ?: 0
+                    moveFocus(TileIndex(seed.coerceIn(0, maxIndex)))
                     return@onPreviewKeyEvent true
                 }
                 // Bare 1..9 files into the Nth custom category: the whole selection when one is
@@ -528,18 +528,18 @@ fun GridScreen(
                 if (slot != null) {
                     if (hasSelection) {
                         onFileSelectionIntoCustom(slot)
-                    } else if (state.focusedIndex in 0..maxIndex) {
+                    } else if (state.focusedIndex.value in 0..maxIndex) {
                         onToggleCustomCategoryAtFocus(slot)
                     }
                     return@onPreviewKeyEvent true
                 }
                 when (event.key) {
                     Key.DirectionLeft -> {
-                        moveFocus((state.focusedIndex - 1).coerceAtLeast(0))
+                        moveFocus(TileIndex((state.focusedIndex.value - 1).coerceAtLeast(0)))
                         true
                     }
                     Key.DirectionRight -> {
-                        moveFocus((state.focusedIndex + 1).coerceAtMost(maxIndex))
+                        moveFocus(TileIndex((state.focusedIndex.value + 1).coerceAtMost(maxIndex)))
                         true
                     }
                     Key.DirectionUp -> {
@@ -551,7 +551,7 @@ fun GridScreen(
                         true
                     }
                     Key.Enter -> {
-                        if (state.focusedIndex in 0..maxIndex) {
+                        if (state.focusedIndex.value in 0..maxIndex) {
                             openTile(state.focusedIndex)
                         }
                         true
@@ -608,6 +608,9 @@ fun GridScreen(
                 onCopyToFolder = onCopyToFolder,
                 groupingMode = state.groupingMode,
                 onSelectGroupingMode = onSelectGroupingModeAnchored,
+                similarityProgress = state.similarityProgress
+                    ?.takeIf { it.total > 0 }
+                    ?.let { it.processed.toFloat() / it.total },
             )
         }
 
@@ -617,19 +620,19 @@ fun GridScreen(
 
         // Non-blocking determinate progress while a grouping lens computes. Unlike the busy bar above
         // it doesn't lock the toolbar — the user can keep scrolling the singles grid while the model
-        // works. The cold Similarity pass is a ~minute-long on-device run, so it gets the framing
-        // banner (what's happening + the privacy line); the Time regroup is sub-second and never earns
-        // it, so it stays the bare bar.
+        // works. Two independent sources: the inline Time regroup (sub-second, the bare bar) reads
+        // [grouping]; the background Similarity pass reads [similarityProgress]. The Similarity pass is
+        // a ~minute-long on-device run, so it gets the framing banner (what's happening + the privacy
+        // line) while it is the displayed lens; in any other lens its progress shows only on the tab.
         state.grouping?.takeIf { it.total > 0 }?.let { g ->
-            if (state.groupingMode == GroupingMode.Similarity) {
-                GroupingProgressBanner(processed = g.processed, total = g.total)
-            } else {
-                BusyBar(
-                    label = "Grouping ${g.processed} / ${g.total}",
-                    progress = g.processed.toFloat() / g.total,
-                )
-            }
+            BusyBar(
+                label = "Grouping ${g.processed} / ${g.total}",
+                progress = g.processed.toFloat() / g.total,
+            )
         }
+        state.similarityProgress
+            ?.takeIf { it.total > 0 && state.groupingMode == GroupingMode.Similarity }
+            ?.let { g -> GroupingProgressBanner(processed = g.processed, total = g.total) }
 
         // First-run callout for the Similarity lens — a dismissible card under the toolbar (near the
         // lens toggle), not a modal: the user can ignore it and keep culling. Shown once, then never.
@@ -1109,10 +1112,10 @@ private fun categoryBadgesFor(
 // tile's first flat index, ascending - is binary-searchable: an exact hit is that tile,
 // otherwise the insertion point minus one is the tile whose run straddles the index.
 // The grid is the sole translator between flat photo space and its own tile space.
-internal fun tileIndexForFlat(tileFlatStart: List<Int>, flatIndex: Int): Int {
-    if (tileFlatStart.isEmpty()) return 0
-    val i = tileFlatStart.binarySearch(flatIndex)
-    return if (i >= 0) i else (-i - 2).coerceIn(0, tileFlatStart.lastIndex)
+internal fun tileIndexForFlat(tileFlatStart: List<FlatIndex>, flatIndex: FlatIndex): TileIndex {
+    if (tileFlatStart.isEmpty()) return TileIndex(0)
+    val i = tileFlatStart.binarySearch { it.value.compareTo(flatIndex.value) }
+    return if (i >= 0) TileIndex(i) else TileIndex((-i - 2).coerceIn(0, tileFlatStart.lastIndex))
 }
 
 /**
@@ -1130,10 +1133,10 @@ internal fun tileIndexForFlat(tileFlatStart: List<Int>, flatIndex: Int): Int {
 private fun verticalNavTarget(
     gridState: LazyGridState,
     renderItems: List<GridRenderItem>,
-    focusedIndex: Int,
+    focusedIndex: TileIndex,
     maxIndex: Int,
     down: Boolean,
-): Int {
+): TileIndex {
     // The laid-out tile cells (headers/footers excluded), mapped to the tile index space.
     val tilePositions = gridState.layoutInfo.visibleItemsInfo.mapNotNull { info ->
         (renderItems.getOrNull(info.index) as? GridRenderItem.Tile)
@@ -1144,8 +1147,8 @@ private fun verticalNavTarget(
     // a row so the focus effect can scroll a fresh target into view. Clamps to a no-op at the very
     // top/bottom.
     val columns = computeColumnCount(gridState)
-    return if (down) (focusedIndex + columns).coerceAtMost(maxIndex)
-    else (focusedIndex - columns).coerceAtLeast(0)
+    return if (down) TileIndex((focusedIndex.value + columns).coerceAtMost(maxIndex))
+    else TileIndex((focusedIndex.value - columns).coerceAtLeast(0))
 }
 
 // The grid's column count, read from the *widest* laid-out row so a full-width burst header/footer

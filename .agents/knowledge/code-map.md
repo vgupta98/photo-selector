@@ -33,8 +33,15 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   `ExportPhotosTxtUseCase`, `MovePhotosToTrashUseCase`.
 - `grouping/` — the grouping seam: `PhotoGrouper` (an interface with one suspend
   `group(...)` method), `BurstGrouper` (object; time + camera), `SimilarityGrouper`
-  (object; visual), `CaptureMetadata` + `CaptureMetadataSource`.
+  (object; visual — `ThresholdRule` seam, `Adaptive` per-event cut is the default,
+  `fixed()` the legacy constant floor; plus a `JoinRule` seam, `timeBoosted`
+  default adds same-moment frames via the capture-time gap, `VisualOnly` the
+  no-time fallback), `CaptureMetadata` + `CaptureMetadataSource`.
 - `format/` — `PhotoDecoder`, `PhotoFormat`, `PhotoFormatRegistry` interfaces.
+- `update/` — the notify-only update checker: `AppVersion` (tolerant SemVer +
+  `rolloutBucket`), `UpdateManifest`/`UpdateStatus`, the `UpdateRepository` seam, and
+  `CheckForUpdateUseCase` (pure eligibility: newer / OS floor / staged-rollout wave /
+  mandatory floor).
 
 ## data/ — implementations
 
@@ -46,17 +53,24 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 - `image/` — decode + cache: `SkikoImageLoader`, `ImageLoader`/`ImageCache`,
   `DiskThumbnailCache`.
 - `format/` — per-format decoders (`JpegDecoder`, `PngDecoder`, `HeicDecoder`,
-  `RawDecoder`), `DefaultPhotoFormatRegistry`, `SkiaImageDecoding`; `ExifReader`
-  (JPEG-only) backs `ExifCaptureMetadataSource`, memoised by
-  `CachingCaptureMetadataSource`.
-- `format/macos/` — `MacImageIO` (JNA→ImageIO bridge for HEIC *and* RAW; macOS only).
+  `RawDecoder`), `DefaultPhotoFormatRegistry`, `SkiaImageDecoding`. Capture
+  metadata (time + camera) is read per-format and chained: `ExifReader`
+  (JPEG-only) backs `ExifCaptureMetadataSource`; `HeicCaptureMetadataSource`
+  reads HEIC via `MacImageIO`; `CompositeCaptureMetadataSource` returns the first
+  non-NONE; `CachingCaptureMetadataSource` memoises the lot. Raw→domain shaping is
+  shared in `ExifCaptureMetadataSource.kt` (`toCaptureMetadata`).
+- `format/macos/` — `MacImageIO` (JNA→ImageIO bridge: decodes HEIC *and* RAW, and
+  reads HEIC capture metadata via `CGImageSourceCopyPropertiesAtIndex`; macOS only).
 - `ai/` — similarity pipeline: `EmbeddingModel` seam → `OnnxEmbeddingModel`
   (default) / `DownscaleGrayEmbeddingModel` (fallback), `GrayBuffer`,
   `SharpnessScorer`, `PhotoFeatureExtractor` (+ `PhotoFeatures`), `EmbeddingCache`,
   `SimilarityPhotoGrouper` (adapter onto `PhotoGrouper`); `GroupingResultCache` +
   `CachingPhotoGrouper` (memoize the computed grouping so lens re-entry is instant).
-- `prefs/` — `JsonAppPreferences` (global one-off flags, e.g. the first-run
-  Similarity coachmark "seen" bit; one small JSON via `AtomicJsonWriter`).
+- `prefs/` — `JsonAppPreferences` (global one-off flags: the first-run Similarity
+  coachmark "seen" bit, plus the update checker's opt-out / skipped-version / stable
+  rollout install-id; one small JSON via `AtomicJsonWriter`).
+- `update/` — `UpdateManifestDto` (feed JSON shape) + `HttpUpdateRepository` (the app's
+  only outbound call: a JDK-`HttpClient` GET of the hosted manifest; every failure → null).
 - `export/` — `CopyPhotoExporter`, `TxtPhotoExporter`, `CompositePhotoExporter`.
 - `trash/` — `DesktopPhotoTrash` (move-to-Trash via AWT Desktop).
 - `io/` — `AtomicJsonWriter` (shared atomic JSON write; categories + browse).
@@ -75,7 +89,9 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   owns create/rename/delete — see organism `LibraryRail`),
   `GridDisplayModel` (top-level tile-index *helpers*, not a class —
   `displayGroupsFor`/`buildRenderItems` explode the open burst into per-frame
-  tiles, plus `renderIndexForTile` etc.), `GridViewportAnchor` (scroll anchoring).
+  tiles, plus `renderIndexForTile` etc.), `GridViewportAnchor` (scroll anchoring),
+  `GridIndex` (the `FlatIndex` / `TileIndex` value classes that make the
+  flat-vs-tile distinction a compile error).
 - `browser/` — `BrowserScreen` + `…ViewModel`, `ZoomableImage`, `ZoomState`.
   Reused inside Inspect's browse mode (`embedded`, `onSwitchToGrid`).
 - `inspect/` — `InspectScreen` + `InspectViewModel`: one fixed photo set viewed
@@ -83,9 +99,14 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   `survey/` and `browser/` view models as its two facets.
 - `survey/` — `SurveyScreen` + `…ViewModel`: Inspect's overview-grid facet
   (fit-to-cell pick, no zoom).
+- `update/` — `UpdateViewModel`: app-lifetime, notify-only. Runs one launch check, applies
+  the user's skipped-version choice, and turns banner actions into a browser open. Mounted by
+  `App` as a bottom-end overlay (`UpdateAvailableBanner`).
 - `common/` — non-UI plumbing: `NativeFileDialogs`, `MacSystemActions` /
   `SystemActions`, `CategoryHotkeys`, `CategoryToggle`, `GroupingMode`,
-  `HoverOverlay`, `PlatformLabels`.
+  `GroupingCoordinator` (owns the one background Similarity pass, decoupled from
+  any grid's displayed lens — survives lens switches and navigation; exposes a
+  `progress` flow for the off-grid hint), `HoverOverlay`, `PlatformLabels`.
 
 ## presentation/designsystem/ — Atomic Design
 
@@ -93,8 +114,12 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   three only); `AppTypography`/`AppShapes` go via `MaterialTheme`. Files:
   `Color`, `Spacing`, `Dimens`, `Type`, `Shape`.
 - `atom/` — `Buttons`, `FavouriteStar`, `LoadingIndicator`.
-- `molecule/` — incl. `GroupingModeToggle` (lens segments + hover tooltips),
-  `GroupingProgressBanner` (cold-pass framing), `SimilarityCoachmark` (first-run
+- `molecule/` — incl. `GroupingModeToggle` (lens segments + hover tooltips; the
+  Similar segment carries a determinate ring while the background pass runs),
+  `GroupingProgressBanner` (cold-pass framing), `BackgroundGroupingChip` (the
+  off-grid "still grouping" pill, composed from `PillToast`),
+  `UpdateAvailableBanner` (the bottom-end "new version ready" card; notify-only),
+  `SimilarityCoachmark` (first-run
   callout), `BurstExpandedHeader`/`Footer`, the `*KeyboardLegend` set,
   `CategoryActionsMenu`, `ExportMenu` (txt + copy-to-folder, the
   exporter plugin-headroom slot), `ConflictPolicyButton`, `PillToast`,
@@ -111,7 +136,7 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 | --- | --- |
 | Grid focus / selection / keyboard filing | `grid/GridViewModel.kt`, `grid/GridDisplayModel.kt` |
 | Burst expand-in-place behaviour | `grid/GridViewModel.kt` (`expandedBurstId` state), `grid/GridDisplayModel.kt` (`displayGroupsFor`/`buildRenderItems`), molecule `BurstExpanded*` |
-| Grouping lens (Off / Time / Similarity) | `domain/grouping/`, `data/ai/SimilarityPhotoGrouper.kt`, `grid/GridViewModel.kt` |
+| Grouping lens (Off / Time / Similarity) | `domain/grouping/`, `data/ai/SimilarityPhotoGrouper.kt`, `grid/GridViewModel.kt`, `presentation/common/GroupingCoordinator.kt` (background Similarity), `App.kt` (off-grid hint) |
 | Scroll position / index translation | `grid/GridScreen.kt` (`tileIndexForFlat`), `grid/GridViewportAnchor.kt`, `grid/GridDisplayModel.kt`, `data/browse/` |
 | Categories / Favourites | `data/categories/`, `domain/repository/CategoriesRepository.kt`, `common/CategoryHotkeys.kt`, `designsystem/organism/LibraryRail.kt` |
 | Grid chrome (rail / top bar / collapse) | `designsystem/organism/LibraryRail.kt`, `grid/LibraryRailViewModel.kt`, `designsystem/organism/GridTopBar.kt`, `grid/GridScreen.kt`, `App.kt` (rail mounted beside the grid, `railCollapsed`) |
@@ -121,6 +146,7 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 | Inspect (grid + browse toggle) | `presentation/inspect/`, `presentation/survey/`, `presentation/browser/` |
 | Adding a screen | `presentation/navigation/Screen.kt`, `App.kt`, `di/AppContainer.kt` |
 | Theming / new shared component | `presentation/designsystem/` (theme → atom → molecule → organism) |
+| Auto-update (notify-only) check | `domain/update/`, `data/update/`, `presentation/update/UpdateViewModel.kt`, `App.kt` (banner overlay), `di/AppContainer.kt` (wiring + Homebrew mute), `build.gradle.kts` (`generateBuildConfig`), `.github/workflows/release.yml` (feed publish) |
 | Export / trash | `data/export/`, `data/trash/`, matching `domain/usecase/` |
 
 ## Key build files

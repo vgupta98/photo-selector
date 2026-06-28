@@ -27,15 +27,19 @@ Clean architecture, single Gradle module, package
   the callback reporting per-photo progress for the grid's bar): the
   pure `BurstGrouper` (time + camera, over a `CaptureMetadataSource`) and
   the pure `SimilarityGrouper` (visual, over precomputed embeddings +
-  sharpness) both feed it, so the heuristic swaps without touching the grid.
+  sharpness, with capture time as a corroborating boost) both feed it, so the
+  heuristic swaps without touching the grid.
   `PhotoGroup.Burst.keyIndex` is the representative frame — middle by default,
   the suggested-sharpest for a similarity cluster.
 - `data/` — repository implementations: `filesystem/`, `categories/`,
   `image/` (decoding), `format/` (per-format `PhotoDecoder`s; `macos/`
-  holds the JNA→ImageIO bridge that backs both `HeicDecoder` and
-  `RawDecoder` — see **Known gotchas**; `ExifReader` also backs
-  `ExifCaptureMetadataSource` — capture time + camera for burst grouping,
-  memoized per session by `CachingCaptureMetadataSource`), `ai/` (on-device
+  holds the JNA→ImageIO bridge that backs `HeicDecoder`, `RawDecoder` *and*
+  HEIC capture-metadata reads — see **Known gotchas**. Capture time + camera
+  for burst grouping come through the `CaptureMetadataSource` seam per format:
+  `ExifReader`→`ExifCaptureMetadataSource` (JPEG) and
+  `MacImageIO`→`HeicCaptureMetadataSource` (HEIC), chained by
+  `CompositeCaptureMetadataSource` and memoized per session by
+  `CachingCaptureMetadataSource`), `ai/` (on-device
   visual-similarity grouping: the `EmbeddingModel` seam — the learned
   `OnnxEmbeddingModel` (MobileNetV3-Small via ONNX Runtime, default) and the
   classical, dependency-free `DownscaleGrayEmbeddingModel` (load-failure
@@ -87,9 +91,18 @@ Clean architecture, single Gradle module, package
   sets no `returnScrollIndex` (back-out lands on the warm All Photos grid).
 - **The grid is grouping/presentation only — mind the three index spaces.** The
   toolbar's segmented control picks a lens (`GridUiState.groupingMode`: `Off |
-  Time | Similarity`, Time default); a non-`Off` mode resolves to one
-  `PhotoGrouper` and regroups off-thread behind a determinate progress bar
-  (`GridUiState.grouping`) for the cold, minute-long similarity pass. Adjacent
+  Time | Similarity`, Time default); a non-`Off` mode regroups off-thread behind
+  a determinate progress bar. **Time** regroups inline on the grid view model
+  (`GridUiState.grouping`). **Similarity** is decoupled from the displayed lens:
+  the cold, minute-long pass is owned by a folder-scoped `GroupingCoordinator`
+  (`presentation/common/`) that, once started, runs to completion across a lens
+  switch *or* navigation (its result is cached, so the work is never wasted) and
+  dies only on a root change. Its progress (`GridUiState.similarityProgress`,
+  mirrored from the coordinator) drives the always-visible cues — a determinate
+  ring on the Similar tab in any lens, the framing banner when Similarity is
+  shown, and the off-grid `BackgroundGroupingChip` overlaid by `App`. Switching
+  the lens cancels only the *display* wiring (`similarityApplyJob`), never the
+  coordinator's pass. Adjacent
   burst frames collapse into one `PhotoGroup.Burst` tile; clicking expands it in
   place (`GridDisplayModel` explodes `expandedBurstId` into per-frame tiles
   fenced by a header/footer — one burst open at a time, `Esc` peels selection →
@@ -99,7 +112,12 @@ Clean architecture, single Gradle module, package
     space, shared via `GridDisplayModel`); browser/Inspect nav and every
     persisted scroll index (`BrowsePosition.lastIndex`) stay **flat photo
     indices**. The grid is the *sole* translator (`tileIndexForFlat`) — never put
-    a tile index on the nav wire or a flat index into grid focus.
+    a tile index on the nav wire or a flat index into grid focus. These two
+    spaces are now distinct `@JvmInline value class`es (`grid/GridIndex.kt`):
+    `FlatIndex` (nav/persistence) and `TileIndex` (focus/selection), so mixing
+    them is a compile error. Conversions are deliberate `.value` / `FlatIndex(…)`
+    calls that cluster at the grid's App-facing edges; the third space — the
+    LazyGrid render-item index — stays a plain `Int`.
   - Re-anchor focus by **photo identity** on every reshape
     (`GridViewModel.refocus`), never a bare index — a regroup renumbers tiles
     under the cursor, so an index silently slides onto a different burst.
@@ -239,6 +257,17 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   classes were tried and abandoned — don't reintroduce them.
 - **`packageDmg` only runs on macOS.** CI uses `macos-latest`; locally you
   need to be on a Mac.
+- **A new JDK module must be added to the jpackage `modules(...)` list.** The
+  release bundles a trimmed jlink runtime, so code reaching an unlisted module
+  (the update checker's `HttpClient` → `java.net.http`) throws
+  `ClassNotFoundException` in the packaged app but **not** under `./gradlew run`
+  — validate against the packaged app, like the ProGuard keeps below.
+- **The update checker is notify-only, driven by a hosted feed (not an in-app
+  flag).** It GETs `update-manifest.json` from the `homebrew-tap` repo (URL in
+  the generated `BuildConfig`) and only notifies, never installs. The feed
+  decides everything — `rollout` (staged, bucketed locally from a never-sent
+  install id), `minimumVersion`, `mandatory`; pull a bad build via `rollout: 0`.
+  Homebrew installs are muted; silent install needs signing/notarization (later).
 - **The release DMG is ProGuard-minified — keep-rules are load-bearing.**
   `packageReleaseDmg` tree-shakes the whole classpath, so anything reached only
   via reflection/JNI/codegen (ONNX's native bindings, the JNA HEIC/RAW bridge,
@@ -263,22 +292,44 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   like HEIC — handed bytes, Sony ARW returns an empty source and Nikon NEF
   downgrades to its embedded thumbnail. Don't unify the two paths onto
   `decodeToBgra`.
-- **Burst grouping reads capture time from JPEG EXIF only, and never
-  falls back to mtime.** `ExifReader` is JPEG-only, so HEIC (and any
-  EXIF-less file) has no `DateTimeOriginal`. `BurstGrouper` deliberately
-  treats a frame with no readable capture time as ungroupable — it stays
-  a `Single` — rather than leaning on file mtime, because a bulk copy
-  flattens mtime and over-groups unrelated photos (the original mtime
-  fallback shipped exactly that bug). So today **HEIC never groups**;
-  the way to make it group is reading HEIC capture time (an ImageIO read,
-  the same bridge `MacImageIO` already uses), not loosening the heuristic.
-  Grouping can also be switched off or to another lens from the grid toolbar
-  (`GridUiState.groupingMode`), and is recomputed off-thread on every
-  re-slice, which is why `CachingCaptureMetadataSource` exists — keep it
-  in the wiring.
+- **Burst grouping reads capture time from EXIF/ImageIO, and never falls
+  back to mtime.** `BurstGrouper` deliberately treats a frame with no
+  readable capture time as ungroupable — it stays a `Single` — rather than
+  leaning on file mtime, because a bulk copy flattens mtime and over-groups
+  unrelated photos (the original mtime fallback shipped exactly that bug). So
+  any EXIF-less file (a PNG, a stripped JPEG) never groups; do **not** add an
+  mtime fallback to fix it. Capture time is read per-format behind the
+  `CaptureMetadataSource` seam: JPEG via the JVM `ExifReader` (`ExifReader` is
+  JPEG-only), HEIC via the macOS ImageIO bridge
+  (`HeicCaptureMetadataSource` → `MacImageIO.readCaptureInfo`, the same bridge
+  that decodes HEIC pixels), chained by `CompositeCaptureMetadataSource`
+  (first non-NONE). So HEIC **does** group on macOS now; off macOS (no bridge)
+  it has no capture time and stays ungroupable. A future Windows reader slots
+  into the composite the same way. Grouping can also be switched off or to
+  another lens from the grid toolbar (`GridUiState.groupingMode`), and is
+  recomputed off-thread on every re-slice, which is why
+  `CachingCaptureMetadataSource` exists — keep it in the wiring.
 - **Similarity grouping merges only *adjacent* frames and never crosses a folder
   boundary** (same contiguity rule as `BurstGrouper`; the expand-in-place burst
-  UI fences a contiguous run, and a folder is an event boundary). Per-photo
+  UI fences a contiguous run, and a folder is an event boundary). The cosine cut
+  is **adaptive per event, not a fixed floor**: `SimilarityGrouper` derives each
+  contiguous folder-run's threshold from that run's own adjacent-pair cosine
+  distribution (`Adaptive` = run median + 0.07, clamped to [0.78, 0.95]) behind a
+  `ThresholdRule` seam (`fixed()` keeps the old constant floor for the eval sweep
+  and unit tests). Measured on a labelled real-wedding set: F1 0.61 -> 0.70, better precision
+  *and* recall; unsupervised (it reads only the run's cosine spread, never the
+  labels). **Capture time is also used, as corroborating evidence** behind a
+  second seam, `JoinRule`: the shipped `timeBoosted` rule joins two adjacent frames
+  when the cosine clears the cut *or* they were taken within ~3s and clear a relaxed
+  0.65 floor — recovering same-moment bursts whose embedding drifted (a framing/zoom
+  shift) that the visual cut alone split. The 3s window is deliberately tight: a
+  wider one over-merges "clean" events the cosine already handles (it *regressed*
+  them in leave-one-event-out validation across the 4 event folders), so the boost
+  only fires on genuine rapid bursts. A frame with no EXIF time (HEIC, EXIF-less)
+  has a null gap and falls back to visual-only, so time can only ever *add* a join,
+  never block one. `SimilarityPhotoGrouper` reads the time from the same memoized
+  `CaptureMetadataSource` the Time lens uses. `VisualOnly` is the seam's no-time
+  default (the pure grouper stays usable without a clock). Per-photo
   embeddings + sharpness are cached to disk (`EmbeddingCache`, keyed by content +
   model id, invalidated on source edit or model swap). The *grouping result* is
   also memoized — `GroupingResultCache`, wrapped around the grouper by
@@ -286,7 +337,10 @@ recovering a half-finished run — are in `.agents/knowledge/release.md`.
   an unchanged folder is instant rather than re-running the pass; it stores only
   the lightweight group structure (frame ids + key frame), is content+model-id
   keyed exactly like the embedding cache, and a cancelled pass is never written.
-  Bump its `FORMAT_VERSION` if the stored shape changes. The shipped embedder is `OnnxEmbeddingModel` — a
+  Bump its `FORMAT_VERSION` if the stored shape **or the grouping algorithm**
+  changes — the cache holds the algorithm's *output*, so a logic change (e.g. the
+  adaptive-threshold switch took it to v3, the capture-time boost to v4) must
+  invalidate it or stale groupings get served. The shipped embedder is `OnnxEmbeddingModel` — a
   MobileNetV3-Small backbone (classifier stripped) bundled at
   `src/main/resources/models/mobilenetv3-small.onnx` (~6 MB); `dimensions` (1024)
   is probed from the graph at load, so a model swap needs no caller change.

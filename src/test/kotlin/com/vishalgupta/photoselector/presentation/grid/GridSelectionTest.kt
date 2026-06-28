@@ -21,6 +21,7 @@ import com.vishalgupta.photoselector.domain.repository.TrashReport
 import com.vishalgupta.photoselector.domain.usecase.CopyPhotosToFolderUseCase
 import com.vishalgupta.photoselector.domain.usecase.ExportPhotosTxtUseCase
 import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
+import com.vishalgupta.photoselector.presentation.common.GroupingCoordinator
 import com.vishalgupta.photoselector.presentation.common.GroupingMode
 import com.vishalgupta.photoselector.presentation.navigation.CategoryScope
 import com.vishalgupta.photoselector.testing.FakeCategoriesRepository
@@ -38,6 +39,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -155,7 +157,12 @@ class GridSelectionTest {
         moveToTrash = MovePhotosToTrashUseCase(trash),
         imageLoader = noOpImageLoader,
         captureMetadataSource = metadata,
-        similarityGrouper = similarityGrouper,
+        // Wrap the fake grouper in a coordinator on the same test dispatcher so the background
+        // Similarity pass runs in virtual time and settles under advanceUntilIdle, just like the
+        // inline regroup. Null grouper -> null coordinator (Similarity degrades to singles).
+        groupingCoordinator = similarityGrouper?.let {
+            GroupingCoordinator(it, parentJob = null, dispatcher = dispatcher ?: Dispatchers.IO)
+        },
         initialGroupingMode = initialGroupingMode,
         hasSeenSimilarityCoachmark = hasSeenSimilarityCoachmark,
         onSimilarityCoachmarkSeen = onSimilarityCoachmarkSeen,
@@ -175,11 +182,11 @@ class GridSelectionTest {
         val vm = viewModel(FakeCategoriesRepository(categories), dispatcher = StandardTestDispatcher(testScheduler))
         advanceUntilIdle()
 
-        vm.toggleSelection(2)
+        vm.toggleSelection(TileIndex(2))
         assertEquals(setOf(photos[2].id), vm.state.value.selection)
-        assertEquals(2, vm.state.value.anchorIndex)
+        assertEquals(TileIndex(2), vm.state.value.anchorIndex)
 
-        vm.toggleSelection(2)
+        vm.toggleSelection(TileIndex(2))
         assertTrue(vm.state.value.selection.isEmpty())
 
         vm.onClear()
@@ -190,11 +197,11 @@ class GridSelectionTest {
         // Off keeps one tile per photo, so a tile index equals a photo index here.
         val vm = viewModel(FakeCategoriesRepository(categories), initialGroupingMode = GroupingMode.Off, dispatcher = StandardTestDispatcher(testScheduler))
         advanceUntilIdle()
-        vm.setFocusedIndex(1) // a ring is showing at tile 1
+        vm.setFocusedIndex(TileIndex(1)) // a ring is showing at tile 1
 
         vm.setLastViewed(photos[4].id) // returned from the viewer on p4
 
-        assertEquals("the ring follows the mouse-driven open to p4", 4, vm.state.value.focusedIndex)
+        assertEquals("the ring follows the mouse-driven open to p4", TileIndex(4), vm.state.value.focusedIndex)
         assertEquals(photos[4].id, vm.state.value.lastViewedPhotoId)
         vm.onClear()
     }
@@ -206,7 +213,7 @@ class GridSelectionTest {
 
         vm.setLastViewed(photos[4].id)
 
-        assertEquals("no ring present, so none is spawned", -1, vm.state.value.focusedIndex)
+        assertEquals("no ring present, so none is spawned", TileIndex(-1), vm.state.value.focusedIndex)
         assertEquals("the underline marker still moves", photos[4].id, vm.state.value.lastViewedPhotoId)
         vm.onClear()
     }
@@ -216,12 +223,12 @@ class GridSelectionTest {
         val vm = viewModel(FakeCategoriesRepository(categories), dispatcher = StandardTestDispatcher(testScheduler))
         advanceUntilIdle()
 
-        vm.toggleSelection(1)   // anchor = 1
-        vm.selectRange(4)       // 1..4 inclusive
+        vm.toggleSelection(TileIndex(1))   // anchor = 1
+        vm.selectRange(TileIndex(4))       // 1..4 inclusive
         assertEquals(setOf(photos[1].id, photos[2].id, photos[3].id, photos[4].id), vm.state.value.selection)
         // Anchor is unchanged, so a second shift-click re-derives the run from the same pivot.
-        assertEquals(1, vm.state.value.anchorIndex)
-        vm.selectRange(0)       // 0..1
+        assertEquals(TileIndex(1), vm.state.value.anchorIndex)
+        vm.selectRange(TileIndex(0))       // 0..1
         assertEquals(setOf(photos[0].id, photos[1].id), vm.state.value.selection)
 
         vm.onClear()
@@ -302,7 +309,7 @@ class GridSelectionTest {
         val burstId = vm.state.value.groups.single().groupId
 
         // Collapsed: F at the burst tile files all six frames in one additive batch (addMemberships).
-        vm.setFocusedIndex(0)
+        vm.setFocusedIndex(TileIndex(0))
         vm.toggleMembershipAtFocus()
         advanceUntilIdle()
         assertEquals(Category.FAVOURITES_ID, repo.addCalls.single().first)
@@ -313,10 +320,10 @@ class GridSelectionTest {
         vm.toggleBurstExpansion(burstId)
         assertEquals(burstId, vm.state.value.expandedBurstId)
         assertEquals(photos.size, vm.state.value.displayGroups.size)
-        assertEquals(photos.size / 2, vm.state.value.focusedIndex)
+        assertEquals(TileIndex(photos.size / 2), vm.state.value.focusedIndex)
 
         // Expanded: filing the 3rd frame into "Selects" toggles exactly that one photo (not a batch).
-        vm.setFocusedIndex(2)
+        vm.setFocusedIndex(TileIndex(2))
         vm.toggleCustomCategoryAtFocus(0) // slot 0 == "Selects"
         advanceUntilIdle()
         assertEquals(selectsId to photos[2].id, repo.toggleCalls.single())
@@ -340,14 +347,14 @@ class GridSelectionTest {
         // Expand and arrow onto a later frame, away from the burst's leading edge.
         vm.toggleBurstExpansion(burstId)
         assertEquals(burstId, vm.state.value.expandedBurstId)
-        vm.setFocusedIndex(3) // p3, deep inside the unfolded run
+        vm.setFocusedIndex(TileIndex(3)) // p3, deep inside the unfolded run
 
         // Collapsing returns focus to the burst tile (index 1), not whatever now sits at the old
         // index - symmetric with expansion jumping focus to the first frame.
         vm.collapseBurst()
         assertNull(vm.state.value.expandedBurstId)
         assertEquals(3, vm.state.value.displayGroups.size)
-        assertEquals(1, vm.state.value.focusedIndex)
+        assertEquals(TileIndex(1), vm.state.value.focusedIndex)
         assertEquals(burstId, vm.state.value.displayGroups[1].groupId)
 
         vm.onClear()
@@ -378,13 +385,60 @@ class GridSelectionTest {
         vm.toggleBurstExpansion(burstId)
         assertEquals(burstId, vm.state.value.expandedBurstId)
         assertEquals(photos.size, vm.state.value.displayGroups.size)
-        assertEquals(suggested, vm.state.value.focusedIndex)
+        assertEquals(TileIndex(suggested), vm.state.value.focusedIndex)
 
         // F immediately after expand files exactly the suggested frame (one toggle, not a batch).
         vm.toggleMembershipAtFocus()
         advanceUntilIdle()
         assertEquals(Category.FAVOURITES_ID to photos[suggested].id, repo.toggleCalls.single())
 
+        vm.onClear()
+    }
+
+    @Test
+    fun similarityPass_keepsRunningAcrossALensSwitchAndIsReusedOnReturn() = runTest {
+        // The bug this guards: switching the lens off Similarity used to cancel the in-flight pass. Now
+        // the GroupingCoordinator owns it, so it survives a detour through Time (and a return) as ONE
+        // pass. A gate keeps group() suspended so we can switch lenses while it is mid-flight; the call
+        // counter proves it is neither cancelled (which would force a fresh call on return) nor restarted.
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val calls = java.util.concurrent.atomic.AtomicInteger(0)
+        val similarity = object : PhotoGrouper {
+            override suspend fun group(photos: List<Photo>, onProgress: GroupingProgress): List<PhotoGroup> {
+                calls.incrementAndGet()
+                gate.await()
+                return listOf(PhotoGroup.Burst(photos))
+            }
+        }
+        val vm = viewModel(
+            FakeCategoriesRepository(categories),
+            similarityGrouper = similarity,
+            initialGroupingMode = GroupingMode.Similarity,
+            dispatcher = StandardTestDispatcher(testScheduler),
+        )
+        advanceUntilIdle()
+        // The pass is running (one call, gated) and reporting progress for the always-visible cues.
+        assertEquals(1, calls.get())
+        assertNotNull("the running pass reports progress", vm.state.value.similarityProgress)
+        assertEquals(photos.size, vm.state.value.groups.size) // still singles: group() hasn't returned
+
+        // Detour through Time: the displayed lens changes, but the background pass must not be cancelled.
+        vm.setGroupingMode(GroupingMode.Time)
+        advanceUntilIdle()
+        assertEquals("switching lens must not restart or cancel the pass", 1, calls.get())
+        assertNotNull("the pass keeps reporting while another lens is shown", vm.state.value.similarityProgress)
+
+        // Return to Similarity: re-attaches to the SAME in-flight pass rather than starting another.
+        vm.setGroupingMode(GroupingMode.Similarity)
+        advanceUntilIdle()
+        assertEquals("returning to the lens re-attaches, not re-runs", 1, calls.get())
+
+        // Let the one pass finish: its groups land and the progress cue clears.
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(1, vm.state.value.groups.size) // the single burst
+        assertNull("progress clears when the pass completes", vm.state.value.similarityProgress)
+        assertEquals(1, calls.get())
         vm.onClear()
     }
 
@@ -439,7 +493,7 @@ class GridSelectionTest {
 
         // Delete one frame. With grouping off the delete must leave the tiles flat - it must not
         // re-collapse the remaining frames behind the user's "off" choice.
-        vm.toggleSelection(5)
+        vm.toggleSelection(TileIndex(5))
         vm.deleteSelection()
         advanceUntilIdle()
         assertTrue(vm.state.value.toast != null && !vm.state.value.isBusy)
@@ -463,7 +517,7 @@ class GridSelectionTest {
         // Expand so the two frames are individually addressable, then delete just the second one (p1).
         vm.toggleBurstExpansion(burstId)
         assertEquals(burstId, vm.state.value.expandedBurstId)
-        vm.toggleSelection(1) // display tile 1 == p1, the burst's second frame
+        vm.toggleSelection(TileIndex(1)) // display tile 1 == p1, the burst's second frame
         vm.deleteSelection()
         advanceUntilIdle()
         assertTrue(vm.state.value.toast != null && !vm.state.value.isBusy)
@@ -484,9 +538,9 @@ class GridSelectionTest {
         val vm = viewModel(repo, dispatcher = StandardTestDispatcher(testScheduler))
         advanceUntilIdle()
 
-        vm.toggleSelection(0)
-        vm.toggleSelection(3)
-        vm.toggleSelection(5)
+        vm.toggleSelection(TileIndex(0))
+        vm.toggleSelection(TileIndex(3))
+        vm.toggleSelection(TileIndex(5))
         vm.fileSelectionIntoCustom(0) // slot 0 == "Selects"
 
         // The bulk file confirms via a toast; settle it, then assert the single batched call.
@@ -508,8 +562,8 @@ class GridSelectionTest {
         val vm = viewModel(repo, dispatcher = StandardTestDispatcher(testScheduler))
         advanceUntilIdle()
 
-        vm.toggleSelection(0)
-        vm.toggleSelection(3)
+        vm.toggleSelection(TileIndex(0))
+        vm.toggleSelection(TileIndex(3))
         vm.deleteSelection()
 
         advanceUntilIdle()
@@ -540,8 +594,8 @@ class GridSelectionTest {
         val vm = viewModel(FakeCategoriesRepository(categories), failingFirst, dispatcher = StandardTestDispatcher(testScheduler))
         advanceUntilIdle()
 
-        vm.toggleSelection(0)
-        vm.toggleSelection(1)
+        vm.toggleSelection(TileIndex(0))
+        vm.toggleSelection(TileIndex(1))
         vm.deleteSelection()
 
         advanceUntilIdle()
@@ -564,17 +618,17 @@ class GridSelectionTest {
         advanceUntilIdle()
         assertEquals(photos.size, vm.state.value.groups.size) // six singles
 
-        vm.setFocusedIndex(4) // cursor on p4
+        vm.setFocusedIndex(TileIndex(4)) // cursor on p4
         assertEquals(photos[4].id, vm.state.value.displayGroups[4].keyPhoto.id)
 
-        vm.toggleSelection(1) // select p1, an earlier tile
+        vm.toggleSelection(TileIndex(1)) // select p1, an earlier tile
         vm.deleteSelection()
         advanceUntilIdle()
         assertTrue(vm.state.value.toast != null && !vm.state.value.isBusy)
 
         val st = vm.state.value
         assertEquals(listOf("p0", "p2", "p3", "p4", "p5"), st.photos.map { it.id.value })
-        assertEquals("focus stays on p4, now one tile earlier", photos[4].id, st.displayGroups[st.focusedIndex].keyPhoto.id)
+        assertEquals("focus stays on p4, now one tile earlier", photos[4].id, st.displayGroups[st.focusedIndex.value].keyPhoto.id)
 
         vm.onClear()
     }
@@ -586,14 +640,14 @@ class GridSelectionTest {
         // frame must leave the list and focus must stay on the *photo* it was on, not a bare index.
         val vm = viewModel(FakeCategoriesRepository(categories), dispatcher = StandardTestDispatcher(testScheduler))
         advanceUntilIdle()
-        vm.setFocusedIndex(3) // every photo is its own tile, so focus sits on p3
-        assertEquals(photos[3].id, vm.state.value.displayGroups[vm.state.value.focusedIndex].keyPhoto.id)
+        vm.setFocusedIndex(TileIndex(3)) // every photo is its own tile, so focus sits on p3
+        assertEquals(photos[3].id, vm.state.value.displayGroups[vm.state.value.focusedIndex.value].keyPhoto.id)
 
         vm.removePhotos(setOf(photos[1].id)) // a browser delete of p1, propagated to this retained grid
 
         val st = vm.state.value
         assertEquals(listOf("p0", "p2", "p3", "p4", "p5"), st.photos.map { it.id.value })
-        assertEquals("focus stays on p3, now one tile earlier", photos[3].id, st.displayGroups[st.focusedIndex].keyPhoto.id)
+        assertEquals("focus stays on p3, now one tile earlier", photos[3].id, st.displayGroups[st.focusedIndex.value].keyPhoto.id)
 
         // A no-op when the ids aren't present (the grid that performed the delete already pruned itself).
         vm.removePhotos(setOf(photos[1].id))
@@ -615,7 +669,7 @@ class GridSelectionTest {
         )
         advanceUntilIdle()
         // Off: one tile per photo. Focus p2 (tile 2), which will fold *into* the burst.
-        vm.setFocusedIndex(2)
+        vm.setFocusedIndex(TileIndex(2))
         assertEquals(photos[2].id, vm.state.value.displayGroups[2].keyPhoto.id)
 
         // Switch to Time: p1..p4 collapse to one burst -> [p0, burst(p1..p4), p5] = 3 tiles.
@@ -625,7 +679,7 @@ class GridSelectionTest {
 
         // Focus rode the reshape onto the burst tile (index 1) that now contains p2 - not the bare,
         // coerced old index 2 (which would be p5, a different tile entirely).
-        assertEquals(1, vm.state.value.focusedIndex)
+        assertEquals(TileIndex(1), vm.state.value.focusedIndex)
         assertTrue(vm.state.value.displayGroups[1].photos.any { it.id == photos[2].id })
 
         vm.onClear()
@@ -639,13 +693,13 @@ class GridSelectionTest {
         advanceUntilIdle()
         // Time (default): [p0, burst(p1..p4), p5] -> 3 tiles. Focus p5 (the last tile, index 2).
         assertEquals(3, vm.state.value.groups.size)
-        vm.setFocusedIndex(2)
+        vm.setFocusedIndex(TileIndex(2))
         assertEquals(photos[5].id, vm.state.value.displayGroups[2].keyPhoto.id)
 
         // Off: back to six singles. p5 is now tile 5, not the coerced old index 2 (which would be p2).
         vm.setGroupingMode(GroupingMode.Off)
         assertEquals(photos.size, vm.state.value.displayGroups.size)
-        assertEquals(5, vm.state.value.focusedIndex)
+        assertEquals(TileIndex(5), vm.state.value.focusedIndex)
         assertEquals(photos[5].id, vm.state.value.displayGroups[5].keyPhoto.id)
 
         vm.onClear()

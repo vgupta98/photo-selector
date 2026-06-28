@@ -36,6 +36,30 @@ Three workflows in `.github/workflows/`:
    - Runs on `macos-latest` (required for `packageReleaseDmg`).
    - Tags `vX.Y.Z`, builds the DMG, publishes a GitHub Release with the
      DMG attached.
+   - Its last step also bumps the Homebrew cask **and** rewrites the
+     in-app update feed in the tap repo (see below).
+
+## The in-app update feed
+
+`release.yml`'s final step does double duty in the tap repo: it bumps the
+Homebrew cask (`Casks/rhenium.rb`) *and* rewrites `rhenium/update-manifest.json`,
+the feed the notify-only update checker reads (CLAUDE.md → "the update checker is
+notify-only"). The feed lives in a per-app folder (`rhenium/`) so the tap can
+host other apps' feeds alongside it; the URL baked into `BuildConfig`
+(`build.gradle.kts` → `updateManifestUrl`) must point at the same path. Per
+release it sets `latest` / `dmgUrl` / `notesUrl`, and on a *new* version resets
+the staging policy:
+
+- `rollout` → `1.0` (full) and `mandatory` → `false`. A partial wave or a kill
+  switch from the *previous* version does **not** carry over — so a fix for a
+  killed build ships to everyone instead of inheriting its `rollout: 0`.
+- To stage a release to a fraction of installs, edit the feed by hand **after**
+  the release lands (`rollout` to e.g. `0.1`, then ramp up). There is no
+  pre-staging; the workflow always publishes at full and you throttle after.
+- `minimumVersion` / `minOS` are version-spanning floors and are left untouched
+  across bumps.
+- Kill a bad build by setting `rollout: 0` on the feed; it auto-clears on the
+  next release.
 
 ## Required repo setting
 

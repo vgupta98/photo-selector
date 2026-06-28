@@ -43,6 +43,9 @@ fun GridTopBar(
     onCopyToFolder: (ConflictPolicy) -> Unit,
     groupingMode: GroupingMode,
     onSelectGroupingMode: (GroupingMode) -> Unit,
+    // Progress of the background Similarity pass (0..1), or null when none is running — drives the
+    // determinate ring on the Similar lens so it reads as "still grouping" in any lens.
+    similarityProgress: Float? = null,
     modifier: Modifier = Modifier,
 ) {
     val hasPhotos = photoCount > 0 && !isBusy
@@ -94,6 +97,10 @@ fun GridTopBar(
             )
         }
 
-        GroupingModeToggle(mode = groupingMode, onSelect = onSelectGroupingMode)
+        GroupingModeToggle(
+            mode = groupingMode,
+            onSelect = onSelectGroupingMode,
+            similarityProgress = similarityProgress,
+        )
     }
 }
