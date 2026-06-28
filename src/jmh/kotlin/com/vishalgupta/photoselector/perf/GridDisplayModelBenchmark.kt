@@ -3,6 +3,7 @@ package com.vishalgupta.photoselector.perf
 import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoGroup
 import com.vishalgupta.photoselector.domain.model.PhotoId
+import com.vishalgupta.photoselector.presentation.grid.FlatIndex
 import com.vishalgupta.photoselector.presentation.grid.buildRenderItems
 import com.vishalgupta.photoselector.presentation.grid.displayGroupsFor
 import com.vishalgupta.photoselector.presentation.grid.tileIndexForFlat
@@ -46,7 +47,7 @@ open class GridDisplayModelBenchmark {
 
     private lateinit var flatGroups: List<PhotoGroup>
     private lateinit var burstedGroups: List<PhotoGroup>
-    private lateinit var burstedTileFlatStart: List<Int>
+    private lateinit var burstedTileFlatStart: List<FlatIndex>
     // PhotoId is a value class, so it can't be lateinit; seeded in setup() before any benchmark runs.
     private var expandedBurstId: PhotoId = PhotoId("")
 
@@ -75,7 +76,7 @@ open class GridDisplayModelBenchmark {
         burstedTileFlatStart = buildList(burstedGroups.size) {
             var acc = 0
             for (group in burstedGroups) {
-                add(acc)
+                add(FlatIndex(acc))
                 acc += group.photos.size
             }
         }
@@ -108,7 +109,7 @@ open class GridDisplayModelBenchmark {
     @OutputTimeUnit(TimeUnit.NANOSECONDS)
     fun tileIndexForFlatLookup(): Int =
         // A flat index landing inside a burst run (not on a tile boundary) - the insertion-point arm.
-        tileIndexForFlat(burstedTileFlatStart, flatIndex = LIBRARY_SIZE - BURST_LEN / 2)
+        tileIndexForFlat(burstedTileFlatStart, flatIndex = FlatIndex(LIBRARY_SIZE - BURST_LEN / 2)).value
 
     private companion object {
         const val LIBRARY_SIZE = 30_000
