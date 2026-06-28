@@ -51,7 +51,7 @@
   header{position:sticky; top:0; z-index:20; backdrop-filter:blur(10px);
     background:rgba(12,14,18,.72); border-bottom:1px solid var(--line)}
   .nav{display:flex; align-items:center; justify-content:space-between; height:64px}
-  .brand{display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.2px}
+  .brand{display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.2px; font-size:20px}
   .brand img{width:30px; height:30px; border-radius:7px}
   .nav-right{display:flex; align-items:center; gap:14px}
   .nav-right a.ghost{color:var(--muted); text-decoration:none; font-size:15px}
@@ -59,8 +59,6 @@
 
   /* Hero */
   .hero{text-align:center; padding:72px 0 28px}
-  .pill{display:inline-block; font-size:13px; color:var(--muted); border:1px solid var(--line);
-    background:var(--panel); padding:6px 13px; border-radius:999px; margin-bottom:22px}
   h1{font-size:clamp(34px,6vw,60px); line-height:1.05; margin:0 0 18px; letter-spacing:-1px}
   h1 .grad{background:linear-gradient(120deg,var(--accent),var(--accent-2));
     -webkit-background-clip:text; background-clip:text; color:transparent}
@@ -145,6 +143,7 @@
       <a class="ghost hide" href="#features">Features</a>
       <a class="ghost hide" href="#install">Install</a>
       <a class="ghost" href="https://github.com/vgupta98/rhenium" target="_blank" rel="noopener">GitHub</a>
+      <a class="ghost" href="https://github.com/sponsors/vgupta98" target="_blank" rel="noopener">Sponsor</a>
       <a class="btn primary" href="https://github.com/vgupta98/rhenium/releases/latest">Download</a>
     </div>
   </div>
@@ -152,7 +151,6 @@
 
 <!-- HERO -->
 <div class="wrap hero">
-  <span class="pill">macOS &middot; 100% on-device &middot; open source</span>
   <h1>Cull thousands of shots<br /><span class="grad">in minutes.</span></h1>
   <p class="sub">Rhenium is a free, keyboard-driven photo culler for macOS. It groups your near-identical frames for you — so you make one decision per <em>moment</em>, not one per frame. And nothing ever leaves your Mac.</p>
   <div class="cta-row">
@@ -252,7 +250,6 @@
 <!-- FAQ -->
 <section id="faq">
   <div class="wrap">
-    <div class="eyebrow">FAQ</div>
     <h2>Questions</h2>
     <div class="faq" style="margin-top:36px">
       <details><summary>Is it really free?</summary><p>Yes. Rhenium is free and open source under the MIT license. No trial, no paywall, no subscription.</p></details>
