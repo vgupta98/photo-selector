@@ -91,7 +91,11 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   `displayGroupsFor`/`buildRenderItems` explode the open burst into per-frame
   tiles, plus `renderIndexForTile` etc.), `GridViewportAnchor` (scroll anchoring),
   `GridIndex` (the `FlatIndex` / `TileIndex` value classes that make the
-  flat-vs-tile distinction a compile error).
+  flat-vs-tile distinction a compile error),
+  `GridKeyBindings` (the pure `handleGridKey` dispatcher + `GridKeyContext` /
+  `GridKeyActions` — the grid's keyboard model lifted out of `GridScreen` so the
+  input→intent mapping is unit-testable; layout/anchor-coupled branches arrive as
+  callbacks).
 - `browser/` — `BrowserScreen` + `…ViewModel`, `ZoomableImage`, `ZoomState`.
   Reused inside Inspect's browse mode (`embedded`, `onSwitchToGrid`).
 - `inspect/` — `InspectScreen` + `InspectViewModel`: one fixed photo set viewed
@@ -122,7 +126,9 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   `SimilarityCoachmark` (first-run
   callout), `BurstExpandedHeader`/`Footer`, the `*KeyboardLegend` set,
   `CategoryActionsMenu`, `ExportMenu` (txt + copy-to-folder, the
-  exporter plugin-headroom slot), `ConflictPolicyButton`, `PillToast`,
+  exporter plugin-headroom slot), `ConflictPolicyButton`, `PillToast` and
+  `LatchedPill` (the shared latch-content-through-the-fade wrapper the grid /
+  browser transient pills are built from),
   `SelectionFileMenu`, `ConfirmDialog`/`CategoryNameDialog`.
 - `organism/` — `LibraryRail` (left navigation column: scopes + category CRUD;
   hoisted to `App` beside the grid, backed by `grid/LibraryRailViewModel`),
@@ -134,7 +140,7 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 
 | Task | Files |
 | --- | --- |
-| Grid focus / selection / keyboard filing | `grid/GridViewModel.kt`, `grid/GridDisplayModel.kt` |
+| Grid focus / selection / keyboard filing | `grid/GridViewModel.kt`, `grid/GridDisplayModel.kt`, `grid/GridKeyBindings.kt` (key dispatch) |
 | Burst expand-in-place behaviour | `grid/GridViewModel.kt` (`expandedBurstId` state), `grid/GridDisplayModel.kt` (`displayGroupsFor`/`buildRenderItems`), molecule `BurstExpanded*` |
 | Grouping lens (Off / Time / Similarity) | `domain/grouping/`, `data/ai/SimilarityPhotoGrouper.kt`, `grid/GridViewModel.kt`, `presentation/common/GroupingCoordinator.kt` (background Similarity), `App.kt` (off-grid hint) |
 | Scroll position / index translation | `grid/GridScreen.kt` (`tileIndexForFlat`), `grid/GridViewportAnchor.kt`, `grid/GridDisplayModel.kt`, `data/browse/` |

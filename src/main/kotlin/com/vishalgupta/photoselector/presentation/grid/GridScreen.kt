@@ -76,7 +76,6 @@ import com.vishalgupta.photoselector.presentation.common.CategoryToggle
 import com.vishalgupta.photoselector.presentation.common.GroupingMode
 import com.vishalgupta.photoselector.presentation.common.NativeFileDialogs
 import com.vishalgupta.photoselector.presentation.common.customCategories
-import com.vishalgupta.photoselector.presentation.common.digitSlot
 import com.vishalgupta.photoselector.presentation.designsystem.atom.AppOutlinedButton
 import com.vishalgupta.photoselector.presentation.designsystem.atom.FavouriteStar
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BurstExpandedFooter
@@ -87,6 +86,7 @@ import com.vishalgupta.photoselector.presentation.designsystem.molecule.EmptySta
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.GridKeyboardLegend
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.GroupingProgressBanner
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.KeyHint
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.LatchedPill
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToast
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToastDefaults
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.SimilarityCoachmark
@@ -471,118 +471,60 @@ fun GridScreen(
                         event.key == Key.NumPadEnter ||
                         event.key == Key.Spacebar
                 }
-                val meta = event.isMetaPressed
-                val hasSelection = state.hasSelection
                 // Keyboard focus moves over tiles (groups), not the flat photo list — a collapsed
-                // burst is one stop.
+                // burst is one stop, so the last addressable tile is tiles.size - 1. Bound once here so
+                // the dispatcher's bound and the move actions' clamps can't drift apart.
                 val maxIndex = tiles.size - 1
-                // Cmd+A arms a multi-select over the whole scope.
-                if (meta && event.key == Key.A) {
-                    if (maxIndex >= 0) onSelectAll()
-                    return@onPreviewKeyEvent true
-                }
-                // Cmd+Delete (Cmd+Backspace on a Mac keyboard) over a selection arms the move-to-
-                // Trash confirmation — the macOS "move to trash" chord, applied to the whole pick.
-                if (meta && (event.key == Key.Backspace || event.key == Key.Delete) && hasSelection) {
-                    confirmingDelete = true
-                    return@onPreviewKeyEvent true
-                }
-                // C opens the multi-selection in Inspect (a 2-tile selection opens its overview grid the
-                // same as any larger one). The indices are taken in scope (reading) order; only fires
-                // with a 2+ selection. A large selection isn't declined — Inspect opens it browse-only.
-                if (!meta && event.key == Key.C && state.selection.size >= 2) {
-                    val indices = state.photos.indices.filter { state.photos[it].id in state.selection }
-                    onInspectSelection(indices, firstVisibleFlat().value)
-                    return@onPreviewKeyEvent true
-                }
-                // C with no multi-select but a collapsed group focused: review that group's run with
-                // no prior multi-select — the group's frames ARE the selection (the keyboard fallback
-                // for the hover "Review" CTA). Singles fall through to no-op.
-                if (!meta && event.key == Key.C && !hasSelection &&
-                    tiles.getOrNull(state.focusedIndex) is PhotoGroup.Burst
-                ) {
-                    openReview(state.focusedIndex)
-                    return@onPreviewKeyEvent true
-                }
-                // G cycles the lens Single -> Bursts -> Similar -> Single without the mouse. Goes through
-                // the anchored selector so the viewport re-pins across the reshape, exactly like the
-                // toolbar. Suppressed during a multi-select (the toolbar is hidden then anyway).
-                if (!meta && event.key == Key.G && !hasSelection) {
-                    val modes = GroupingMode.entries
-                    onSelectGroupingModeAnchored(modes[(state.groupingMode.ordinal + 1) % modes.size])
-                    return@onPreviewKeyEvent true
-                }
-                val isArrow = event.key == Key.DirectionLeft || event.key == Key.DirectionRight ||
-                    event.key == Key.DirectionUp || event.key == Key.DirectionDown
-                if (isArrow && !state.focusedIndex.isSet && maxIndex >= 0) {
-                    // Seed focus on the first visible TILE. firstVisibleItemIndex is render-item space
-                    // (header/footer included when a burst is open), so map it into tile space first.
-                    val seed = tileDisplayIndexForRenderItem(renderItems, gridState.firstVisibleItemIndex)?.value ?: 0
-                    moveFocus(TileIndex(seed.coerceIn(0, maxIndex)))
-                    return@onPreviewKeyEvent true
-                }
-                // Bare 1..9 files into the Nth custom category: the whole selection when one is
-                // armed, otherwise just the focused tile (the keyboard path for filing from All
-                // Photos without leaving it).
-                val slot = if (meta) null else digitSlot(event.key)
-                if (slot != null) {
-                    if (hasSelection) {
-                        onFileSelectionIntoCustom(slot)
-                    } else if (state.focusedIndex.value in 0..maxIndex) {
-                        onToggleCustomCategoryAtFocus(slot)
-                    }
-                    return@onPreviewKeyEvent true
-                }
-                when (event.key) {
-                    Key.DirectionLeft -> {
-                        moveFocus(TileIndex((state.focusedIndex.value - 1).coerceAtLeast(0)))
-                        true
-                    }
-                    Key.DirectionRight -> {
-                        moveFocus(TileIndex((state.focusedIndex.value + 1).coerceAtMost(maxIndex)))
-                        true
-                    }
-                    Key.DirectionUp -> {
-                        moveFocus(verticalNavTarget(gridState, renderItems, state.focusedIndex, maxIndex, down = false))
-                        true
-                    }
-                    Key.DirectionDown -> {
-                        moveFocus(verticalNavTarget(gridState, renderItems, state.focusedIndex, maxIndex, down = true))
-                        true
-                    }
-                    Key.Enter -> {
-                        if (state.focusedIndex.value in 0..maxIndex) {
-                            openTile(state.focusedIndex)
-                        }
-                        true
-                    }
-                    Key.F -> if (meta) false else {
-                        if (hasSelection) onFileSelectionIntoFavourites() else onToggleMembershipAtFocus()
-                        true
-                    }
-                    Key.Spacebar -> if (meta) false else {
-                        if (hasSelection) onFileSelectionIntoFavourites() else onToggleMembershipAtFocus()
-                        true
-                    }
-                    // Esc peels one layer at a time: clear a selection, then fold an open burst,
-                    // then pop the screen. Each press undoes the most recent thing the user did.
-                    Key.Escape -> when {
-                        hasSelection -> {
-                            onClearSelection()
-                            true
-                        }
-                        state.expandedBurstId != null -> {
-                            onCollapseBurst()
-                            true
-                        }
-                        onBack != null -> {
-                            onBack()
-                            true
-                        }
-                        else -> false
-                    }
-                    else -> false
-                }
+                // Pure input->intent dispatch lives in [handleGridKey]; the layout/anchor-coupled
+                // effects (vertical nav + seed read the laid-out geometry; horizontal/G re-pin the
+                // viewport) are bound here, where the grid owns that state.
+                handleGridKey(
+                    event = event,
+                    ctx = GridKeyContext(
+                        focusedIndex = state.focusedIndex,
+                        maxIndex = maxIndex,
+                        hasSelection = state.hasSelection,
+                        selectionSize = state.selection.size,
+                        expandedBurstId = state.expandedBurstId,
+                        groupingMode = state.groupingMode,
+                        focusedTileIsBurst = tiles.getOrNull(state.focusedIndex) is PhotoGroup.Burst,
+                        canPop = onBack != null,
+                    ),
+                    actions = GridKeyActions(
+                        selectAll = onSelectAll,
+                        confirmDelete = { confirmingDelete = true },
+                        inspectSelection = {
+                            // Indices taken in scope (reading) order; the flat return position is the
+                            // grid's, so the round-trip lands back here.
+                            val indices = state.photos.indices.filter { state.photos[it].id in state.selection }
+                            onInspectSelection(indices, firstVisibleFlat().value)
+                        },
+                        reviewFocused = { openReview(state.focusedIndex) },
+                        selectLens = onSelectGroupingModeAnchored,
+                        seedFocus = {
+                            // firstVisibleItemIndex is render-item space (header/footer included when a
+                            // burst is open), so map it into tile space first.
+                            val seed = tileDisplayIndexForRenderItem(renderItems, gridState.firstVisibleItemIndex)?.value ?: 0
+                            moveFocus(TileIndex(seed.coerceIn(0, maxIndex)))
+                        },
+                        moveFocusHorizontal = { delta ->
+                            val raw = state.focusedIndex.value + delta
+                            val target = if (delta < 0) raw.coerceAtLeast(0) else raw.coerceAtMost(maxIndex)
+                            moveFocus(TileIndex(target))
+                        },
+                        moveFocusVertical = { down ->
+                            moveFocus(verticalNavTarget(gridState, renderItems, state.focusedIndex, maxIndex, down = down))
+                        },
+                        openFocused = { openTile(state.focusedIndex) },
+                        fileSelectionIntoCustom = onFileSelectionIntoCustom,
+                        toggleCustomCategoryAtFocus = onToggleCustomCategoryAtFocus,
+                        fileSelectionIntoFavourites = onFileSelectionIntoFavourites,
+                        toggleMembershipAtFocus = onToggleMembershipAtFocus,
+                        clearSelection = onClearSelection,
+                        collapseBurst = onCollapseBurst,
+                        back = { onBack?.invoke() },
+                    ),
+                )
             },
     ) {
         if (state.hasSelection) {
@@ -1036,49 +978,30 @@ internal fun groupingNoticeText(outcome: GroupingOutcome): String {
  */
 @Composable
 private fun GridMessagePill(message: String?, modifier: Modifier = Modifier) {
-    // Latch the last message so it stays rendered through the fade-out after the state clears.
-    var displayed by remember { mutableStateOf<String?>(null) }
-    if (message != null) displayed = message
-    AnimatedVisibility(
-        visible = message != null,
-        enter = fadeIn(),
-        exit = fadeOut(),
-        modifier = modifier,
-    ) {
-        displayed?.let { PillToast(text = it) }
-    }
+    LatchedPill(message, modifier) { PillToast(text = it) }
 }
 
 @Composable
 private fun GridTogglePill(toast: CategoryToggle?, modifier: Modifier = Modifier) {
-    var displayed by remember { mutableStateOf<CategoryToggle?>(null) }
-    if (toast != null) displayed = toast
-    AnimatedVisibility(
-        visible = toast != null,
-        enter = fadeIn(),
-        exit = fadeOut(),
-        modifier = modifier,
-    ) {
-        displayed?.let { dt ->
-            PillToast(
-                text = when {
-                    dt.isFavourite && dt.added -> "Favourited"
-                    dt.isFavourite -> "Unfavourited"
-                    dt.added -> "Added to ${dt.categoryName}"
-                    else -> "Removed from ${dt.categoryName}"
-                },
-                leadingIcon = if (dt.isFavourite) {
-                    { FavouriteStar(filled = dt.added, modifier = Modifier.size(AppTheme.dimens.iconSm)) }
-                } else {
-                    null
-                },
-                colors = if (dt.added) {
-                    PillToastDefaults.addedColors()
-                } else {
-                    PillToastDefaults.removedColors()
-                },
-            )
-        }
+    LatchedPill(toast, modifier) { dt ->
+        PillToast(
+            text = when {
+                dt.isFavourite && dt.added -> "Favourited"
+                dt.isFavourite -> "Unfavourited"
+                dt.added -> "Added to ${dt.categoryName}"
+                else -> "Removed from ${dt.categoryName}"
+            },
+            leadingIcon = if (dt.isFavourite) {
+                { FavouriteStar(filled = dt.added, modifier = Modifier.size(AppTheme.dimens.iconSm)) }
+            } else {
+                null
+            },
+            colors = if (dt.added) {
+                PillToastDefaults.addedColors()
+            } else {
+                PillToastDefaults.removedColors()
+            },
+        )
     }
 }
 
