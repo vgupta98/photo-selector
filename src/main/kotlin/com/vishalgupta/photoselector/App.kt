@@ -29,6 +29,7 @@ import com.vishalgupta.photoselector.di.AppContainer
 import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.presentation.browser.BrowserScreen
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BackgroundGroupingChip
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToast
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.UpdateAvailableBanner
 import com.vishalgupta.photoselector.presentation.designsystem.organism.LibraryRail
 import com.vishalgupta.photoselector.presentation.grid.GridScreen
@@ -39,6 +40,7 @@ import com.vishalgupta.photoselector.presentation.navigation.InspectOrigin
 import com.vishalgupta.photoselector.presentation.navigation.Screen
 import com.vishalgupta.photoselector.presentation.rootpicker.RootFolderPickerScreen
 import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -67,6 +69,10 @@ fun App(container: AppContainer) {
     // trip, in lock-step with the retained scroll above.
     var railCollapsed by remember { mutableStateOf(false) }
 
+    // One-shot result of a "Move rejects to Trash" sweep, surfaced as a transient pill in the
+    // bottom-end overlay (the sweep is initiated from the rail, which lives only on the Grid).
+    var railSweepMessage by remember { mutableStateOf<String?>(null) }
+
     AppTheme {
         Surface(Modifier.fillMaxSize()) {
           Box(Modifier.fillMaxSize()) {
@@ -82,6 +88,14 @@ fun App(container: AppContainer) {
                     // It reads its own root-scoped view model, retained per root by the container.
                     val railVm = remember(s.root.path) { container.libraryRailViewModel(s.root) }
                     val railEntries by railVm.entries.collectAsState()
+                    // Surface the reject-sweep result as a transient pill (cleared on a timer).
+                    LaunchedEffect(railVm) {
+                        railVm.sweepEvents.collect { message ->
+                            railSweepMessage = message
+                            delay(2500)
+                            railSweepMessage = null
+                        }
+                    }
                     // Shared by the rail and the grid's empty-state CTA: drop the root and return to the picker.
                     val changeFolder: () -> Unit = {
                         coroutineScope.launch {
@@ -130,6 +144,7 @@ fun App(container: AppContainer) {
                                 onCreateCategory = railVm::create,
                                 onRenameCategory = railVm::rename,
                                 onDeleteCategory = railVm::delete,
+                                onEmptyRejects = railVm::emptyRejectsToTrash,
                                 onChangeFolder = changeFolder,
                             )
                         }
@@ -345,6 +360,7 @@ fun App(container: AppContainer) {
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.sm),
             ) {
+                railSweepMessage?.let { PillToast(text = it) }
                 groupingActivity?.takeIf { screen !is Screen.Grid }?.let { activity ->
                     BackgroundGroupingChip(processed = activity.processed, total = activity.total)
                 }
