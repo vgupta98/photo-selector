@@ -72,6 +72,15 @@ fun App(container: AppContainer) {
     // One-shot result of a "Move rejects to Trash" sweep, surfaced as a transient pill in the
     // bottom-end overlay (the sweep is initiated from the rail, which lives only on the Grid).
     var railSweepMessage by remember { mutableStateOf<String?>(null) }
+    // Auto-dismiss lives here, at App scope, NOT inside the Grid-branch collector that sets the
+    // message: a sweep then Grid -> Browser within the window would otherwise cancel the collector
+    // mid-delay and strand the pill on every screen. Keyed on the message so each new one re-arms.
+    LaunchedEffect(railSweepMessage) {
+        if (railSweepMessage != null) {
+            delay(2500)
+            railSweepMessage = null
+        }
+    }
 
     AppTheme {
         Surface(Modifier.fillMaxSize()) {
@@ -88,13 +97,11 @@ fun App(container: AppContainer) {
                     // It reads its own root-scoped view model, retained per root by the container.
                     val railVm = remember(s.root.path) { container.libraryRailViewModel(s.root) }
                     val railEntries by railVm.entries.collectAsState()
-                    // Surface the reject-sweep result as a transient pill (cleared on a timer).
+                    // Surface the reject-sweep result as a transient pill: only SET the message here.
+                    // The auto-dismiss is an App-scoped effect (above) so it survives this Grid branch
+                    // leaving composition (a sweep then Grid -> Browser within the timer).
                     LaunchedEffect(railVm) {
-                        railVm.sweepEvents.collect { message ->
-                            railSweepMessage = message
-                            delay(2500)
-                            railSweepMessage = null
-                        }
+                        railVm.sweepEvents.collect { railSweepMessage = it }
                     }
                     // Shared by the rail and the grid's empty-state CTA: drop the root and return to the picker.
                     val changeFolder: () -> Unit = {
