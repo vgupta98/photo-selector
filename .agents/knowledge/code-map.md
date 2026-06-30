@@ -123,7 +123,9 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   callout), `BurstExpandedHeader`/`Footer`, the `*KeyboardLegend` set,
   `CategoryActionsMenu`, `ExportMenu` (txt + copy-to-folder, the
   exporter plugin-headroom slot), `ConflictPolicyButton`, `PillToast`,
-  `SelectionFileMenu`, `ConfirmDialog`/`CategoryNameDialog`.
+  `CategoryTogglePill` (the shared membership-toggle confirmation pill —
+  label/star/colour derivation over a `CategoryToggle`, reused by the grid and
+  the browser), `SelectionFileMenu`, `ConfirmDialog`/`CategoryNameDialog`.
 - `organism/` — `LibraryRail` (left navigation column: scopes + category CRUD;
   hoisted to `App` beside the grid, backed by `grid/LibraryRailViewModel`),
   `GridTopBar` (slim: rail toggle + identity + view/export) /
