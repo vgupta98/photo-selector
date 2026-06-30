@@ -59,10 +59,13 @@ class LibraryRailScreenshotTest {
 
     private val keepers = Category(CategoryId("keepers"), "Keepers", builtIn = false)
     private val portfolio = Category(CategoryId("portfolio"), "Portfolio", builtIn = false)
-    private val categories = listOf(Category.favourites(), keepers, portfolio)
+    private val categories = listOf(Category.favourites(), Category.rejects(), keepers, portfolio)
 
     private val memberships = mapOf(
         Category.FAVOURITES_ID to setOf(photos[0].id, photos[2].id),
+        // Rejects: drives the rail's Rejects row + its "Move rejects to Trash" sweep action, and the
+        // dimmed + flagged reject state on tiles b and f in the grid.
+        Category.REJECTS_ID to setOf(photos[1].id, photos[5].id),
         keepers.id to setOf(photos[0].id, photos[1].id, photos[3].id),
         portfolio.id to setOf(photos[4].id),
     )
@@ -129,6 +132,24 @@ class LibraryRailScreenshotTest {
         rule.dumpScreenshot("library-rail-long-name")
     }
 
+    @Test fun `selection bar shows favourite and reject, grid dims rejected tiles`() {
+        // Eyeball build/screenshots/library-rail-selection-reject.png: the selection top bar carries
+        // both a Favourite and a Reject button (the two sides of the cull) plus Delete; tiles b and f
+        // (rejected) are dimmed under a scrim with a red flag top-end.
+        renderShell(
+            GridUiState(
+                photos = photos,
+                groups = photos.map(PhotoGroup::Single),
+                groupingMode = GroupingMode.Off,
+                scope = CategoryScope.AllPhotos,
+                categories = categories,
+                memberships = memberships,
+                selection = setOf(photos[0].id, photos[2].id),
+            ),
+        )
+        rule.dumpScreenshot("library-rail-selection-reject")
+    }
+
     @Test fun `rail collapsed leaves the grid full-bleed`() {
         renderShell(
             GridUiState(
@@ -182,6 +203,7 @@ class LibraryRailScreenshotTest {
                                 onCreateCategory = {},
                                 onRenameCategory = { _, _ -> },
                                 onDeleteCategory = {},
+                                onEmptyRejects = {},
                                 onChangeFolder = {},
                             )
                         }

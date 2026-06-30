@@ -78,12 +78,13 @@ class BrowserKeyboardTest {
         }
         rule.waitForIdle()
 
-        // "1" toggles the 1st custom category; "F" toggles the built-in Favourites.
+        // "1" toggles the 1st custom category; "F" the built-in Favourites; "X" the built-in Rejects.
         rule.onRoot().performKeyInput { pressKey(Key.One) }
         rule.onRoot().performKeyInput { pressKey(Key.F) }
+        rule.onRoot().performKeyInput { pressKey(Key.X) }
         rule.waitForIdle()
 
-        assertEquals(listOf(selectsId, Category.FAVOURITES_ID), toggled)
+        assertEquals(listOf(selectsId, Category.FAVOURITES_ID, Category.REJECTS_ID), toggled)
     }
 
     @OptIn(ExperimentalTestApi::class)
