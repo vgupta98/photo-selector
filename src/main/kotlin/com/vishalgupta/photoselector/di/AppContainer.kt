@@ -472,6 +472,9 @@ class AppContainer {
             LibraryRailViewModel(
                 root = root,
                 categories = categoriesRepository,
+                moveToTrash = movePhotosToTrashUseCase,
+                photosForRoot = { photosFor(root) },
+                onPhotosDeleted = { ids -> removeScannedPhotos(ids) },
                 parentJob = folderJob,
             )
         }

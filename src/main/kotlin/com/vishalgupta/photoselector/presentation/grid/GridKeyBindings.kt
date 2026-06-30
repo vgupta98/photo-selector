@@ -66,6 +66,8 @@ internal class GridKeyActions(
     val toggleCustomCategoryAtFocus: (slot: Int) -> Unit,
     val fileSelectionIntoFavourites: () -> Unit,
     val toggleMembershipAtFocus: () -> Unit,
+    val fileSelectionIntoRejects: () -> Unit,
+    val toggleRejectAtFocus: () -> Unit,
     val clearSelection: () -> Unit,
     val collapseBurst: () -> Unit,
     val back: () -> Unit,
@@ -157,6 +159,12 @@ internal fun handleGridKey(event: KeyEvent, ctx: GridKeyContext, actions: GridKe
         // F and Space both file into Favourites: the selection when armed, else the focused tile.
         Key.F, Key.Spacebar -> if (meta) false else {
             ctx.fileOrToggle(actions.fileSelectionIntoFavourites, actions.toggleMembershipAtFocus)
+            true
+        }
+        // X files into Rejects — the cull's reject half, mirroring F: the selection when armed, else
+        // the focused tile. Cmd+X stays the system cut, so it falls through.
+        Key.X -> if (meta) false else {
+            ctx.fileOrToggle(actions.fileSelectionIntoRejects, actions.toggleRejectAtFocus)
             true
         }
         // Esc peels one layer at a time: clear a selection, then fold an open burst, then pop the

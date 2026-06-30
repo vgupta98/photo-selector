@@ -92,6 +92,9 @@ data class GridUiState(
     /** Photos in the built-in Favourites — what the tile star indicates, in any scope. */
     val markedIds: Set<PhotoId> get() = memberships[Category.FAVOURITES_ID].orEmpty()
 
+    /** Photos in the built-in Rejects — what the tile's reject flag indicates, in any scope. */
+    val rejectedIds: Set<PhotoId> get() = memberships[Category.REJECTS_ID].orEmpty()
+
     /** True while a multi-select is active — drives the top-bar swap and bulk key routing. */
     val hasSelection: Boolean get() = selection.isNotEmpty()
 
@@ -639,6 +642,10 @@ class GridViewModel(
     fun toggleMembershipAtFocus() =
         fileAtFocus(Category.FAVOURITES_ID, Category.FAVOURITES_NAME, isFavourite = true)
 
+    /** X at the focused tile: file it into Rejects — the cull's reject half, same single-vs-burst rule as F. */
+    fun toggleRejectAtFocus() =
+        fileAtFocus(Category.REJECTS_ID, Category.REJECTS_NAME, isFavourite = false)
+
     /** Bare digit 1..9 at the focused tile: toggle the single, or file the whole burst, into the Nth custom category. */
     fun toggleCustomCategoryAtFocus(slot: Int) {
         val category = _state.value.categories.customCategories().getOrNull(slot) ?: return
@@ -712,6 +719,10 @@ class GridViewModel(
     /** Files the whole selection into Favourites (the selection bar's star, or F when active). */
     fun fileSelectionIntoFavourites() =
         fileSelectionInto(Category.FAVOURITES_ID, Category.FAVOURITES_NAME)
+
+    /** Files the whole selection into Rejects (the selection bar's Reject action, or X when active). */
+    fun fileSelectionIntoRejects() =
+        fileSelectionInto(Category.REJECTS_ID, Category.REJECTS_NAME)
 
     /** Files the whole selection into the Nth custom category (a digit while a selection is active). */
     fun fileSelectionIntoCustom(slot: Int) {

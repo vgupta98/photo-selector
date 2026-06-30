@@ -169,6 +169,7 @@ fun GridScreen(
         onSetFocusedIndex = viewModel::setFocusedIndex,
         modifier = modifier,
         onToggleMembershipAtFocus = viewModel::toggleMembershipAtFocus,
+        onToggleRejectAtFocus = viewModel::toggleRejectAtFocus,
         onToggleCustomCategoryAtFocus = viewModel::toggleCustomCategoryAtFocus,
         onExportTxt = {
             coroutineScope.launch {
@@ -198,6 +199,7 @@ fun GridScreen(
         onSelectAll = viewModel::selectAll,
         onClearSelection = viewModel::clearSelection,
         onFileSelectionIntoFavourites = viewModel::fileSelectionIntoFavourites,
+        onFileSelectionIntoRejects = viewModel::fileSelectionIntoRejects,
         onFileSelectionIntoCustom = viewModel::fileSelectionIntoCustom,
         onDeleteSelection = viewModel::deleteSelection,
         onExportSelectionTxt = {
@@ -242,6 +244,7 @@ fun GridScreen(
     onBack: (() -> Unit)?,
     onSetFocusedIndex: (TileIndex) -> Unit,
     onToggleMembershipAtFocus: () -> Unit,
+    onToggleRejectAtFocus: () -> Unit = {},
     onToggleCustomCategoryAtFocus: (slot: Int) -> Unit,
     onExportTxt: () -> Unit,
     onCopyToFolder: (ConflictPolicy) -> Unit,
@@ -263,6 +266,7 @@ fun GridScreen(
     onSelectAll: () -> Unit = {},
     onClearSelection: () -> Unit = {},
     onFileSelectionIntoFavourites: () -> Unit = {},
+    onFileSelectionIntoRejects: () -> Unit = {},
     onFileSelectionIntoCustom: (slot: Int) -> Unit = {},
     onDeleteSelection: () -> Unit = {},
     onExportSelectionTxt: () -> Unit = {},
@@ -520,6 +524,8 @@ fun GridScreen(
                         toggleCustomCategoryAtFocus = onToggleCustomCategoryAtFocus,
                         fileSelectionIntoFavourites = onFileSelectionIntoFavourites,
                         toggleMembershipAtFocus = onToggleMembershipAtFocus,
+                        fileSelectionIntoRejects = onFileSelectionIntoRejects,
+                        toggleRejectAtFocus = onToggleRejectAtFocus,
                         clearSelection = onClearSelection,
                         collapseBurst = onCollapseBurst,
                         back = { onBack?.invoke() },
@@ -532,6 +538,7 @@ fun GridScreen(
                 selectedCount = state.selection.size,
                 customCategories = customCategories,
                 onFileIntoFavourites = onFileSelectionIntoFavourites,
+                onFileIntoRejects = onFileSelectionIntoRejects,
                 onFileIntoCustom = onFileSelectionIntoCustom,
                 onExportSelectionTxt = onExportSelectionTxt,
                 onCopySelection = onCopySelection,
@@ -657,6 +664,7 @@ fun GridScreen(
                                     photo = keyPhoto,
                                     loader = imageLoader,
                                     isMarked = keyPhoto.id in state.markedIds,
+                                    isRejected = keyPhoto.id in state.rejectedIds,
                                     isFocused = index == state.focusedIndex,
                                     // Any frame of the run counts: a collapsed burst shows the
                                     // middle frame as its key, but you may have opened (and last
@@ -785,9 +793,10 @@ fun GridScreen(
 
 /**
  * The truthful set of grid shortcuts for the current [scope]. `F` always toggles Favourites
- * membership (see `GridViewModel.toggleMembershipAtFocus`) — it is the keeper key in every
- * scope, not a "toggle this category" key — and the `1..9` filing keys only do anything from
- * All Photos, so they're only advertised there.
+ * membership and `X` always toggles Rejects (see `GridViewModel.toggleMembershipAtFocus` /
+ * `toggleRejectAtFocus`) — the two sides of the cull, available in every scope, not "toggle this
+ * category" keys — while the `1..9` filing keys only do anything from All Photos, so they're only
+ * advertised there.
  *
  * The grouping keys stay honest too: `G` (cycle lens) always applies, but Enter is labelled
  * **Expand** only when a collapsed burst is focused ([focusedBurstCollapsed]) and `Esc` advertises
@@ -804,6 +813,7 @@ private fun rememberLegendHints(
         add(KeyHint("← → ↑ ↓", "Move"))
         add(KeyHint("↵", if (focusedBurstCollapsed) "Expand" else "Open"))
         add(KeyHint(keys = "F", label = "Favourite"))
+        add(KeyHint(keys = "X", label = "Reject"))
         if (scope == CategoryScope.AllPhotos) add(KeyHint("1–9", "Categories"))
         add(KeyHint("G", "Group"))
         if (burstExpanded) add(KeyHint("Esc", "Collapse"))

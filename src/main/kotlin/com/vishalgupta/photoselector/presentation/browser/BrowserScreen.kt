@@ -220,6 +220,8 @@ fun BrowserScreen(
                     Key.DirectionLeft -> { onPrevious(); true }
                     Key.DirectionRight -> { onNext(); true }
                     Key.F -> if (meta) false else { onToggleCategory(Category.FAVOURITES_ID); true }
+                    // X flags the current photo as a reject — the cull's reject half, mirroring F.
+                    Key.X -> if (meta) false else { onToggleCategory(Category.REJECTS_ID); true }
                     Key.R -> if (meta) false else {
                         state.currentPhoto?.absolutePath?.let { systemActions?.revealInFileManager(it) }
                         true

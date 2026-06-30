@@ -61,6 +61,8 @@ class GridKeyBindingsTest {
             toggleCustomCategoryAtFocus = { log += "toggleCustom:$it" },
             fileSelectionIntoFavourites = { log += "fileSelFav" },
             toggleMembershipAtFocus = { log += "toggleFav" },
+            fileSelectionIntoRejects = { log += "fileSelReject" },
+            toggleRejectAtFocus = { log += "toggleReject" },
             clearSelection = { log += "clearSelection" },
             collapseBurst = { log += "collapseBurst" },
             back = { log += "back" },
@@ -230,6 +232,25 @@ class GridKeyBindingsTest {
     @Test
     fun `cmd+F is not consumed (leaves the menu shortcut to the system)`() {
         val (consumed, log) = dispatch(keyDown(Key.F, meta = true), ctx())
+        assertFalse(consumed)
+        assertEquals(emptyList<String>(), log)
+    }
+
+    // ---- X: reject, selection wins over focus ---------------------------------------------------
+
+    @Test
+    fun `X files the selection into rejects when one is armed`() {
+        assertEquals(listOf("fileSelReject"), dispatch(keyDown(Key.X), ctx(hasSelection = true)).second)
+    }
+
+    @Test
+    fun `X toggles the focused tile's reject with no selection`() {
+        assertEquals(listOf("toggleReject"), dispatch(keyDown(Key.X), ctx(hasSelection = false)).second)
+    }
+
+    @Test
+    fun `cmd+X is not consumed (leaves the system cut shortcut)`() {
+        val (consumed, log) = dispatch(keyDown(Key.X, meta = true), ctx())
         assertFalse(consumed)
         assertEquals(emptyList<String>(), log)
     }
