@@ -35,7 +35,6 @@ import com.vishalgupta.photoselector.domain.model.Photo
 import com.vishalgupta.photoselector.domain.model.PhotoId
 import com.vishalgupta.photoselector.presentation.browser.BrowserScreen
 import com.vishalgupta.photoselector.presentation.browser.BrowserUiState
-import com.vishalgupta.photoselector.presentation.browser.CategoryToastState
 import com.vishalgupta.photoselector.presentation.common.CategoryToggle
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BrowserKeyboardLegend
 import com.vishalgupta.photoselector.presentation.designsystem.organism.BrowserCategoryHud
@@ -627,7 +626,7 @@ class ScreenSplitScreenshotTest {
                             favouriteCount = 1,
                             readOnly = false,
                         ),
-                        toast = CategoryToastState("Favourites", isFavourite = true, added = true),
+                        toast = CategoryToggle("Favourites", isFavourite = true, added = true),
                         onPrevious = {},
                         onNext = {},
                         onToggleCategory = {},
@@ -660,7 +659,7 @@ class ScreenSplitScreenshotTest {
                             readOnly = false,
                             categories = categories,
                         ),
-                        toast = CategoryToastState("Selects", isFavourite = false, added = false),
+                        toast = CategoryToggle("Selects", isFavourite = false, added = false),
                         onPrevious = {},
                         onNext = {},
                         onToggleCategory = {},

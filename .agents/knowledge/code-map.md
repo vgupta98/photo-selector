@@ -126,9 +126,11 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   `SimilarityCoachmark` (first-run
   callout), `BurstExpandedHeader`/`Footer`, the `*KeyboardLegend` set,
   `CategoryActionsMenu`, `ExportMenu` (txt + copy-to-folder, the
-  exporter plugin-headroom slot), `ConflictPolicyButton`, `PillToast` and
+  exporter plugin-headroom slot), `ConflictPolicyButton`, `PillToast`,
   `LatchedPill` (the shared latch-content-through-the-fade wrapper the grid /
-  browser transient pills are built from),
+  browser transient pills are built from), `CategoryTogglePill` (the shared
+  membership-toggle confirmation pill — label/star/colour derivation over a
+  `CategoryToggle`, reused by the grid and the browser),
   `SelectionFileMenu`, `ConfirmDialog`/`CategoryNameDialog`.
 - `organism/` — `LibraryRail` (left navigation column: scopes + category CRUD;
   hoisted to `App` beside the grid, backed by `grid/LibraryRailViewModel`),

@@ -77,10 +77,10 @@ import com.vishalgupta.photoselector.presentation.common.GroupingMode
 import com.vishalgupta.photoselector.presentation.common.NativeFileDialogs
 import com.vishalgupta.photoselector.presentation.common.customCategories
 import com.vishalgupta.photoselector.presentation.designsystem.atom.AppOutlinedButton
-import com.vishalgupta.photoselector.presentation.designsystem.atom.FavouriteStar
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BurstExpandedFooter
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BurstExpandedHeader
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BusyBar
+import com.vishalgupta.photoselector.presentation.designsystem.molecule.CategoryTogglePill
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.ConfirmDialog
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.EmptyState
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.GridKeyboardLegend
@@ -88,7 +88,6 @@ import com.vishalgupta.photoselector.presentation.designsystem.molecule.Grouping
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.KeyHint
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.LatchedPill
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToast
-import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToastDefaults
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.SimilarityCoachmark
 import com.vishalgupta.photoselector.presentation.designsystem.organism.GridSelectionTopBar
 import com.vishalgupta.photoselector.presentation.designsystem.organism.GridTopBar
@@ -993,26 +992,7 @@ private fun GridMessagePill(message: String?, modifier: Modifier = Modifier) {
 
 @Composable
 private fun GridTogglePill(toast: CategoryToggle?, modifier: Modifier = Modifier) {
-    LatchedPill(toast, modifier) { dt ->
-        PillToast(
-            text = when {
-                dt.isFavourite && dt.added -> "Favourited"
-                dt.isFavourite -> "Unfavourited"
-                dt.added -> "Added to ${dt.categoryName}"
-                else -> "Removed from ${dt.categoryName}"
-            },
-            leadingIcon = if (dt.isFavourite) {
-                { FavouriteStar(filled = dt.added, modifier = Modifier.size(AppTheme.dimens.iconSm)) }
-            } else {
-                null
-            },
-            colors = if (dt.added) {
-                PillToastDefaults.addedColors()
-            } else {
-                PillToastDefaults.removedColors()
-            },
-        )
-    }
+    LatchedPill(toast, modifier) { dt -> CategoryTogglePill(dt) }
 }
 
 /**
