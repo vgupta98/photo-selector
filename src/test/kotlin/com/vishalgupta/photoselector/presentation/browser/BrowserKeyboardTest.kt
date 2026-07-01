@@ -49,7 +49,6 @@ class BrowserKeyboardTest {
         currentBitmap = null,
         isLoadingBitmap = false,
         isCurrentFavourite = false,
-        favouriteCount = 0,
         readOnly = false,
         categories = categories,
         currentMemberships = emptySet(),
@@ -69,8 +68,6 @@ class BrowserKeyboardTest {
                         onNext = {},
                         onToggleCategory = { toggled += it },
                         onViewportSizeChanged = {},
-                        onOpenFavourites = {},
-                        onChangeFolder = {},
                         onBackToGrid = {},
                     )
                 }
@@ -101,8 +98,6 @@ class BrowserKeyboardTest {
                         onNext = {},
                         onToggleCategory = {},
                         onViewportSizeChanged = {},
-                        onOpenFavourites = {},
-                        onChangeFolder = {},
                         onBackToGrid = {},
                         onShowInAllPhotos = { jumps++ },
                     )
@@ -131,8 +126,6 @@ class BrowserKeyboardTest {
                         onNext = {},
                         onToggleCategory = {},
                         onViewportSizeChanged = {},
-                        onOpenFavourites = {},
-                        onChangeFolder = {},
                         onBackToGrid = {},
                     )
                 }

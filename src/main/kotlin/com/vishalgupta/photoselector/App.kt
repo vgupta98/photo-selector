@@ -26,7 +26,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.vishalgupta.photoselector.di.AppContainer
-import com.vishalgupta.photoselector.domain.model.Category
 import com.vishalgupta.photoselector.presentation.browser.BrowserScreen
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.BackgroundGroupingChip
 import com.vishalgupta.photoselector.presentation.designsystem.molecule.PillToast
@@ -253,22 +252,6 @@ fun App(container: AppContainer) {
                     BrowserScreen(
                         viewModel = vm,
                         systemActions = container.systemActions,
-                        onOpenFavourites = {
-                            container.goTo(
-                                Screen.Grid(
-                                    s.root,
-                                    CategoryScope.Category(Category.FAVOURITES_ID),
-                                    lastViewedPhotoId = vm.state.value.currentPhoto?.id,
-                                ),
-                            )
-                        },
-                        onChangeFolder = {
-                            coroutineScope.launch {
-                                container.resetForNewRoot()
-                                gridScrollStates.clear()
-                                container.goTo(Screen.RootPicker)
-                            }
-                        },
                         onBack = {
                             val idx = vm.state.value.currentIndex
                             val photoId = vm.state.value.currentPhoto?.id
