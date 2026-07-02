@@ -18,8 +18,10 @@ import com.vishalgupta.photoselector.domain.repository.CopyReport
 import com.vishalgupta.photoselector.domain.repository.PhotoExporter
 import com.vishalgupta.photoselector.domain.repository.PhotoTrash
 import com.vishalgupta.photoselector.domain.repository.TrashReport
+import com.vishalgupta.photoselector.domain.repository.XmpReport
 import com.vishalgupta.photoselector.domain.usecase.CopyPhotosToFolderUseCase
 import com.vishalgupta.photoselector.domain.usecase.ExportPhotosTxtUseCase
+import com.vishalgupta.photoselector.domain.usecase.ExportPhotosXmpUseCase
 import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
 import com.vishalgupta.photoselector.presentation.common.GroupingCoordinator
 import com.vishalgupta.photoselector.presentation.common.GroupingMode
@@ -88,6 +90,14 @@ class GridSelectionTest {
             policy: ConflictPolicy,
             onProgress: (copied: Int, total: Int) -> Unit,
         ): CopyReport = CopyReport(0, 0, emptyList())
+
+        override suspend fun exportXmpSidecars(
+            root: RootFolder,
+            photos: List<Photo>,
+            favouriteIds: Set<PhotoId>,
+            rejectedIds: Set<PhotoId>,
+            onProgress: (written: Int, total: Int) -> Unit,
+        ): XmpReport = XmpReport(0, 0, emptyList())
     }
 
     private val noOpTrash = object : PhotoTrash {
@@ -153,6 +163,7 @@ class GridSelectionTest {
         lastViewedPhotoId = null,
         categories = repo,
         exportTxt = ExportPhotosTxtUseCase(noOpExporter),
+        exportXmp = ExportPhotosXmpUseCase(noOpExporter),
         copyToFolder = CopyPhotosToFolderUseCase(noOpExporter),
         moveToTrash = MovePhotosToTrashUseCase(trash),
         imageLoader = noOpImageLoader,

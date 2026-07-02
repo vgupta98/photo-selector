@@ -36,6 +36,7 @@ import com.vishalgupta.photoselector.presentation.designsystem.theme.AppTheme
 fun ExportMenu(
     enabled: Boolean,
     onExportTxt: () -> Unit,
+    onExportXmp: () -> Unit,
     onCopyToFolder: (ConflictPolicy) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -53,6 +54,16 @@ fun ExportMenu(
                 onClick = {
                     expanded = false
                     onExportTxt()
+                },
+            )
+            // Writes an .xmp sidecar next to each photo so the cull's ratings/labels travel into
+            // Lightroom / Capture One. Sits with the .txt export as the second single-artifact
+            // output, ahead of the copy-to-folder section.
+            DropdownMenuItem(
+                text = { Text("Write XMP sidecars (Lightroom / Capture One)") },
+                onClick = {
+                    expanded = false
+                    onExportXmp()
                 },
             )
             HorizontalDivider()

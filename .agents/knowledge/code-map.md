@@ -30,7 +30,7 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 - `repository/` — interfaces: `PhotoRepository`, `CategoriesRepository`,
   `BrowsePositionRepository`, `AppPreferencesRepository`, `PhotoExporter`, `PhotoTrash`.
 - `usecase/` — `ScanRootFolderUseCase`, `CopyPhotosToFolderUseCase`,
-  `ExportPhotosTxtUseCase`, `MovePhotosToTrashUseCase`.
+  `ExportPhotosTxtUseCase`, `ExportPhotosXmpUseCase`, `MovePhotosToTrashUseCase`.
 - `grouping/` — the grouping seam: `PhotoGrouper` (an interface with one suspend
   `group(...)` method), `BurstGrouper` (object; time + camera), `SimilarityGrouper`
   (object; visual — `ThresholdRule` seam, `Adaptive` per-event cut is the default,
@@ -71,7 +71,10 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   rollout install-id; one small JSON via `AtomicJsonWriter`).
 - `update/` — `UpdateManifestDto` (feed JSON shape) + `HttpUpdateRepository` (the app's
   only outbound call: a JDK-`HttpClient` GET of the hosted manifest; every failure → null).
-- `export/` — `CopyPhotoExporter`, `TxtPhotoExporter`, `CompositePhotoExporter`.
+- `export/` — `CopyPhotoExporter`, `TxtPhotoExporter`, `XmpSidecarPhotoExporter`
+  (writes `xmp:Rating`/`xmp:Label` sidecars next to originals for a Lightroom /
+  Capture One handoff; reject-wins precedence + the pure `buildXmpPacket`),
+  `CompositePhotoExporter`.
 - `trash/` — `DesktopPhotoTrash` (move-to-Trash via AWT Desktop).
 - `io/` — `AtomicJsonWriter` (shared atomic JSON write; categories + browse).
 

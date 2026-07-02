@@ -5,6 +5,7 @@ import com.vishalgupta.photoselector.data.browse.JsonBrowsePositionRepository
 import com.vishalgupta.photoselector.data.export.CompositePhotoExporter
 import com.vishalgupta.photoselector.data.export.CopyPhotoExporter
 import com.vishalgupta.photoselector.data.export.TxtPhotoExporter
+import com.vishalgupta.photoselector.data.export.XmpSidecarPhotoExporter
 import com.vishalgupta.photoselector.data.categories.JsonCategoriesRepository
 import com.vishalgupta.photoselector.data.filesystem.FileSystemPhotoRepository
 import com.vishalgupta.photoselector.data.prefs.JsonAppPreferences
@@ -51,6 +52,7 @@ import com.vishalgupta.photoselector.domain.update.UpdateRepository
 import com.vishalgupta.photoselector.domain.update.rolloutBucket
 import com.vishalgupta.photoselector.domain.usecase.CopyPhotosToFolderUseCase
 import com.vishalgupta.photoselector.domain.usecase.ExportPhotosTxtUseCase
+import com.vishalgupta.photoselector.domain.usecase.ExportPhotosXmpUseCase
 import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
 import com.vishalgupta.photoselector.domain.usecase.ScanRootFolderUseCase
 import com.vishalgupta.photoselector.presentation.browser.BrowserViewModel
@@ -234,11 +236,13 @@ class AppContainer {
         HttpUpdateRepository(BuildConfig.UPDATE_MANIFEST_URL, json, httpClient)
     private val checkForUpdateUseCase = CheckForUpdateUseCase(updateRepository)
 
-    private val exporter: PhotoExporter = CompositePhotoExporter(TxtPhotoExporter(), CopyPhotoExporter())
+    private val exporter: PhotoExporter =
+        CompositePhotoExporter(TxtPhotoExporter(), CopyPhotoExporter(), XmpSidecarPhotoExporter())
     private val photoTrash: PhotoTrash = DesktopPhotoTrash()
 
     private val scanUseCase = ScanRootFolderUseCase(photoRepository)
     private val exportTxtUseCase = ExportPhotosTxtUseCase(exporter)
+    private val exportXmpUseCase = ExportPhotosXmpUseCase(exporter)
     private val copyPhotosUseCase = CopyPhotosToFolderUseCase(exporter)
     private val movePhotosToTrashUseCase = MovePhotosToTrashUseCase(photoTrash)
 
@@ -443,6 +447,7 @@ class AppContainer {
             lastViewedPhotoId = lastViewedPhotoId,
             categories = categoriesRepository,
             exportTxt = exportTxtUseCase,
+            exportXmp = exportXmpUseCase,
             copyToFolder = copyPhotosUseCase,
             moveToTrash = movePhotosToTrashUseCase,
             imageLoader = imageLoader,
