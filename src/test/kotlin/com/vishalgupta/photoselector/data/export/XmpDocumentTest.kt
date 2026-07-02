@@ -152,6 +152,52 @@ class XmpDocumentTest {
     }
 
     @Test
+    fun `a foreign element-form rating in a separate block is replaced, never duplicated`() {
+        // The exact real-world break: a third-party tool (exiftool) rewrote the sidecar with a rating
+        // as a CHILD ELEMENT in its OWN rdf:Description block and stripped our stamp. A re-export SET
+        // must leave the document with EXACTLY ONE xmp:Rating equal to our value - not our new one
+        // plus the leftover foreign 5.
+        val exiftoolStyle = """<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description rdf:about="" xmlns:exif="http://ns.adobe.com/exif/1.0/" exif:ISOSpeedRatings="100"/>
+<rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/"><xmp:Rating>5</xmp:Rating></rdf:Description>
+</rdf:RDF></x:xmpmeta>
+<?xpacket end="w"?>""".toByteArray(StandardCharsets.UTF_8)
+
+        val out = writeBytes(exiftoolStyle, RatingDecision.Rejected)
+        assertEquals(listOf("-1"), allRatingValues(out), "exactly one rating, equal to our value")
+        assertEquals("100", firstBlockAttr(out, "exif:ISOSpeedRatings"), "foreign field survives")
+    }
+
+    @Test
+    fun `a foreign rating under a different prefix bound to the xmp namespace is replaced by namespace`() {
+        // Same break but the foreign block binds the Adobe namespace to a NON-xmp prefix (xap). A
+        // literal prefix match would miss it and duplicate; namespace resolution replaces it.
+        val differentPrefix = """<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description rdf:about="" xmlns:exif="http://ns.adobe.com/exif/1.0/" exif:ISOSpeedRatings="100"/>
+<rdf:Description rdf:about="" xmlns:xap="http://ns.adobe.com/xap/1.0/"><xap:Rating>5</xap:Rating></rdf:Description>
+</rdf:RDF></x:xmpmeta>
+<?xpacket end="w"?>""".toByteArray(StandardCharsets.UTF_8)
+
+        val out = writeBytes(differentPrefix, RatingDecision.Rejected)
+        assertEquals(listOf("-1"), allRatingValues(out), "exactly one rating, equal to our value")
+    }
+
+    @Test
+    fun `a foreign attribute-form rating in a separate block is replaced, never duplicated`() {
+        val attrForm = """<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description rdf:about="" xmlns:exif="http://ns.adobe.com/exif/1.0/" exif:ISOSpeedRatings="100"/>
+<rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="5"/>
+</rdf:RDF></x:xmpmeta>
+<?xpacket end="w"?>""".toByteArray(StandardCharsets.UTF_8)
+
+        val out = writeBytes(attrForm, RatingDecision.Rejected)
+        assertEquals(listOf("-1"), allRatingValues(out), "exactly one rating, equal to our value")
+    }
+
+    @Test
     fun `un-decide leaves a user-overridden rating untouched`() {
         // We stamped 5, but the user re-rated to 3 in Bridge: the on-disk rating no longer matches
         // the stamp, so an un-decide must not touch it.
@@ -207,5 +253,37 @@ class XmpDocumentTest {
             if (n is Element && n.tagName == qname) return n.textContent
         }
         return null
+    }
+
+    /**
+     * Every xmp:Rating value in the document, resolved by NAMESPACE across all rdf:Description blocks
+     * and both forms (attribute + child element) - so a duplicate under any prefix or form is caught.
+     */
+    private fun allRatingValues(bytes: ByteArray): List<String> {
+        val doc = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
+            .newDocumentBuilder().parse(ByteArrayInputStream(bytes))
+        val blocks = doc.getElementsByTagNameNS(RDF_NS, "Description")
+        val out = ArrayList<String>()
+        for (b in 0 until blocks.length) {
+            val el = blocks.item(b) as Element
+            el.getAttributeNodeNS(XMP_NS, "Rating")?.let { out += it.value }
+            val kids = el.childNodes
+            for (i in 0 until kids.length) {
+                val n = kids.item(i)
+                if (n is Element && XMP_NS == n.namespaceURI && "Rating" == n.localName) out += n.textContent
+            }
+        }
+        return out
+    }
+
+    private fun firstBlockAttr(bytes: ByteArray, qname: String): String {
+        val doc = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+            .parse(ByteArrayInputStream(bytes))
+        return (doc.getElementsByTagName("rdf:Description").item(0) as Element).getAttribute(qname)
+    }
+
+    private companion object {
+        const val XMP_NS = "http://ns.adobe.com/xap/1.0/"
+        const val RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
     }
 }

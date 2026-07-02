@@ -1,5 +1,6 @@
 package com.vishalgupta.photoselector.data.export
 
+import org.w3c.dom.Attr
 import org.w3c.dom.Document
 import org.w3c.dom.Element
 import java.io.ByteArrayInputStream
@@ -44,9 +45,12 @@ sealed interface XmpMergeOutcome {
  *    value still equals what we stamped, so a rating the user changed in Bridge is never touched.
  *
  * Both fields are read and written in either representation a DAM may use — an attribute on
- * `rdf:Description` **or** a child element — so a merge round-trips whatever shape the sidecar is in.
- * The parser is non-namespace-aware on purpose: XMP prefixes are conventional (`xmp`, `rdf`,
- * `rhenium`), so operating on the literal prefixed names keeps attribute and element handling uniform.
+ * `rdf:Description` **or** a child element — across *all* `rdf:Description` blocks, and are resolved
+ * by **namespace** (the parser is namespace-aware), not by a literal `xmp:` prefix. That matters
+ * because tools like exiftool write the rating as a child element in its own `rdf:Description` block,
+ * sometimes under a different prefix bound to the same Adobe namespace; a prefix-literal match would
+ * miss it and append a *second*, conflicting rating. So a set rewrites the first `xmp:Rating` it finds
+ * in place and deletes every other occurrence, leaving the document with exactly one rating.
  */
 object XmpDocument {
 
@@ -56,7 +60,10 @@ object XmpDocument {
 
     private const val XMP_NS = "http://ns.adobe.com/xap/1.0/"
     private const val STAMP_NS = "http://ns.rhenium.app/xmp/1.0/"
+    private const val RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    private const val XMLNS_NS = "http://www.w3.org/2000/xmlns/"
     private const val RATING_QNAME = "xmp:Rating"
+    private const val RATING_LOCAL = "Rating"
 
     /**
      * Resolves the sidecar bytes to write for [decision], given the [existing] sidecar bytes (null =
@@ -71,29 +78,47 @@ object XmpDocument {
             }
             val doc = parse(existing)
             val descs = descriptionElements(doc)
-            // Update the block that already carries a rating we manage, so a sidecar whose rating
-            // lives in a non-first rdf:Description gets that statement rewritten in place instead of
-            // a second, conflicting xmp:Rating appended to block 0. Prefer our own stamped block,
-            // then any block with a rating, then the first block.
-            val desc = descs.firstOrNull { readField(it, STAMP_QNAME) != null }
-                ?: descs.firstOrNull { readField(it, RATING_QNAME) != null }
-                ?: descs.firstOrNull()
-                ?: return XmpMergeOutcome.Write(minimalPacket(rating).toByteArray(StandardCharsets.UTF_8), cleared = false)
-            setField(desc, "xmp", XMP_NS, RATING_QNAME, rating.toString())
-            setField(desc, STAMP_PREFIX, STAMP_NS, STAMP_QNAME, rating.toString())
+            if (descs.isEmpty()) {
+                return XmpMergeOutcome.Write(minimalPacket(rating).toByteArray(StandardCharsets.UTF_8), cleared = false)
+            }
+            val value = rating.toString()
+
+            // The document must end with EXACTLY ONE xmp:Rating (any prefix, either form, any block).
+            // A tool like exiftool can leave a foreign rating in its own block; replace it, don't
+            // duplicate it. Rewrite the first occurrence in place, delete every other.
+            val ratings = findFields(descs, XMP_NS, RATING_LOCAL)
+            val target: Element = if (ratings.isEmpty()) {
+                // No rating anywhere yet: place it on our stamped block if we have one, else block 0.
+                findFields(descs, STAMP_NS, STAMP_LOCAL).firstOrNull()?.owner ?: descs.first()
+            } else {
+                ratings.drop(1).forEach { it.remove() }
+                ratings.first().owner
+            }
+            if (ratings.isEmpty()) {
+                ensurePrefix(target, "xmp", XMP_NS)
+                target.setAttributeNS(XMP_NS, RATING_QNAME, value)
+            } else {
+                ratings.first().setValue(value)
+            }
+            // Exactly one stamp, alongside the surviving rating: drop any strays, (re)write on target.
+            findFields(descs, STAMP_NS, STAMP_LOCAL).forEach { it.remove() }
+            ensurePrefix(target, STAMP_PREFIX, STAMP_NS)
+            target.setAttributeNS(STAMP_NS, STAMP_QNAME, value)
             return XmpMergeOutcome.Write(serialize(doc), cleared = false)
         }
 
-        // Undecided: only clear a rating we still own (stamp present AND on-disk rating == stamped).
+        // Undecided: only clear a rating we still own (our stamp present AND, in that same block, the
+        // on-disk rating still equals what we stamped). A user's Bridge re-rate is never touched.
         if (existing == null) return XmpMergeOutcome.Skip
         val doc = parse(existing)
-        // Operate on whichever block holds our stamp, not blindly the first block.
-        val desc = descriptionElements(doc).firstOrNull { readField(it, STAMP_QNAME) != null }
-            ?: return XmpMergeOutcome.Skip
-        val stamped = readField(desc, STAMP_QNAME) ?: return XmpMergeOutcome.Skip
-        if (readField(desc, RATING_QNAME) != stamped) return XmpMergeOutcome.Skip
-        removeField(desc, RATING_QNAME)
-        removeField(desc, STAMP_QNAME)
+        val descs = descriptionElements(doc)
+        val stamps = findFields(descs, STAMP_NS, STAMP_LOCAL)
+        val stamp = stamps.firstOrNull() ?: return XmpMergeOutcome.Skip
+        val ownRatings = findFields(listOf(stamp.owner), XMP_NS, RATING_LOCAL)
+        if (ownRatings.firstOrNull()?.value != stamp.value) return XmpMergeOutcome.Skip
+        // Remove every rating we own (both forms, our block) and every stamp.
+        ownRatings.forEach { it.remove() }
+        stamps.forEach { it.remove() }
         return XmpMergeOutcome.Write(serialize(doc), cleared = true)
     }
 
@@ -117,7 +142,8 @@ object XmpDocument {
 
     private fun documentBuilder(): DocumentBuilder =
         DocumentBuilderFactory.newInstance().apply {
-            isNamespaceAware = false
+            // Namespace-aware so a rating is resolved by URI regardless of the prefix a tool used.
+            isNamespaceAware = true
             // Sidecars never carry a DOCTYPE; refusing one hardens the parse against XXE.
             runCatching { setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
         }.newDocumentBuilder()
@@ -132,35 +158,44 @@ object XmpDocument {
     }
 
     private fun descriptionElements(doc: Document): List<Element> {
-        val nodes = doc.getElementsByTagName("rdf:Description")
+        val nodes = doc.getElementsByTagNameNS(RDF_NS, "Description")
         return (0 until nodes.length).map { nodes.item(it) as Element }
     }
 
-    /** Reads a field in either form: an attribute on [desc] or a direct child element's text. */
-    private fun readField(desc: Element, qname: String): String? {
-        if (desc.hasAttribute(qname)) return desc.getAttribute(qname)
-        return directChild(desc, qname)?.textContent
-    }
-
-    /** Sets a field, preserving whichever form it already takes (child element vs attribute). */
-    private fun setField(desc: Element, prefix: String, namespace: String, qname: String, value: String) {
-        if (!desc.hasAttribute("xmlns:$prefix")) desc.setAttribute("xmlns:$prefix", namespace)
-        val child = directChild(desc, qname)
-        if (child != null) child.textContent = value else desc.setAttribute(qname, value)
-    }
-
-    /** Removes a field in whichever form(s) it takes. */
-    private fun removeField(desc: Element, qname: String) {
-        if (desc.hasAttribute(qname)) desc.removeAttribute(qname)
-        directChild(desc, qname)?.let { desc.removeChild(it) }
-    }
-
-    private fun directChild(parent: Element, qname: String): Element? {
-        val nodes = parent.childNodes
-        for (i in 0 until nodes.length) {
-            val n = nodes.item(i)
-            if (n is Element && n.tagName == qname) return n
+    /**
+     * Every occurrence of the [namespace]/[local] field across [descs], in **either** form — an
+     * attribute on the block or a direct child element — resolved by namespace URI, not prefix.
+     */
+    private fun findFields(descs: List<Element>, namespace: String, local: String): List<FieldRef> {
+        val out = ArrayList<FieldRef>()
+        for (desc in descs) {
+            desc.getAttributeNodeNS(namespace, local)?.let { out += FieldRef(desc, it, null) }
+            val kids = desc.childNodes
+            for (i in 0 until kids.length) {
+                val n = kids.item(i)
+                if (n is Element && namespace == n.namespaceURI && local == n.localName) {
+                    out += FieldRef(desc, null, n)
+                }
+            }
         }
-        return null
+        return out
+    }
+
+    /** Declares [prefix]=[ns] on [el] unless the prefix already resolves to that URI in scope. */
+    private fun ensurePrefix(el: Element, prefix: String, ns: String) {
+        if (el.lookupNamespaceURI(prefix) != ns) el.setAttributeNS(XMLNS_NS, "xmlns:$prefix", ns)
+    }
+
+    /** A single owned-field occurrence — either an attribute node or a child element — with its block. */
+    private class FieldRef(val owner: Element, private val attr: Attr?, private val element: Element?) {
+        val value: String get() = attr?.value ?: element!!.textContent
+
+        fun setValue(v: String) {
+            if (attr != null) attr.value = v else element!!.textContent = v
+        }
+
+        fun remove() {
+            if (attr != null) owner.removeAttributeNode(attr) else owner.removeChild(element!!)
+        }
     }
 }
