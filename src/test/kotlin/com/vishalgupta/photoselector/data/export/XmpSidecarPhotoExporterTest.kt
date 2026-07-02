@@ -115,6 +115,35 @@ class XmpSidecarPhotoExporterTest {
         }
     }
 
+    @Test
+    fun `a malformed existing sidecar fails that photo without overwriting the file or crashing`() = runTest {
+        val dir = createTempDirectory("xmp-malformed")
+        try {
+            val raw = photo(dir, "IMG_7777.CR2", "raw")
+            // A pre-existing, non-XML sidecar the parser will reject. The exporter must record a
+            // per-photo failure (via its catch(Throwable)) and leave the file byte-for-byte intact.
+            val sidecar = dir.resolve("IMG_7777.xmp")
+            val garbage = "this is not <xml at all &&&"
+            Files.write(sidecar, garbage.toByteArray(StandardCharsets.UTF_8))
+
+            val report = XmpSidecarPhotoExporter().exportSidecars(
+                root = RootFolder(dir),
+                photos = listOf(raw),
+                favouriteIds = setOf(PhotoId("raw")),
+                rejectedIds = emptySet(),
+                onProgress = { _, _ -> },
+            )
+
+            assertEquals(0, report.written)
+            assertEquals(1, report.failed.size)
+            assertEquals(PhotoId("raw"), report.failed.single().first.id)
+            // The malformed file is untouched - never clobbered by a fresh packet.
+            assertEquals(garbage, sidecar.readText())
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
     private fun photo(dir: Path, name: String, id: String): Photo {
         val path = dir.resolve(name)
         Files.write(path, byteArrayOf(1, 2, 3))

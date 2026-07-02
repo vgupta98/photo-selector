@@ -70,7 +70,14 @@ object XmpDocument {
                 return XmpMergeOutcome.Write(minimalPacket(rating).toByteArray(StandardCharsets.UTF_8), cleared = false)
             }
             val doc = parse(existing)
-            val desc = descriptionElement(doc)
+            val descs = descriptionElements(doc)
+            // Update the block that already carries a rating we manage, so a sidecar whose rating
+            // lives in a non-first rdf:Description gets that statement rewritten in place instead of
+            // a second, conflicting xmp:Rating appended to block 0. Prefer our own stamped block,
+            // then any block with a rating, then the first block.
+            val desc = descs.firstOrNull { readField(it, STAMP_QNAME) != null }
+                ?: descs.firstOrNull { readField(it, RATING_QNAME) != null }
+                ?: descs.firstOrNull()
                 ?: return XmpMergeOutcome.Write(minimalPacket(rating).toByteArray(StandardCharsets.UTF_8), cleared = false)
             setField(desc, "xmp", XMP_NS, RATING_QNAME, rating.toString())
             setField(desc, STAMP_PREFIX, STAMP_NS, STAMP_QNAME, rating.toString())
@@ -80,7 +87,9 @@ object XmpDocument {
         // Undecided: only clear a rating we still own (stamp present AND on-disk rating == stamped).
         if (existing == null) return XmpMergeOutcome.Skip
         val doc = parse(existing)
-        val desc = descriptionElement(doc) ?: return XmpMergeOutcome.Skip
+        // Operate on whichever block holds our stamp, not blindly the first block.
+        val desc = descriptionElements(doc).firstOrNull { readField(it, STAMP_QNAME) != null }
+            ?: return XmpMergeOutcome.Skip
         val stamped = readField(desc, STAMP_QNAME) ?: return XmpMergeOutcome.Skip
         if (readField(desc, RATING_QNAME) != stamped) return XmpMergeOutcome.Skip
         removeField(desc, RATING_QNAME)
@@ -122,9 +131,9 @@ object XmpDocument {
         return out.toByteArray()
     }
 
-    private fun descriptionElement(doc: Document): Element? {
+    private fun descriptionElements(doc: Document): List<Element> {
         val nodes = doc.getElementsByTagName("rdf:Description")
-        return if (nodes.length > 0) nodes.item(0) as Element else null
+        return (0 until nodes.length).map { nodes.item(it) as Element }
     }
 
     /** Reads a field in either form: an attribute on [desc] or a direct child element's text. */

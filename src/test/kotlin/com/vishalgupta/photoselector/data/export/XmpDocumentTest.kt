@@ -7,6 +7,7 @@ import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class XmpDocumentTest {
@@ -95,6 +96,59 @@ class XmpDocumentTest {
         val desc = descriptionOf(outcome.bytes)
         assertFalse(desc.hasAttribute("xmp:Rating"))
         assertFalse(desc.hasAttribute(XmpDocument.STAMP_QNAME))
+    }
+
+    @Test
+    fun `un-decide clears an element-form stamped rating when the on-disk value still matches`() {
+        // Our rating and stamp stored as child elements (not attributes). The clear must hit the
+        // directChild / removeChild branch, leaving neither the rating element nor the stamp.
+        val elementForm = """<?xpacket begin="" id="x"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:rhenium="http://ns.rhenium.app/xmp/1.0/">
+<xmp:Rating>5</xmp:Rating><rhenium:managedRating>5</rhenium:managedRating></rdf:Description>
+</rdf:RDF></x:xmpmeta>""".toByteArray(StandardCharsets.UTF_8)
+
+        val outcome = XmpDocument.merge(elementForm, RatingDecision.Undecided)
+        assertTrue((outcome as XmpMergeOutcome.Write).cleared, "this write is a clear")
+        val desc = descriptionOf(outcome.bytes)
+        assertFalse(desc.hasAttribute("xmp:Rating"))
+        assertNull(directChildText(desc, "xmp:Rating"), "rating element removed")
+        assertFalse(desc.hasAttribute(XmpDocument.STAMP_QNAME))
+        assertNull(directChildText(desc, XmpDocument.STAMP_QNAME), "stamp element removed")
+    }
+
+    @Test
+    fun `un-decide leaves an element-form rating the user overrode untouched`() {
+        val overridden = """<?xpacket begin="" id="x"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:rhenium="http://ns.rhenium.app/xmp/1.0/">
+<xmp:Rating>3</xmp:Rating><rhenium:managedRating>5</rhenium:managedRating></rdf:Description>
+</rdf:RDF></x:xmpmeta>""".toByteArray(StandardCharsets.UTF_8)
+
+        assertTrue(XmpDocument.merge(overridden, RatingDecision.Undecided) is XmpMergeOutcome.Skip)
+    }
+
+    // --- Multiple rdf:Description blocks -------------------------------------------------------
+
+    @Test
+    fun `a rating in a non-first rdf-Description block is updated in place, not duplicated into block 0`() {
+        // The rating lives in the SECOND rdf:Description; block 0 holds only foreign fields. Merging
+        // must rewrite that second block's rating, never append a conflicting one to block 0.
+        val twoBlocks = """<?xpacket begin="" id="x"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description rdf:about="" xmlns:exif="http://ns.adobe.com/exif/1.0/" exif:ISOSpeedRatings="100"/>
+<rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="2"/>
+</rdf:RDF></x:xmpmeta>""".toByteArray(StandardCharsets.UTF_8)
+
+        val out = writeBytes(twoBlocks, RatingDecision.Rejected)
+        val doc = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+            .parse(ByteArrayInputStream(out))
+        val blocks = doc.getElementsByTagName("rdf:Description")
+        assertEquals(2, blocks.length, "no block was added or removed")
+        // Exactly one rating statement, in the block that already had it, now updated to -1.
+        assertFalse((blocks.item(0) as Element).hasAttribute("xmp:Rating"), "block 0 stays rating-free")
+        assertEquals("-1", (blocks.item(1) as Element).getAttribute("xmp:Rating"))
+        assertEquals("100", (blocks.item(0) as Element).getAttribute("exif:ISOSpeedRatings"))
     }
 
     @Test
