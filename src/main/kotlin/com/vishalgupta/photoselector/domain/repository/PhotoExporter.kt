@@ -15,11 +15,14 @@ data class CopyReport(
 
 /**
  * Outcome of an XMP-sidecar export: [written] sidecars produced, [skipped] photos that carried no
- * rating/label under the precedence rule (nothing to hand off), and any per-photo [failed] writes.
+ * rating/label under the precedence rule (nothing to hand off), [folded] photos whose decision was
+ * merged into a shared sidecar (e.g. a RAW+JPEG pair sharing a basename resolves to one `.xmp`), and
+ * any per-photo [failed] writes.
  */
 data class XmpReport(
     val written: Int,
     val skipped: Int,
+    val folded: Int,
     val failed: List<Pair<Photo, Throwable>>,
 )
 

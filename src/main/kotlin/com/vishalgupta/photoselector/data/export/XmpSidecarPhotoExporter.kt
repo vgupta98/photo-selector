@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.nio.charset.StandardCharsets
+import java.nio.file.Path
 import kotlin.io.path.nameWithoutExtension
 
 /**
@@ -26,9 +27,18 @@ import kotlin.io.path.nameWithoutExtension
  * Reject beats favourite because a reject is a deliberate cut: a stray favourite membership must not
  * silently promote a rejected frame back into the keeper set on the far side of the handoff.
  *
+ * A sidecar is keyed by basename, so a RAW+JPEG pair (`IMG_1234.CR2` + `IMG_1234.JPG`) both resolve
+ * to one `IMG_1234.xmp`. Rather than clobber last-writer-wins, the exporter folds every photo sharing
+ * a target into one decision under the same precedence rule (reject wins) and writes it once; the
+ * merge count surfaces as [XmpReport.folded].
+ *
  * Sidecars are written next to the originals (not a copy destination) — that is where a DAM looks for
- * them on import. Writes go through [AtomicJsonWriter] (temp + atomic rename) so a crash never leaves
- * a half-written sidecar shadowing a photo.
+ * them on import. **Reader caveat:** Lightroom Classic only honors `.xmp` sidecars for proprietary
+ * camera-raw files; for JPEG/TIFF/HEIC it reads embedded XMP and ignores the sidecar. Those decisions
+ * still land in Capture One / Bridge, which read sidecars for every format. We write for all formats
+ * regardless (harmless where unread), so a raw culler gets a full Lightroom handoff and a JPEG/HEIC
+ * culler a Capture One / Bridge one. Writes go through [AtomicJsonWriter] (temp + atomic rename) so a
+ * crash never leaves a half-written sidecar shadowing a photo.
  */
 class XmpSidecarPhotoExporter {
 
@@ -39,38 +49,50 @@ class XmpSidecarPhotoExporter {
         rejectedIds: Set<PhotoId>,
         onProgress: (written: Int, total: Int) -> Unit,
     ): XmpReport = withContext(Dispatchers.IO) {
+        // Group by the sidecar target each photo would write to, so a shared basename folds into one
+        // decision instead of racing two packets onto the same file. Insertion order preserved.
+        val byTarget = LinkedHashMap<Path, MutableList<Photo>>()
+        for (photo in photos) {
+            val sidecar = photo.absolutePath.resolveSibling(
+                "${photo.absolutePath.nameWithoutExtension}.xmp",
+            )
+            byTarget.getOrPut(sidecar) { ArrayList() }.add(photo)
+        }
+
         var written = 0
         var skipped = 0
+        var folded = 0
         val failed = ArrayList<Pair<Photo, Throwable>>()
         val total = photos.size
+        var processed = 0
 
-        for ((index, photo) in photos.withIndex()) {
+        for ((sidecar, group) in byTarget) {
             // Cooperative cancellation at each file boundary, mirroring CopyPhotoExporter.
             ensureActive()
+            // Fold the group's memberships into one decision under the precedence rule (reject wins).
             val mapping = xmpMappingFor(
-                isRejected = photo.id in rejectedIds,
-                isFavourite = photo.id in favouriteIds,
+                isRejected = group.any { it.id in rejectedIds },
+                isFavourite = group.any { it.id in favouriteIds },
             )
             if (mapping == XmpMapping.NONE) {
-                skipped++
+                skipped += group.size
             } else {
+                if (group.size > 1) folded += group.size - 1
                 try {
-                    val sidecar = photo.absolutePath.resolveSibling(
-                        "${photo.absolutePath.nameWithoutExtension}.xmp",
-                    )
                     val packet = buildXmpPacket(rating = mapping.rating, label = mapping.label)
                     AtomicJsonWriter.write(sidecar, packet.toByteArray(StandardCharsets.UTF_8))
                     written++
                 } catch (ce: CancellationException) {
                     throw ce
                 } catch (t: Throwable) {
-                    failed += photo to t
+                    group.forEach { failed += it to t }
                 }
             }
-            onProgress(index + 1, total)
+            processed += group.size
+            onProgress(processed, total)
         }
 
-        XmpReport(written = written, skipped = skipped, failed = failed)
+        XmpReport(written = written, skipped = skipped, folded = folded, failed = failed)
     }
 }
 

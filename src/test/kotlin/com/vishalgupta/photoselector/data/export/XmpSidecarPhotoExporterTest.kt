@@ -61,6 +61,15 @@ class XmpSidecarPhotoExporterTest {
         assertFalse(desc.hasAttribute("xmp:Label"))
     }
 
+    @Test
+    fun `label with XML metacharacters is escaped and round-trips through a parser`() {
+        // Synthetic label (the shipped one is the constant "Rejected"), proving the escaper keeps the
+        // packet well-formed and the DAM reads back the original text unescaped.
+        val raw = "a<b&c\"d>e"
+        val desc = parseDescription(buildXmpPacket(rating = 5, label = raw))
+        assertEquals(raw, desc.getAttribute("xmp:Label"))
+    }
+
     // --- The exporter writes sidecars next to originals with correct naming --------------------
 
     @Test
@@ -90,8 +99,42 @@ class XmpSidecarPhotoExporterTest {
             assertTrue(Files.exists(rejSidecar))
             assertFalse(Files.exists(dir.resolve("IMG_9999.xmp")))
 
+            assertEquals(0, report.folded)
             assertEquals("5", parseDescription(favSidecar.readText()).getAttribute("xmp:Rating"))
             assertEquals("-1", parseDescription(rejSidecar.readText()).getAttribute("xmp:Rating"))
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `same-basename photos fold into one sidecar with reject winning`() = runTest {
+        val dir = createTempDirectory("xmp-collide")
+        try {
+            // A RAW+JPEG pair sharing a basename both resolve to IMG_1234.xmp: one rejected, one
+            // favourited. The fold must not clobber last-writer-wins — reject wins, and the merge
+            // surfaces as folded == 1.
+            val raw = photo(dir, "IMG_1234.CR2", "raw")
+            val jpeg = photo(dir, "IMG_1234.JPG", "jpeg")
+
+            val report = XmpSidecarPhotoExporter().exportSidecars(
+                root = RootFolder(dir),
+                photos = listOf(jpeg, raw),
+                favouriteIds = setOf(PhotoId("jpeg")),
+                rejectedIds = setOf(PhotoId("raw")),
+                onProgress = { _, _ -> },
+            )
+
+            assertEquals(1, report.written)
+            assertEquals(1, report.folded)
+            assertEquals(0, report.skipped)
+            assertTrue(report.failed.isEmpty())
+
+            val sidecar = dir.resolve("IMG_1234.xmp")
+            assertTrue(Files.exists(sidecar))
+            val desc = parseDescription(sidecar.readText())
+            assertEquals("-1", desc.getAttribute("xmp:Rating"))
+            assertEquals("Rejected", desc.getAttribute("xmp:Label"))
         } finally {
             dir.toFile().deleteRecursively()
         }

@@ -97,7 +97,7 @@ class GridSelectionTest {
             favouriteIds: Set<PhotoId>,
             rejectedIds: Set<PhotoId>,
             onProgress: (written: Int, total: Int) -> Unit,
-        ): XmpReport = XmpReport(0, 0, emptyList())
+        ): XmpReport = XmpReport(0, 0, 0, emptyList())
     }
 
     private val noOpTrash = object : PhotoTrash {
