@@ -56,13 +56,13 @@ fun ExportMenu(
                     onExportTxt()
                 },
             )
-            // Writes an .xmp sidecar beside each original so the cull's ratings/labels travel into a
-            // DAM on import. Copy stays honest about *where* it writes rather than naming apps: only
-            // Capture One / Bridge read sidecars for every format, while Lightroom honors them for
-            // raw only (see XmpSidecarPhotoExporter). Sits with the .txt export as the second
-            // single-artifact output, ahead of the copy-to-folder section.
+            // Writes an .xmp sidecar beside each RAW original so the cull's ratings travel into
+            // Bridge / Lightroom / Capture One on import. Phase 1 is RAW-only: JPEG/HEIC ratings will
+            // ride embedded XMP in a later phase, so those photos are skipped here (see
+            // XmpSidecarPhotoExporter). Sits with the .txt export as the second single-artifact
+            // output, ahead of the copy-to-folder section.
             DropdownMenuItem(
-                text = { Text("Write XMP sidecars beside originals") },
+                text = { Text("Write XMP sidecars beside RAW originals") },
                 onClick = {
                     expanded = false
                     onExportXmp()

@@ -156,15 +156,16 @@ class GridSelectionTest {
         // off-thread regroup, so a test settles the grid with advanceUntilIdle() in virtual time.
         // Left null only by the blocking-gate tests, which need the real Swing/IO dispatchers.
         dispatcher: CoroutineDispatcher? = null,
+        exporter: PhotoExporter = noOpExporter,
     ): GridViewModel = GridViewModel(
         root = RootFolder(Path.of("/photos")),
         allPhotos = photos,
         categoryScope = CategoryScope.AllPhotos,
         lastViewedPhotoId = null,
         categories = repo,
-        exportTxt = ExportPhotosTxtUseCase(noOpExporter),
-        exportXmp = ExportPhotosXmpUseCase(noOpExporter),
-        copyToFolder = CopyPhotosToFolderUseCase(noOpExporter),
+        exportTxt = ExportPhotosTxtUseCase(exporter),
+        exportXmp = ExportPhotosXmpUseCase(exporter),
+        copyToFolder = CopyPhotosToFolderUseCase(exporter),
         moveToTrash = MovePhotosToTrashUseCase(trash),
         imageLoader = noOpImageLoader,
         captureMetadataSource = metadata,
@@ -201,6 +202,37 @@ class GridSelectionTest {
         assertTrue(vm.state.value.selection.isEmpty())
 
         vm.onClear()
+    }
+
+    @Test
+    fun exportXmp_reportsWrittenAndUnsupportedInTheToast() = runTest {
+        // A report with a mix of outcomes drives the summary toast: written count, cleared count, and
+        // the honest "skipped (JPEG/HEIC ...)" line for the unsupported non-RAW photos.
+        val exporter = object : PhotoExporter by noOpExporter {
+            override suspend fun exportXmpSidecars(
+                root: RootFolder,
+                photos: List<Photo>,
+                favouriteIds: Set<PhotoId>,
+                rejectedIds: Set<PhotoId>,
+                onProgress: (written: Int, total: Int) -> Unit,
+            ): XmpReport = XmpReport(written = 2, cleared = 1, unsupported = 3, failed = emptyList())
+        }
+        val vm = viewModel(
+            FakeCategoriesRepository(categories),
+            dispatcher = StandardTestDispatcher(testScheduler),
+            exporter = exporter,
+        )
+        advanceUntilIdle()
+
+        vm.exportXmp()
+        advanceUntilIdle()
+
+        val toast = vm.state.value.toast
+        assertNotNull(toast)
+        assertTrue("export settled", !vm.state.value.isBusy)
+        assertTrue("toast reports the writes, got: $toast", toast!!.contains("Wrote 2 XMP sidecars"))
+        assertTrue("toast reports the clear, got: $toast", toast.contains("1 cleared"))
+        assertTrue("toast is honest about the skip, got: $toast", toast.contains("3 skipped (JPEG/HEIC"))
     }
 
     @Test

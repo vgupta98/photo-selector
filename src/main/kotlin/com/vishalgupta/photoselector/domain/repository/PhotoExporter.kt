@@ -14,15 +14,16 @@ data class CopyReport(
 )
 
 /**
- * Outcome of an XMP-sidecar export: [written] sidecars produced, [skipped] photos that carried no
- * rating/label under the precedence rule (nothing to hand off), [folded] photos whose decision was
- * merged into a shared sidecar (e.g. a RAW+JPEG pair sharing a basename resolves to one `.xmp`), and
- * any per-photo [failed] writes.
+ * Outcome of an XMP-sidecar export (Phase 1, RAW-only): [written] sidecars whose `xmp:Rating` we set
+ * (favourite / reject), [cleared] sidecars where an un-decided photo had our ownership stamp removed
+ * (the rating we previously wrote, still untouched by the user, was cleared), [unsupported] non-RAW
+ * photos skipped (JPEG/HEIC/etc — those decisions travel via a future embedding phase, not a
+ * sidecar), and any per-photo [failed] writes.
  */
 data class XmpReport(
     val written: Int,
-    val skipped: Int,
-    val folded: Int,
+    val cleared: Int,
+    val unsupported: Int,
     val failed: List<Pair<Photo, Throwable>>,
 )
 
@@ -42,10 +43,13 @@ interface PhotoExporter {
     ): CopyReport
 
     /**
-     * Writes an XMP sidecar next to each photo (`IMG_1234.CR2` -> `IMG_1234.xmp`) carrying the
-     * cull's keep/reject decision as `xmp:Rating` / `xmp:Label` for a Lightroom / Capture One
-     * handoff. [favouriteIds] and [rejectedIds] drive the rating under a documented precedence rule
-     * (reject wins); a photo in neither gets no sidecar.
+     * Writes an XMP sidecar next to each proprietary-RAW photo (`IMG_1234.CR2` -> `IMG_1234.xmp`)
+     * carrying the cull's keep/reject decision as `xmp:Rating` (reject `-1`, favourite `5`) for a
+     * Bridge / Lightroom / Capture One handoff. [favouriteIds] and [rejectedIds] drive the rating
+     * (reject wins); a RAW in neither has its rating cleared only if we previously wrote it (an
+     * ownership stamp guards against clobbering a user's Bridge edit). Phase 1 is RAW-only: non-RAW
+     * photos are counted [XmpReport.unsupported] and skipped (JPEG/HEIC ratings will travel via
+     * embedded XMP in a later phase, not a sidecar).
      */
     suspend fun exportXmpSidecars(
         root: RootFolder,

@@ -24,117 +24,92 @@ class XmpSidecarPhotoExporterTest {
 
     @Test
     fun `reject wins over favourite`() {
-        assertEquals(XmpMapping.REJECTED, xmpMappingFor(isRejected = true, isFavourite = true))
-        assertEquals(XmpMapping.REJECTED, xmpMappingFor(isRejected = true, isFavourite = false))
+        assertEquals(RatingDecision.Rejected, decisionFor(isRejected = true, isFavourite = true))
+        assertEquals(RatingDecision.Rejected, decisionFor(isRejected = true, isFavourite = false))
     }
 
     @Test
     fun `favourite maps to five stars when not rejected`() {
-        assertEquals(XmpMapping.FAVOURITE, xmpMappingFor(isRejected = false, isFavourite = true))
+        assertEquals(RatingDecision.Favourite, decisionFor(isRejected = false, isFavourite = true))
     }
 
     @Test
-    fun `neither bucket maps to none`() {
-        assertEquals(XmpMapping.NONE, xmpMappingFor(isRejected = false, isFavourite = false))
+    fun `neither bucket is undecided`() {
+        assertEquals(RatingDecision.Undecided, decisionFor(isRejected = false, isFavourite = false))
     }
 
-    // --- The generated packet is well-formed and carries the right Rating/Label ----------------
+    // --- RAW-only scope: rated RAWs get sidecars, non-RAW photos are counted unsupported --------
 
     @Test
-    fun `reject packet is well-formed with rating minus one and label Rejected`() {
-        val desc = parseDescription(buildXmpPacket(XmpMapping.REJECTED.rating, XmpMapping.REJECTED.label))
-        assertEquals("-1", desc.getAttribute("xmp:Rating"))
-        assertEquals("Rejected", desc.getAttribute("xmp:Label"))
-    }
-
-    @Test
-    fun `favourite packet is well-formed with rating five and no label`() {
-        val desc = parseDescription(buildXmpPacket(XmpMapping.FAVOURITE.rating, XmpMapping.FAVOURITE.label))
-        assertEquals("5", desc.getAttribute("xmp:Rating"))
-        assertFalse(desc.hasAttribute("xmp:Label"))
-    }
-
-    @Test
-    fun `none packet is well-formed with neither rating nor label`() {
-        val desc = parseDescription(buildXmpPacket(XmpMapping.NONE.rating, XmpMapping.NONE.label))
-        assertFalse(desc.hasAttribute("xmp:Rating"))
-        assertFalse(desc.hasAttribute("xmp:Label"))
-    }
-
-    @Test
-    fun `label with XML metacharacters is escaped and round-trips through a parser`() {
-        // Synthetic label (the shipped one is the constant "Rejected"), proving the escaper keeps the
-        // packet well-formed and the DAM reads back the original text unescaped.
-        val raw = "a<b&c\"d>e"
-        val desc = parseDescription(buildXmpPacket(rating = 5, label = raw))
-        assertEquals(raw, desc.getAttribute("xmp:Label"))
-    }
-
-    // --- The exporter writes sidecars next to originals with correct naming --------------------
-
-    @Test
-    fun `writes an xmp sidecar next to each rated photo and skips the unrated`() = runTest {
+    fun `writes an xmp sidecar next to each rated RAW and skips non-RAW as unsupported`() = runTest {
         val dir = createTempDirectory("xmp-test")
         try {
-            val fav = photo(dir, "IMG_1234.CR2", "fav")
-            val rej = photo(dir, "IMG_5678.JPG", "rej")
-            val plain = photo(dir, "IMG_9999.HEIC", "plain")
+            val fav = photo(dir, "IMG_1234.CR2", "fav")     // RAW, favourite -> rating 5
+            val rej = photo(dir, "IMG_5678.NEF", "rej")     // RAW, rejected  -> rating -1
+            val plainRaw = photo(dir, "IMG_4321.ARW", "raw")// RAW, undecided -> no sidecar (nothing to clear)
+            val jpeg = photo(dir, "IMG_0001.JPG", "jpg")    // non-RAW -> unsupported
+            val heic = photo(dir, "IMG_0002.HEIC", "heic")  // non-RAW -> unsupported
 
             val report = XmpSidecarPhotoExporter().exportSidecars(
                 root = RootFolder(dir),
-                photos = listOf(fav, rej, plain),
+                photos = listOf(fav, rej, plainRaw, jpeg, heic),
                 favouriteIds = setOf(PhotoId("fav")),
                 rejectedIds = setOf(PhotoId("rej")),
                 onProgress = { _, _ -> },
             )
 
             assertEquals(2, report.written)
-            assertEquals(1, report.skipped)
+            assertEquals(0, report.cleared)
+            assertEquals(2, report.unsupported)
             assertTrue(report.failed.isEmpty())
 
             // Sidecar shares the basename, extension swapped to .xmp, in the same directory.
-            val favSidecar = dir.resolve("IMG_1234.xmp")
-            val rejSidecar = dir.resolve("IMG_5678.xmp")
-            assertTrue(Files.exists(favSidecar))
-            assertTrue(Files.exists(rejSidecar))
-            assertFalse(Files.exists(dir.resolve("IMG_9999.xmp")))
+            assertTrue(Files.exists(dir.resolve("IMG_1234.xmp")))
+            assertTrue(Files.exists(dir.resolve("IMG_5678.xmp")))
+            // Undecided RAW with no prior sidecar writes nothing; non-RAW never gets a sidecar.
+            assertFalse(Files.exists(dir.resolve("IMG_4321.xmp")))
+            assertFalse(Files.exists(dir.resolve("IMG_0001.xmp")))
+            assertFalse(Files.exists(dir.resolve("IMG_0002.xmp")))
 
-            assertEquals(0, report.folded)
-            assertEquals("5", parseDescription(favSidecar.readText()).getAttribute("xmp:Rating"))
-            assertEquals("-1", parseDescription(rejSidecar.readText()).getAttribute("xmp:Rating"))
+            // Rating is set, and the wrong-field xmp:Label is never written.
+            val favDesc = parseDescription(dir.resolve("IMG_1234.xmp").readText())
+            assertEquals("5", favDesc.getAttribute("xmp:Rating"))
+            assertFalse(favDesc.hasAttribute("xmp:Label"))
+            val rejDesc = parseDescription(dir.resolve("IMG_5678.xmp").readText())
+            assertEquals("-1", rejDesc.getAttribute("xmp:Rating"))
+            assertFalse(rejDesc.hasAttribute("xmp:Label"))
         } finally {
             dir.toFile().deleteRecursively()
         }
     }
 
     @Test
-    fun `same-basename photos fold into one sidecar with reject winning`() = runTest {
-        val dir = createTempDirectory("xmp-collide")
+    fun `same-basename RAW and JPEG do not fold - RAW writes its own sidecar, JPEG is unsupported`() = runTest {
+        val dir = createTempDirectory("xmp-no-fold")
         try {
-            // A RAW+JPEG pair sharing a basename both resolve to IMG_1234.xmp: one rejected, one
-            // favourited. The fold must not clobber last-writer-wins — reject wins, and the merge
-            // surfaces as folded == 1.
+            // A RAW+JPEG pair sharing a basename. The RAW is favourited, the JPEG rejected. The old
+            // basename fold let the reject win over the whole pair; now each photo stands alone: the
+            // RAW writes IMG_1234.xmp with its own decision (rating 5) and the JPEG is unsupported.
             val raw = photo(dir, "IMG_1234.CR2", "raw")
             val jpeg = photo(dir, "IMG_1234.JPG", "jpeg")
 
             val report = XmpSidecarPhotoExporter().exportSidecars(
                 root = RootFolder(dir),
                 photos = listOf(jpeg, raw),
-                favouriteIds = setOf(PhotoId("jpeg")),
-                rejectedIds = setOf(PhotoId("raw")),
+                favouriteIds = setOf(PhotoId("raw")),
+                rejectedIds = setOf(PhotoId("jpeg")),
                 onProgress = { _, _ -> },
             )
 
             assertEquals(1, report.written)
-            assertEquals(1, report.folded)
-            assertEquals(0, report.skipped)
+            assertEquals(1, report.unsupported)
+            assertEquals(0, report.cleared)
             assertTrue(report.failed.isEmpty())
 
             val sidecar = dir.resolve("IMG_1234.xmp")
             assertTrue(Files.exists(sidecar))
-            val desc = parseDescription(sidecar.readText())
-            assertEquals("-1", desc.getAttribute("xmp:Rating"))
-            assertEquals("Rejected", desc.getAttribute("xmp:Label"))
+            // The RAW's decision (favourite, rating 5) wins - the JPEG's reject never touched it.
+            assertEquals("5", parseDescription(sidecar.readText()).getAttribute("xmp:Rating"))
         } finally {
             dir.toFile().deleteRecursively()
         }

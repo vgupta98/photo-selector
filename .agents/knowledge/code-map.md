@@ -72,8 +72,11 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 - `update/` — `UpdateManifestDto` (feed JSON shape) + `HttpUpdateRepository` (the app's
   only outbound call: a JDK-`HttpClient` GET of the hosted manifest; every failure → null).
 - `export/` — `CopyPhotoExporter`, `TxtPhotoExporter`, `XmpSidecarPhotoExporter`
-  (writes `xmp:Rating`/`xmp:Label` sidecars next to originals for a Lightroom /
-  Capture One handoff; reject-wins precedence + the pure `buildXmpPacket`),
+  (Phase 1, RAW-only: writes `xmp:Rating` sidecars next to RAW originals for a
+  Bridge / Lightroom / Capture One handoff; reject-wins `decisionFor`, non-RAW
+  counted unsupported) over `XmpDocument` (the pure merge-not-clobber helper:
+  parses an existing sidecar via the JDK DOM, mutates only `xmp:Rating` + our
+  `rhenium:managedRating` ownership stamp, re-serializes),
   `CompositePhotoExporter`.
 - `trash/` — `DesktopPhotoTrash` (move-to-Trash via AWT Desktop).
 - `io/` — `AtomicJsonWriter` (shared atomic JSON write; categories + browse).

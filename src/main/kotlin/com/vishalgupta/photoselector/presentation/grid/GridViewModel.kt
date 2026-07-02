@@ -963,8 +963,8 @@ class GridViewModel(
 
     private fun buildXmpReportToast(report: XmpReport): String {
         val parts = mutableListOf("Wrote ${report.written} XMP sidecar${if (report.written == 1) "" else "s"}")
-        if (report.folded > 0) parts += "${report.folded} folded into shared sidecars"
-        if (report.skipped > 0) parts += "${report.skipped} unrated skipped"
+        if (report.cleared > 0) parts += "${report.cleared} cleared"
+        if (report.unsupported > 0) parts += "${report.unsupported} skipped (JPEG/HEIC - embed coming later)"
         if (report.failed.isNotEmpty()) parts += "${report.failed.size} failed"
         return parts.joinToString(", ")
     }
