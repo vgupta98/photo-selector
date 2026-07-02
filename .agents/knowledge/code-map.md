@@ -30,7 +30,7 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
 - `repository/` — interfaces: `PhotoRepository`, `CategoriesRepository`,
   `BrowsePositionRepository`, `AppPreferencesRepository`, `PhotoExporter`, `PhotoTrash`.
 - `usecase/` — `ScanRootFolderUseCase`, `CopyPhotosToFolderUseCase`,
-  `ExportPhotosTxtUseCase`, `MovePhotosToTrashUseCase`.
+  `ExportPhotosTxtUseCase`, `ExportPhotosXmpUseCase`, `MovePhotosToTrashUseCase`.
 - `grouping/` — the grouping seam: `PhotoGrouper` (an interface with one suspend
   `group(...)` method), `BurstGrouper` (object; time + camera), `SimilarityGrouper`
   (object; visual — `ThresholdRule` seam, `Adaptive` per-event cut is the default,
@@ -71,7 +71,13 @@ architecture, single Gradle module: `domain` (pure) → `data` (impls) →
   rollout install-id; one small JSON via `AtomicJsonWriter`).
 - `update/` — `UpdateManifestDto` (feed JSON shape) + `HttpUpdateRepository` (the app's
   only outbound call: a JDK-`HttpClient` GET of the hosted manifest; every failure → null).
-- `export/` — `CopyPhotoExporter`, `TxtPhotoExporter`, `CompositePhotoExporter`.
+- `export/` — `CopyPhotoExporter`, `TxtPhotoExporter`, `XmpSidecarPhotoExporter`
+  (Phase 1, RAW-only: writes `xmp:Rating` sidecars next to RAW originals for a
+  Bridge / Lightroom / Capture One handoff; reject-wins `decisionFor`, non-RAW
+  counted unsupported) over `XmpDocument` (the pure merge-not-clobber helper:
+  parses an existing sidecar via the JDK DOM, mutates only `xmp:Rating` + our
+  `rhenium:managedRating` ownership stamp, re-serializes),
+  `CompositePhotoExporter`.
 - `trash/` — `DesktopPhotoTrash` (move-to-Trash via AWT Desktop).
 - `io/` — `AtomicJsonWriter` (shared atomic JSON write; categories + browse).
 

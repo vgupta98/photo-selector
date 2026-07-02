@@ -40,6 +40,7 @@ fun GridSelectionTopBar(
     onFileIntoRejects: () -> Unit,
     onFileIntoCustom: (slot: Int) -> Unit,
     onExportSelectionTxt: () -> Unit,
+    onExportSelectionXmp: () -> Unit,
     onCopySelection: (ConflictPolicy) -> Unit,
     onDeleteSelection: () -> Unit,
     onClearSelection: () -> Unit,
@@ -69,6 +70,7 @@ fun GridSelectionTopBar(
         ExportMenu(
             enabled = true,
             onExportTxt = onExportSelectionTxt,
+            onExportXmp = onExportSelectionXmp,
             onCopyToFolder = onCopySelection,
         )
 

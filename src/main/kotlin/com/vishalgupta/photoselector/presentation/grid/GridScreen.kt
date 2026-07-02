@@ -1,6 +1,7 @@
 package com.vishalgupta.photoselector.presentation.grid
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -186,6 +187,9 @@ fun GridScreen(
                 viewModel.copyTo(dir, policy)
             }
         },
+        // XMP sidecars are written next to the originals (where a DAM looks for them), so unlike the
+        // .txt / copy exports there is no destination to pick — fire straight through.
+        onExportXmp = viewModel::exportXmp,
         onDismissToast = viewModel::dismissToast,
         onFirstVisibleItemChanged = viewModel::onFirstVisibleItemChanged,
         onSelectGroupingMode = viewModel::setGroupingMode,
@@ -217,6 +221,7 @@ fun GridScreen(
                 viewModel.copySelectionTo(dir, policy)
             }
         },
+        onExportSelectionXmp = viewModel::exportSelectionXmp,
     )
 }
 
@@ -246,6 +251,7 @@ fun GridScreen(
     onToggleRejectAtFocus: () -> Unit = {},
     onToggleCustomCategoryAtFocus: (slot: Int) -> Unit,
     onExportTxt: () -> Unit,
+    onExportXmp: () -> Unit = {},
     onCopyToFolder: (ConflictPolicy) -> Unit,
     onDismissToast: () -> Unit,
     onFirstVisibleItemChanged: (FlatIndex) -> Unit = {},
@@ -269,6 +275,7 @@ fun GridScreen(
     onFileSelectionIntoCustom: (slot: Int) -> Unit = {},
     onDeleteSelection: () -> Unit = {},
     onExportSelectionTxt: () -> Unit = {},
+    onExportSelectionXmp: () -> Unit = {},
     onCopySelection: (ConflictPolicy) -> Unit = {},
     onInspectSelection: (indices: List<Int>, returnScrollIndex: Int) -> Unit = { _, _ -> },
     // The scrollbar's drag interactions, hoisted so a test can drive a scrollbar-drag-during-settle
@@ -540,6 +547,7 @@ fun GridScreen(
                 onFileIntoRejects = onFileSelectionIntoRejects,
                 onFileIntoCustom = onFileSelectionIntoCustom,
                 onExportSelectionTxt = onExportSelectionTxt,
+                onExportSelectionXmp = onExportSelectionXmp,
                 onCopySelection = onCopySelection,
                 onDeleteSelection = { confirmingDelete = true },
                 onClearSelection = onClearSelection,
@@ -553,6 +561,7 @@ fun GridScreen(
                 railCollapsed = railCollapsed,
                 onToggleRail = onToggleRail,
                 onExportTxt = onExportTxt,
+                onExportXmp = onExportXmp,
                 onCopyToFolder = onCopyToFolder,
                 groupingMode = state.groupingMode,
                 onSelectGroupingMode = onSelectGroupingModeAnchored,
@@ -560,10 +569,6 @@ fun GridScreen(
                     ?.takeIf { it.total > 0 }
                     ?.let { it.processed.toFloat() / it.total },
             )
-        }
-
-        if (state.isBusy) {
-            BusyBar(label = state.progressLabel ?: "Working…")
         }
 
         // Non-blocking determinate progress while a grouping lens computes. Unlike the busy bar above
@@ -710,6 +715,16 @@ fun GridScreen(
                     ),
                 )
             }
+
+            // The blocking busy strip (export / copy in flight) is overlaid at the top of the grid,
+            // not stacked in the Column above it: as a Column child a bare `if (isBusy)` inserted a
+            // row that shoved the weight-1f grid down and snapped it back on every export (a visible
+            // flicker). Fading it in over the grid keeps the grid still.
+            GridBusyOverlay(
+                visible = state.isBusy,
+                label = state.progressLabel ?: "Working…",
+                modifier = Modifier.align(Alignment.TopCenter),
+            )
 
             // Result/notice for bulk and library-level actions (export, copy, bulk file, the survey
             // cap notice) — rendered in the app's pill chrome, not a stock Material snackbar, so all
@@ -993,6 +1008,19 @@ private fun GridMessagePill(message: String?, modifier: Modifier = Modifier) {
 @Composable
 private fun GridTogglePill(toast: CategoryToggle?, modifier: Modifier = Modifier) {
     LatchedPill(toast, modifier) { dt -> CategoryTogglePill(dt) }
+}
+
+/**
+ * The blocking busy strip, faded in over the top of the grid. Lives in its own composable so the
+ * top-level [AnimatedVisibility] resolves cleanly (inside the grid Box the enclosing ColumnScope
+ * would otherwise capture it); the caller passes the `align`ed [modifier] from the Box. A solid
+ * surface fill lets the bar read over the thumbnails beneath it.
+ */
+@Composable
+private fun GridBusyOverlay(visible: Boolean, label: String, modifier: Modifier = Modifier) {
+    AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut(), modifier = modifier) {
+        BusyBar(label = label, modifier = Modifier.background(AppTheme.colorScheme.surface))
+    }
 }
 
 /**

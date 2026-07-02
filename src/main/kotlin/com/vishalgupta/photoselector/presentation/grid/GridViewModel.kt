@@ -14,8 +14,10 @@ import com.vishalgupta.photoselector.domain.repository.CategoriesRepository
 import com.vishalgupta.photoselector.domain.repository.ConflictPolicy
 import com.vishalgupta.photoselector.domain.repository.CopyReport
 import com.vishalgupta.photoselector.domain.repository.TrashReport
+import com.vishalgupta.photoselector.domain.repository.XmpReport
 import com.vishalgupta.photoselector.domain.usecase.CopyPhotosToFolderUseCase
 import com.vishalgupta.photoselector.domain.usecase.ExportPhotosTxtUseCase
+import com.vishalgupta.photoselector.domain.usecase.ExportPhotosXmpUseCase
 import com.vishalgupta.photoselector.domain.usecase.MovePhotosToTrashUseCase
 import com.vishalgupta.photoselector.presentation.StateHolder
 import com.vishalgupta.photoselector.presentation.common.CategoryToggle
@@ -135,6 +137,7 @@ class GridViewModel(
     lastViewedPhotoId: PhotoId? = null,
     private val categories: CategoriesRepository,
     private val exportTxt: ExportPhotosTxtUseCase,
+    private val exportXmp: ExportPhotosXmpUseCase,
     private val copyToFolder: CopyPhotosToFolderUseCase,
     private val moveToTrash: MovePhotosToTrashUseCase,
     val imageLoader: ImageLoader,
@@ -880,6 +883,43 @@ class GridViewModel(
         }
     }
 
+    /** Writes an XMP sidecar next to each photo in the current scope (the top bar's Export menu). */
+    fun exportXmp() {
+        exportPhotosXmp(_state.value.photos)
+    }
+
+    /** Writes an XMP sidecar next to just the selected photos (the selection bar's Export menu). */
+    fun exportSelectionXmp() {
+        val ids = _state.value.selection
+        exportPhotosXmp(_state.value.photos.filter { it.id in ids })
+    }
+
+    private fun exportPhotosXmp(photos: List<Photo>) {
+        if (photos.isEmpty()) return
+        scope.launch {
+            _state.update { it.copy(isBusy = true, progressLabel = "Writing XMP sidecars…") }
+            try {
+                val report = exportXmp.invoke(
+                    root = root,
+                    photos = photos,
+                    favouriteIds = _state.value.markedIds,
+                    rejectedIds = _state.value.rejectedIds,
+                ) { done, total ->
+                    _state.update { it.copy(progressLabel = "$done / $total") }
+                }
+                _state.update {
+                    it.copy(isBusy = false, progressLabel = null, toast = buildXmpReportToast(report))
+                }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                _state.update {
+                    it.copy(isBusy = false, progressLabel = null, toast = "XMP export failed: ${t.message}")
+                }
+            }
+        }
+    }
+
     fun copyTo(destination: Path, policy: ConflictPolicy) {
         copyPhotos(_state.value.photos, destination, policy)
     }
@@ -917,6 +957,14 @@ class GridViewModel(
     private fun buildReportToast(report: CopyReport): String {
         val parts = mutableListOf("Copied ${report.copied}")
         if (report.skipped > 0) parts += "skipped ${report.skipped}"
+        if (report.failed.isNotEmpty()) parts += "${report.failed.size} failed"
+        return parts.joinToString(", ")
+    }
+
+    private fun buildXmpReportToast(report: XmpReport): String {
+        val parts = mutableListOf("Wrote ${report.written} XMP sidecar${if (report.written == 1) "" else "s"}")
+        if (report.cleared > 0) parts += "${report.cleared} cleared"
+        if (report.unsupported > 0) parts += "${report.unsupported} skipped (JPEG/HEIC - embed coming later)"
         if (report.failed.isNotEmpty()) parts += "${report.failed.size} failed"
         return parts.joinToString(", ")
     }
